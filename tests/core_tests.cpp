@@ -57,6 +57,16 @@ void testValidation() {
     cfg.roundRobins=8; cfg.velocities={0};
     require(throws([&]{(void)a125::makePlan(cfg);}),"velocity zero must reject");
 }
+void testAllMidiVelocityRoundTrips() {
+    for(int value=1;value<=127;++value){
+        const auto normalized=a125::midiNormalized(value);
+        require(a125::midiValue(normalized)==value,
+                "all 127 MIDI velocity values must round-trip");
+    }
+    const auto cfg=a125::makeJobFromParameters(a125::defaultParameters,44100.);
+    require(cfg.velocities[0]==100,
+            "first default velocity exactly MIDI 100");
+}
 void testEditableVelocitiesAndRanges() {
     a125::ParameterValues p=a125::defaultParameters;
     require(a125::makeJobFromParameters(p,44100.).takeCount()==8,
@@ -217,6 +227,7 @@ int main() {
         testEightRoundRobins();
         testSchedulerSampleOffsets();
         testValidation();
+        testAllMidiVelocityRoundTrips();
         testEditableVelocitiesAndRanges();
         testJobSchedule();
         testJobBlockEdgeCases();
