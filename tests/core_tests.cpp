@@ -1,6 +1,7 @@
 #include "core/SamplingPlan.h"
 #include "core/SampleProcessing.h"
 #include "core/JobSchedule.h"
+#include "core/JobParameters.h"
 #include <array>
 #include <filesystem>
 #include <fstream>
@@ -56,6 +57,40 @@ void testValidation() {
     cfg.roundRobins=8; cfg.velocities={0};
     require(throws([&]{(void)a125::makePlan(cfg);}),"velocity zero must reject");
 }
+void testEditableVelocitiesAndRanges() {
+    a125::ParameterValues p=a125::defaultParameters;
+    require(a125::makeJobFromParameters(p,44100.).takeCount()==8,
+        "default is one note, eight RR and one velocity");
+    auto single=a125::makeJobFromParameters(p,44100.);
+    require(single.velocities[0]==100,"one velocity defaults to 100");
+    p[a125::FirstNote]=60./127.;
+    p[a125::LastNote]=62./127.;
+    p[a125::VelocityLayers]=1.;
+    p[a125::Velocity1]=39./126.;
+    p[a125::Velocity2]=89./126.;
+    p[a125::Velocity3]=126./126.;
+    auto c=a125::makeJobFromParameters(p,48000.);
+    require(c.firstNote==60 && c.lastNote==62,"dynamic note range");
+    require(c.velocityLayers==3 && c.roundRobins==8,"3 layers / 8 RR");
+    require(c.velocities[0]==40 && c.velocities[1]==90 && c.velocities[2]==127,
+        "1..127 velocity settings mapped and ascending");
+    require(c.takeCount()==72,"3 notes * 3 velocities * 8 RR");
+    require(a125::jobTake(c,0).velocity==40 &&
+            a125::jobTake(c,8).velocity==90 &&
+            a125::jobTake(c,16).velocity==127,
+            "velocity mapping into emitted takes");
+    require(c.holdFrames==48000 && c.tailFrames==96000 &&
+            c.gapFrames==4800,"timings scale to sample rate");
+    p[a125::VelocityLayers]=0.;
+    c=a125::makeJobFromParameters(p,44100.);
+    require(c.velocityLayers==1 && c.velocities[0]==40,
+            "single layer uses explicitly configured velocity 1");
+    p[a125::VelocityLayers]=.5;
+    c=a125::makeJobFromParameters(p,44100.);
+    require(c.velocityLayers==2 && c.velocities[0]==40 &&
+            c.velocities[1]==90,"two custom velocities");
+}
+
 void testJobSchedule() {
     a125::JobConfig cfg;
     cfg.firstNote=48; cfg.lastNote=52; cfg.semitoneStep=2;
@@ -182,6 +217,7 @@ int main() {
         testEightRoundRobins();
         testSchedulerSampleOffsets();
         testValidation();
+        testEditableVelocitiesAndRanges();
         testJobSchedule();
         testJobBlockEdgeCases();
         testAutomaticBatch48Wavs();
