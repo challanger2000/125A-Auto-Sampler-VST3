@@ -56,8 +56,10 @@ if(BUILD_VST3)
     if(BUILD_TESTING AND WIN32)
         # The QA host is a private test executable. It never ships inside
         # the VST3 bundle and never hosts any customer VST instruments.
-        add_library(AutosamplerQAWinModule OBJECT
+        file(RELATIVE_PATH _125A_WINHOST_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}"
             "${VST3_SDK_ROOT}/public.sdk/source/vst/hosting/module_win32.cpp")
+        add_library(AutosamplerQAWinModule OBJECT
+            ${_125A_WINHOST_SOURCE})
         set_target_properties(AutosamplerQAWinModule PROPERTIES
             CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
         target_compile_definitions(AutosamplerQAWinModule PRIVATE NOMINMAX _CRT_SECURE_NO_WARNINGS)
