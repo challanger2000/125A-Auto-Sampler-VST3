@@ -3,9 +3,11 @@ on:
   push:
     branches: ['develop/**']
     paths: ['src/**','CMakeLists.txt','.github/workflows/windows-vst3.yml']
-  pull_request:
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   vst3:
     runs-on: windows-2022
@@ -21,9 +23,18 @@ jobs:
           fetch-depth: 1
       - name: Configure
         shell: pwsh
-        run: cmake -S . -B build-vst3 -G "Visual Studio 17 2022" -A x64 -DBUILD_VST3=ON -DBUILD_TESTING=ON -DVST3_SDK_ROOT="$PWD/_sdk" -DSMTG_CREATE_PLUGIN_LINK=OFF
+        run: cmake -S . -B build-vst3 -G "Visual Studio 17 2022" -A x64 -DBUILD_VST3=ON -DBUILD_VST3_VALIDATOR=ON -DBUILD_TESTING=ON -DVST3_SDK_ROOT="$PWD/_sdk" -DSMTG_CREATE_PLUGIN_LINK=OFF
       - name: Build
-        run: cmake --build build-vst3 --config Release --target AutosamplerVST3 --parallel
+        run: cmake --build build-vst3 --config Release --target AutosamplerVST3 validator --parallel
+      - name: Official VST3 validator
+        shell: pwsh
+        run: |
+          $plugin = Get-ChildItem -Path "build-vst3/VST3/Release" -Directory -Filter "AutosamplerVST3.vst3" | Select-Object -First 1
+          $validator = Get-ChildItem -Path "build-vst3" -File -Filter "validator.exe" -Recurse | Select-Object -First 1
+          if (-not $plugin) { throw "VST3 bundle not found" }
+          if (-not $validator) { throw "Steinberg validator.exe not found" }
+          & $validator.FullName -l $plugin.FullName
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Core regression tests
         run: cmake --build build-vst3 --config Release --target autosampler_core_tests --parallel && ctest --test-dir build-vst3 -C Release --output-on-failure
         shell: bash

@@ -2,8 +2,10 @@ name: P001 Windows core tests
 on:
   push:
     branches: [main, 'develop/**']
-  pull_request:
   workflow_dispatch:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   windows-core:
     runs-on: windows-2022
