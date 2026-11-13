@@ -367,10 +367,10 @@ private:
 BEGIN_FACTORY_DEF("125A","https://github.com/challanger2000","")
  DEF_CLASS2(INLINE_UID_FROM_FUID(kMidiID),
   Steinberg::PClassInfo::kManyInstances,Steinberg::kVstAudioEffectClass,
-  "125A AutoSampler MIDI",0,"Instrument","0.2.0",Steinberg::Vst::kVstVersionString,
+  "125A AutoSampler MIDI",0,"Instrument","0.2.0",kVstVersionString,
   MidiGenerator::createInstance)
  DEF_CLASS2(INLINE_UID_FROM_FUID(kRecorderID),
   Steinberg::PClassInfo::kManyInstances,Steinberg::kVstAudioEffectClass,
-  "125A AutoSampler Recorder",0,"Fx","0.2.0",Steinberg::Vst::kVstVersionString,
+  "125A AutoSampler Recorder",0,"Fx","0.2.0",kVstVersionString,
   Recorder::createInstance)
 END_FACTORY
