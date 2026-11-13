@@ -1,6 +1,7 @@
 // 125A Auto Sampler P003: DAW-hosted VST3 MIDI generator and audio recorder.
 // A single VST3 bundle exports both components. No third-party VST host.
 #include "core/JobSchedule.h"
+#include "core/JobParameters.h"
 #include "core/SampleProcessing.h"
 #include "base/source/fstreamer.h"
 #include "pluginterfaces/base/ibstream.h"
@@ -35,16 +36,14 @@ constexpr std::int64_t kDisarmed = std::numeric_limits<std::int64_t>::min();
 
 enum : V::ParamID {
     kRunParam=1000, kFirstParam, kLastParam, kStepParam, kRRParam,
-    kLayersParam, kHoldParam, kTailParam, kGapParam
+    kLayersParam, kHoldParam, kTailParam, kGapParam,
+    kVelocity1Param, kVelocity2Param, kVelocity3Param
 };
-constexpr std::size_t kParamCount=9;
+constexpr std::size_t kParamCount=a125::ParameterCount;
 constexpr double kDefaultHold=(1.0-0.25)/7.75;
 constexpr double kDefaultTail=(2.0-0.25)/9.75;
 constexpr double kDefaultGap=(0.10-0.05)/0.45;
 
-inline int discrete(double normalized,int lo,int hi) noexcept {
-    return lo+static_cast<int>(std::lround(std::clamp(normalized,0.,1.)*(hi-lo)));
-}
 
 // Only one generator/recorder pair per DAW process is supported in P003.
 // Job fields are published before the release-store to anchor. No mutex or
@@ -133,6 +132,12 @@ public:
            V::ParameterInfo::kCanAutomate,kTailParam);
         parameters.addParameter(STR16("Gap (0.05-0.5s)"),nullptr,0,kDefaultGap,
            V::ParameterInfo::kCanAutomate,kGapParam);
+        parameters.addParameter(STR16("Velocity 1 (1-127)"),nullptr,126,100./127.,
+           V::ParameterInfo::kCanAutomate,kVelocity1Param);
+        parameters.addParameter(STR16("Velocity 2 (1-127)"),nullptr,126,60./127.,
+           V::ParameterInfo::kCanAutomate,kVelocity2Param);
+        parameters.addParameter(STR16("Velocity 3 (1-127)"),nullptr,126,120./127.,
+           V::ParameterInfo::kCanAutomate,kVelocity3Param);
         return Steinberg::kResultOk;
     }
     tresult PLUGIN_API setupProcessing(V::ProcessSetup& setup) override {
@@ -146,7 +151,7 @@ public:
     tresult PLUGIN_API getState(Steinberg::IBStream* state) override {
         if(!state) return Steinberg::kResultFalse;
         Steinberg::IBStreamer io(state,kLittleEndian);
-        if(!io.writeInt32(0x125A0301)) return Steinberg::kResultFalse;
+        if(!io.writeInt32(0x125A0401)) return Steinberg::kResultFalse;
         // The Run switch is deliberately not persisted: project reopen
         // must never create WAV files before the user explicitly starts.
         for(std::size_t i=1;i<values_.size();++i)
@@ -158,11 +163,15 @@ public:
         if(!state) return Steinberg::kResultFalse;
         Steinberg::IBStreamer io(state,kLittleEndian);
         Steinberg::int32 version=0;
-        if(!io.readInt32(version) || version!=0x125A0301)
+        if(!io.readInt32(version) ||
+           (version!=0x125A0301 && version!=0x125A0401))
             return Steinberg::kResultFalse;
-        std::array<double,kParamCount> loaded{};
-        loaded[0]=0.;
-        for(std::size_t i=1;i<loaded.size();++i) {
+        // Older P003 files had 9 parameters. Upgrade without breaking
+        // existing test projects; 3 editable velocity values get defaults.
+        auto loaded=a125::defaultParameters;
+        loaded[a125::Run]=0.;
+        const std::size_t count=version==0x125A0301?9:loaded.size();
+        for(std::size_t i=1;i<count;++i) {
             if(!io.readDouble(loaded[i]) || !std::isfinite(loaded[i]) ||
                loaded[i]<0. || loaded[i]>1.) return Steinberg::kResultFalse;
         }
@@ -196,7 +205,7 @@ public:
                 auto* q=changes->getParameterData(i);
                 if(!q || q->getPointCount()==0) continue;
                 const auto id=q->getParameterId();
-                if(id<kRunParam || id>kGapParam) continue;
+                if(id<kRunParam || id>kVelocity3Param) continue;
                 V::ParamValue value=0; int32 offset=0;
                 if(q->getPoint(q->getPointCount()-1,offset,value)==Steinberg::kResultTrue)
                     values_[static_cast<std::size_t>(id-kRunParam)]=std::clamp(value,0.,1.);
@@ -254,20 +263,10 @@ public:
     }
 private:
     a125::JobConfig makeConfig() const noexcept {
-        a125::JobConfig c;
-        c.firstNote=discrete(values_[1],0,127);
-        c.lastNote=std::max(c.firstNote,discrete(values_[2],0,127));
-        c.semitoneStep=discrete(values_[3],1,12);
-        c.roundRobins=discrete(values_[4],1,16);
-        c.velocityLayers=discrete(values_[5],1,3);
-        c.velocities=c.velocityLayers==1?std::array<int,3>{100,80,120}:
-                     c.velocityLayers==2?std::array<int,3>{60,110,120}:
-                                         std::array<int,3>{40,80,120};
-        const double sr=std::max(8000.,sampleRate_);
-        c.holdFrames=static_cast<std::uint64_t>(std::llround((.25+values_[6]*7.75)*sr));
-        c.tailFrames=static_cast<std::uint64_t>(std::llround((.25+values_[7]*9.75)*sr));
-        c.gapFrames=static_cast<std::uint64_t>(std::llround((.05+values_[8]*.45)*sr));
-        return c;
+        a125::ParameterValues values{};
+        for(std::size_t i=0;i<values.size();++i)
+            values[i]=values_[i].load(std::memory_order_relaxed);
+        return a125::makeJobFromParameters(values,sampleRate_);
     }
     void cancel() noexcept {
         if(activeRun_) session().anchor.store(kDisarmed,std::memory_order_release);
@@ -315,7 +314,8 @@ private:
         data.outputEvents->addEvent(e);
     }
     std::array<std::atomic<double>,kParamCount> values_{
-        0.,60./127.,60./127.,0.,7./15.,0.,kDefaultHold,kDefaultTail,kDefaultGap};
+        0.,60./127.,60./127.,0.,7./15.,0.,kDefaultHold,kDefaultTail,kDefaultGap,
+        100./127.,60./127.,120./127.};
     a125::JobConfig config_{};
     double sampleRate_=44100.;
     bool run_=false,activeRun_=false;
@@ -512,10 +512,10 @@ private:
 BEGIN_FACTORY_DEF("125A","https://github.com/challanger2000","")
  DEF_CLASS2(INLINE_UID_FROM_FUID(kMidiID),
   Steinberg::PClassInfo::kManyInstances,kVstAudioEffectClass,
-  "125A AutoSampler MIDI",0,"Instrument","0.3.0",kVstVersionString,
+  "125A AutoSampler MIDI",0,"Instrument","0.4.0",kVstVersionString,
   MidiGenerator::createInstance)
  DEF_CLASS2(INLINE_UID_FROM_FUID(kRecorderID),
   Steinberg::PClassInfo::kManyInstances,kVstAudioEffectClass,
-  "125A AutoSampler Recorder",0,"Fx","0.3.0",kVstVersionString,
+  "125A AutoSampler Recorder",0,"Fx","0.4.0",kVstVersionString,
   Recorder::createInstance)
 END_FACTORY
