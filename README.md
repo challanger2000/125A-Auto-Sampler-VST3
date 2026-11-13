@@ -1,26 +1,27 @@
 # 125A Auto Sampler VST3
 
-**Windows-x64-VST3 für automatisches Sampling von Instrumenten, die bereits in Fender Studio Pro laufen.**
+Windows-x64-VST3 für automatisches Sampling von Instrumenten in **Fender Studio Pro**. Das Quell-VST wird **ausschließlich von der DAW gehostet**, nicht vom AutoSampler.
 
-Der AutoSampler hostet keine fremden Instrumente. Eine MIDI-Generator-Komponente steuert das vorhandene VST an; der Stereo-Recorder sitzt als Audio-Insert auf der Instrumentenspur. Das Ziel sind automatisch geschnittene, getrennte WAV-Samples, optional mit mehreren Velocity-Stufen und Round-Robin-Varianten.
+## P004 – Entwicklerstand
 
-## P003 – derzeitiger Stand
+**Zwei Plugin-Klassen im selben VST3-Bundle:**
+- `125A AutoSampler MIDI`: autonomer MIDI-Notengenerator mit eigenem dunklem VSTGUI-Bedienfeld
+- `125A AutoSampler Recorder`: Audio-Insert für WAV-Aufnahmen
 
-- **Windows VST3-Bundle mit zwei Klassen:** `125A AutoSampler MIDI` und `125A AutoSampler Recorder`.
-- MIDI-Notenbereich 0–127, Notenabstand 1–12 Halbtöne, Round Robin 1–16.
-- Velocity-Modi: 1 Layer (100), 2 Layer (60/110), 3 Layer (40/80/120). Diese Velocity-Werte sind in P003 noch fest vorgegeben.
-- Einstellbare Notenlänge, Ausklingdauer und Pause über generische VST3-Parameter.
-- Beide Komponenten verwenden dieselbe DAW-Sampleposition und denselben Aufnahmeplan; nur **ein** Generator-/Recorder-Paar unterstützt.
-- Lockfreier Audio-Puffer; Stereo-24-Bit-PCM-WAV, Stilleerkennung/Trimming und Fades werden **außerhalb** des Audio-Callbacks verarbeitet.
-- Jeder Aufnahmelauf erhält ein eigenes Unterverzeichnis, frühere WAVs werden nicht überschrieben.
-- P003-Regression: **48 eindeutig benannte WAV-Dateien** aus einem simulierten 2-Noten-/3-Velocity-/8-RR-Durchlauf.
-- Sampling-Parameter werden mit dem Projekt gespeichert, **Run** beim Projekt-Reload bewusst nicht.
-- Windows-CI mit gepinntem offiziellen Steinberg-VST3-SDK und Steinberg-Validator.
+Einstellbar sind: Notenbereich, Notenabstand (Halbtöne), 1–16 Round Robins, 1–3 Velocity-Layer mit **individuell einstellbaren MIDI-Velocities 1–127**, Notenlänge, Release-Aufnahmezeit und Pausenlänge.
 
-**Kein fertiges Produkt:** Einen echten MIDI→EVM Isotope→Audio→WAV-Durchlauf in Fender Studio Pro haben wir bislang **nicht** nachgewiesen. Der VST3-Build/Validator und die WAV-Simulation ersetzen diesen Test nicht.
+Der Recorder erzeugt getrennte **Stereo-24-Bit-WAV-Dateien**, erkennt Stille, trimmt die Samples und fügt Fades hinzu. WAV-Export erfolgt auf einem Hintergrundthread; die Aufnahme-Daten kommen aus einem lockfreien Ringpuffer.
 
-## Anleitung
-[START-HERE.md](START-HERE.md) beschreibt den aktuellen DAW-Routing-Test, die Parameter und die Einschränkungen.
+Ein Aufnahmelauf erhält einen eigenen Ordner, damit keine alten Samples überschrieben werden. Bei Projekt-Reopen bleiben Parameter erhalten, aber **Run startet nicht automatisch**.
 
-## Entwicklerzweig
-`develop/p001-autosampler-foundation` · Entwurf [PR #2](https://github.com/challanger2000/125A-Auto-Sampler-VST3/pull/2).
+## Teststatus
+
+- Windows-x64-VST3-Build mit offiziellem Steinberg-SDK.
+- Steinberg-Validator prüft beide Plugin-Klassen.
+- C++-Tests prüfen Zeitplan, Note-On/Off, Release-Ende, alle 127 Velocity-Werte und den simulierten Export von **48 eindeutigen WAV-Dateien** (2 Noten × 3 Velocity × 8 RR).
+- Die erste dunkle VSTGUI-Oberfläche ist im Quellcode. **Ihre korrekte Darstellung in Fender Studio Pro ist noch nicht praktisch geprüft.**
+- **Offen:** MIDI-Routing und echte Aufnahme eines Quell-VSTs in Fender Studio Pro; eigener Recorder-Status, Plugin-Test-Lab-Multi-Class-Test und abschließende UI-/ASIO-Praxisabnahme.
+
+Ausführlicher Ablauf: [START-HERE.md](START-HERE.md). Entwicklungs-PR: [#2](https://github.com/challanger2000/125A-Auto-Sampler-VST3/pull/2).
+
+**P004 ist ein Entwicklungsprototyp, keine vollständige Release-Freigabe.**
