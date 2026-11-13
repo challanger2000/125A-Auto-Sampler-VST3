@@ -10,6 +10,7 @@
 #include "pluginterfaces/vst/ivstprocesscontext.h"
 #include "public.sdk/source/main/pluginfactory.h"
 #include "public.sdk/source/vst/vstsinglecomponenteffect.h"
+#include "vstgui/plugin-bindings/vst3editor.h"
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -109,6 +110,11 @@ void copyAudio(const V::ProcessData& data) noexcept {
 class MidiGenerator final : public V::SingleComponentEffect {
 public:
     static FUnknown* createInstance(void*) {return (V::IAudioProcessor*)new MidiGenerator();}
+    Steinberg::IPlugView* PLUGIN_API createView(Steinberg::FIDString name) override {
+        if(Steinberg::FIDStringsEqual(name,V::ViewType::kEditor))
+            return new VSTGUI::VST3Editor(this,"view","autosampler.uidesc");
+        return nullptr;
+    }
     tresult PLUGIN_API initialize(FUnknown* context) override {
         if(SingleComponentEffect::initialize(context)!=Steinberg::kResultOk)
             return Steinberg::kResultFalse;
