@@ -150,7 +150,8 @@ public:
         // The Run switch is deliberately not persisted: project reopen
         // must never create WAV files before the user explicitly starts.
         for(std::size_t i=1;i<values_.size();++i)
-            if(!io.writeDouble(values_[i]))return Steinberg::kResultFalse;
+            if(!io.writeDouble(values_[i].load(std::memory_order_relaxed)))
+                return Steinberg::kResultFalse;
         return Steinberg::kResultOk;
     }
     tresult PLUGIN_API setState(Steinberg::IBStream* state) override {
@@ -159,17 +160,20 @@ public:
         Steinberg::int32 version=0;
         if(!io.readInt32(version) || version!=0x125A0301)
             return Steinberg::kResultFalse;
-        std::array<double,kParamCount> loaded=values_;
+        std::array<double,kParamCount> loaded{};
         loaded[0]=0.;
         for(std::size_t i=1;i<loaded.size();++i) {
             if(!io.readDouble(loaded[i]) || !std::isfinite(loaded[i]) ||
                loaded[i]<0. || loaded[i]>1.) return Steinberg::kResultFalse;
         }
-        cancel(); run_=false;
-        values_=loaded;
-        for(std::size_t i=0;i<values_.size();++i)
+        // Project load may occur concurrently with audio. Never modify
+        // activeRun_ or run_ from the state thread; process() observes
+        // Run=Off and stops at its next callback.
+        for(std::size_t i=0;i<values_.size();++i){
+            values_[i].store(loaded[i],std::memory_order_release);
             SingleComponentEffect::setParamNormalized(
-                kRunParam+static_cast<V::ParamID>(i),values_[i]);
+                kRunParam+static_cast<V::ParamID>(i),loaded[i]);
+        }
         return Steinberg::kResultOk;
     }
     tresult PLUGIN_API setActive(TBool active) override {
@@ -310,7 +314,7 @@ private:
         }
         data.outputEvents->addEvent(e);
     }
-    std::array<double,kParamCount> values_{
+    std::array<std::atomic<double>,kParamCount> values_{
         0.,60./127.,60./127.,0.,7./15.,0.,kDefaultHold,kDefaultTail,kDefaultGap};
     a125::JobConfig config_{};
     double sampleRate_=44100.;
