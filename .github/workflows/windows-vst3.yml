@@ -1,8 +1,8 @@
-name: P004 Windows VST3 and GUI validation
+name: P005 Windows VST3 Integration QA
 on:
   push:
     branches: ['develop/**']
-    paths: ['src/**','CMakeLists.txt','.github/workflows/windows-vst3.yml']
+    paths: ['src/**','tests/**','CMakeLists.txt','.github/workflows/windows-vst3.yml']
   workflow_dispatch:
 
 concurrency:
@@ -25,7 +25,7 @@ jobs:
         shell: pwsh
         run: cmake -S . -B build-vst3 -G "Visual Studio 17 2022" -A x64 -DBUILD_VST3=ON -DBUILD_VST3_VALIDATOR=ON -DBUILD_TESTING=ON -DVST3_SDK_ROOT="$PWD/_sdk" -DSMTG_CREATE_PLUGIN_LINK=OFF
       - name: Build
-        run: cmake --build build-vst3 --config Release --target AutosamplerVST3 validator --parallel
+        run: cmake --build build-vst3 --config Release --target AutosamplerVST3 validator AutosamplerIntegration --parallel
       - name: Validate packaged VSTGUI
         shell: pwsh
         run: |
@@ -54,10 +54,19 @@ jobs:
       - name: Core regression tests
         run: cmake --build build-vst3 --config Release --target autosampler_core_tests --parallel && ctest --test-dir build-vst3 -C Release --output-on-failure
         shell: bash
+      - name: Actual VST3 MIDI to WAV integration
+        shell: pwsh
+        run: |
+          $plugin = Get-ChildItem -Path "build-vst3/VST3/Release" -Directory -Filter "AutosamplerVST3.vst3" | Select-Object -First 1
+          if (-not $plugin) { throw "AutoSampler VST3 bundle missing" }
+          $runner = "build-vst3/Release/AutosamplerIntegration.exe"
+          if (!(Test-Path $runner)) { throw "AutoSamplerIntegration test executable missing" }
+          & $runner $plugin.FullName
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Upload VST3 test binary
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: 125A-AutoSampler-P004-Win64
+          name: 125A-AutoSampler-P005-Win64
           path: build-vst3/VST3/Release/*.vst3
           if-no-files-found: error
