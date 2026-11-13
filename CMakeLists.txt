@@ -18,3 +18,29 @@ if(BUILD_TESTING)
     endif()
     add_test(NAME autosampler_core_tests COMMAND autosampler_core_tests)
 endif()
+
+# P002: Steinberg VST3 SDK 3.8.1 (pinned by Windows CI). No third-party host.
+option(BUILD_VST3 "Build the two 125A VST3 components" OFF)
+if(BUILD_VST3)
+    if(NOT DEFINED VST3_SDK_ROOT OR NOT EXISTS "${VST3_SDK_ROOT}/CMakeLists.txt")
+        message(FATAL_ERROR "Set VST3_SDK_ROOT to a checked-out Steinberg VST3 SDK")
+    endif()
+    set(SMTG_ENABLE_VST3_PLUGIN_EXAMPLES OFF CACHE BOOL "" FORCE)
+    set(SMTG_ENABLE_VST3_HOSTING_EXAMPLES OFF CACHE BOOL "" FORCE)
+    set(SMTG_ENABLE_VSTGUI_SUPPORT OFF CACHE BOOL "" FORCE)
+    set(SMTG_CREATE_PLUGIN_LINK 0 CACHE BOOL "" FORCE)
+    add_subdirectory("${VST3_SDK_ROOT}" "${CMAKE_BINARY_DIR}/steinberg-sdk" EXCLUDE_FROM_ALL)
+
+    smtg_add_vst3plugin(AutosamplerVST3
+        src/vst3/Plugin.cpp
+        src/core/SamplingPlan.h
+        src/core/SampleProcessing.h
+        src/core/Timeline.h
+    )
+    target_include_directories(AutosamplerVST3 PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+    target_link_libraries(AutosamplerVST3 PRIVATE sdk)
+    target_compile_features(AutosamplerVST3 PRIVATE cxx_std_23)
+    if(MSVC)
+        target_compile_options(AutosamplerVST3 PRIVATE /W4 /permissive-)
+    endif()
+endif()
