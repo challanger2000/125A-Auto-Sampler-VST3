@@ -1,23 +1,24 @@
 #include "bass_engine.hpp"
-#include <cassert>
+#include <cstdlib>
+#define REQUIRE(x) do { if (!(x)) { std::cerr << "FAILED: " #x << "\n"; std::exit(1); } } while(false)
 #include <cmath>
 #include <iostream>
 using a125::BassEngine;
 int main() {
     BassEngine e;
     e.setSampleRate(44100.);
-    for(int i=0;i<128;++i)assert(e.renderSample()==0.);
+    for(int i=0;i<128;++i)REQUIRE(e.renderSample()==0.);
     e.noteOn(40,.75);
     double energy=0.;
     for(int i=0;i<4096;++i) {
         auto s=e.renderSample();
-        assert(std::isfinite(s)&&std::abs(s)<=1.);
+        REQUIRE(std::isfinite(s)&&std::abs(s)<=1.);
         energy+=s*s;
     }
-    assert(energy>.01);
+    REQUIRE(energy>.01);
     e.noteOff(40);
     for(int i=0;i<88200;++i)e.renderSample();
-    assert(!e.active());
+    REQUIRE(!e.active());
     auto brightness=[](double vel) {
         BassEngine t;
         t.setSampleRate(44100.);
@@ -32,15 +33,15 @@ int main() {
         }
         return diff/(power+1.e-12);
     };
-    assert(std::abs(brightness(.2)-brightness(.95))>1.e-4);
+    REQUIRE(std::abs(brightness(.2)-brightness(.95))>1.e-4);
     e.setParameter(a125::Shape,10.);
     e.setParameter(a125::CrossMod,-1.);
-    assert(e.parameter(a125::Shape)==1.);
-    assert(e.parameter(a125::CrossMod)==0.);
+    REQUIRE(e.parameter(a125::Shape)==1.);
+    REQUIRE(e.parameter(a125::CrossMod)==0.);
     e.setParameter(a125::Output,0.);
     e.noteOn(40,1.);
-    for(int i=0;i<4096;++i)assert(e.renderSample()==0.);
+    for(int i=0;i<4096;++i)REQUIRE(e.renderSample()==0.);
     e.reset();
-    assert(!e.active());
+    REQUIRE(!e.active());
     std::cout<<"125A DSP tests PASS\n";
 }
