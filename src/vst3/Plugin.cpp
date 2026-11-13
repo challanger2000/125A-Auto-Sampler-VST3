@@ -3,6 +3,7 @@
 #include "core/JobSchedule.h"
 #include "core/JobParameters.h"
 #include "core/CaptureIntegrity.h"
+#include "core/ActiveNote.h"
 #include "core/SampleProcessing.h"
 #include "base/source/fstreamer.h"
 #include "pluginterfaces/base/ibstream.h"
@@ -280,7 +281,7 @@ public:
             (data.processContext->state & V::ProcessContext::kPlaying);
         if(!playing || !run_ || !data.outputEvents || data.numSamples<=0) {
             if(activeRun_){
-                if(data.processContext && data.outputEvents)
+                if(data.outputEvents)
                     sendPendingNoteOff(data);
                 cancel();
             }
@@ -335,52 +336,59 @@ private:
     void cancel() noexcept {
         if(activeRun_) session().anchor.store(kDisarmed,std::memory_order_release);
         activeRun_=false;
+        note_.reset();
     }
-    void sendPendingNoteOff(V::ProcessData& data) const noexcept {
-        const auto anchor=session().anchor.load(std::memory_order_acquire);
-        if(anchor==kDisarmed || !data.processContext || !data.outputEvents) return;
-        const auto at=data.processContext->projectTimeSamples;
-        if(at<anchor) return;
-        const auto rel=static_cast<std::uint64_t>(at-anchor);
-        if(config_.period()==0) return;
-        const auto idx=rel/config_.period();
-        if(idx>=config_.takeCount()) return;
-        const auto take=a125::jobTake(config_,static_cast<std::size_t>(idx));
-        if(rel>=take.start && rel<take.noteOff) {
-            V::Event e{};
-            e.busIndex=0;e.sampleOffset=0;
-            e.type=V::Event::kNoteOffEvent;
-            e.noteOff.channel=0;e.noteOff.pitch=static_cast<Steinberg::int16>(take.note);
-            e.noteOff.velocity=0.f;e.noteOff.noteId=static_cast<int32>(idx+1);
-            data.outputEvents->addEvent(e);
-        }
+    void sendPendingNoteOff(V::ProcessData& data) noexcept {
+        if(!data.outputEvents) return;
+        const auto pending=note_.pending();
+        if(!pending) return;
+        V::Event e{};
+        e.busIndex=0;
+        e.sampleOffset=0;
+        e.type=V::Event::kNoteOffEvent;
+        e.noteOff.channel=0;
+        e.noteOff.pitch=static_cast<Steinberg::int16>(pending->pitch);
+        e.noteOff.velocity=0.f;
+        e.noteOff.noteId=pending->noteId;
+        if(data.outputEvents->addEvent(e)==Steinberg::kResultOk)
+            note_.acceptedOff(pending->noteId);
     }
-    static void emit(V::ProcessData& data,std::int64_t first,std::int64_t end,
-                     std::int64_t anchor,std::uint64_t frame,
-                     const a125::JobTake& take,bool noteOn) noexcept {
+    void emit(V::ProcessData& data,std::int64_t first,std::int64_t end,
+              std::int64_t anchor,std::uint64_t frame,
+              const a125::JobTake& take,bool noteOn) noexcept {
         if(frame>static_cast<std::uint64_t>(
                std::numeric_limits<std::int64_t>::max()-std::max<std::int64_t>(anchor,0)))
             return;
         const auto time=anchor+static_cast<std::int64_t>(frame);
-        if(time<first || time>=end) return;
+        if(time<first || time>=end)return;
         V::Event e{};
-        e.busIndex=0;e.sampleOffset=static_cast<int32>(time-first);
+        e.busIndex=0;
+        e.sampleOffset=static_cast<int32>(time-first);
         if(noteOn){
             e.type=V::Event::kNoteOnEvent;
-            e.noteOn.channel=0;e.noteOn.pitch=static_cast<Steinberg::int16>(take.note);
+            e.noteOn.channel=0;
+            e.noteOn.pitch=static_cast<Steinberg::int16>(take.note);
             e.noteOn.velocity=static_cast<float>(take.velocity)/127.f;
-            e.noteOn.length=-1;e.noteOn.noteId=static_cast<int32>(take.takeIndex+1);
+            e.noteOn.length=-1;
+            e.noteOn.noteId=static_cast<int32>(take.takeIndex+1);
         } else {
             e.type=V::Event::kNoteOffEvent;
-            e.noteOff.channel=0;e.noteOff.pitch=static_cast<Steinberg::int16>(take.note);
-            e.noteOff.velocity=0.f;e.noteOff.noteId=static_cast<int32>(take.takeIndex+1);
+            e.noteOff.channel=0;
+            e.noteOff.pitch=static_cast<Steinberg::int16>(take.note);
+            e.noteOff.velocity=0.f;
+            e.noteOff.noteId=static_cast<int32>(take.takeIndex+1);
         }
-        data.outputEvents->addEvent(e);
+        // Only events accepted by the host's output bus change our note state.
+        if(data.outputEvents->addEvent(e)==Steinberg::kResultOk) {
+            if(noteOn) note_.acceptedOn(take.note,static_cast<int>(take.takeIndex+1));
+            else note_.acceptedOff(static_cast<int>(take.takeIndex+1));
+        }
     }
     std::array<std::atomic<double>,kParamCount> values_{
         0.,60./127.,60./127.,0.,7./15.,0.,kDefaultHold,kDefaultTail,kDefaultGap,
         99./126.,59./126.,119./126.};
     a125::JobConfig config_{};
+    a125::ActiveNote note_{};
     double sampleRate_=44100.;
     bool run_=false,activeRun_=false;
     std::int64_t lastBlockEnd_=kDisarmed;
@@ -461,14 +469,17 @@ public:
            data.numInputs==0 || !data.inputs || data.symbolicSampleSize!=V::kSample32 ||
            !data.inputs[0].channelBuffers32 || !worker_.joinable() || data.numSamples<=0)
             return Steinberg::kResultOk;
+        const auto generationBefore=session().generation.load(std::memory_order_acquire);
         const auto anchor=session().anchor.load(std::memory_order_acquire);
         if(anchor==kDisarmed) return Steinberg::kResultOk;
         const auto config=session().read();
-        const auto generation=session().generation.load(std::memory_order_acquire);
-        if(session().anchor.load(std::memory_order_acquire)!=anchor ||
+        const auto generationAfter=session().generation.load(std::memory_order_acquire);
+        if(generationBefore!=generationAfter ||
+           session().anchor.load(std::memory_order_acquire)!=anchor ||
            session().sampleRate.load(std::memory_order_relaxed)!=
                 static_cast<int>(sampleRate_) || !config.valid())
             return Steinberg::kResultOk;
+        const auto generation=generationAfter;
         const auto* left=data.inputs[0].channelBuffers32[0];
         const auto* right=data.inputs[0].numChannels>1?
            data.inputs[0].channelBuffers32[1]:left;
