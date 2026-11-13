@@ -3,6 +3,7 @@
 #include "core/JobSchedule.h"
 #include "core/JobParameters.h"
 #include "core/CaptureIntegrity.h"
+#include "core/ActiveNote.h"
 #include <array>
 #include <filesystem>
 #include <fstream>
@@ -150,6 +151,22 @@ void testJobBlockEdgeCases() {
     require(t.noteOff==10 && t.captureEnd==30,"correct NoteOn/Off/End edges");
 }
 
+void testStopAndJumpNoteRecovery() {
+    a125::ActiveNote tracker;
+    require(!tracker.pending(), "no note before first MIDI event");
+    tracker.acceptedOn(60,101);
+    require(tracker.pending() && tracker.pending()->pitch==60 &&
+            tracker.pending()->noteId==101, "note identity retained");
+    tracker.acceptedOff(100);
+    require(tracker.pending(), "wrong note ID must not clear sounding note");
+    // A loop or transport jump no longer relies on playhead position.
+    tracker.acceptedOff(101);
+    require(!tracker.pending(), "matching Note-Off clears active voice");
+    tracker.acceptedOn(74,500);
+    tracker.reset();
+    require(!tracker.pending(), "deactivation clears stale MIDI state");
+}
+
 void testCaptureIntegrityFailClosed() {
     a125::TakeIntegrity gate;
     for(std::uint64_t offset=0;offset<17;++offset) {
@@ -291,6 +308,7 @@ int main() {
         testEditableVelocitiesAndRanges();
         testJobSchedule();
         testJobBlockEdgeCases();
+        testStopAndJumpNoteRecovery();
         testCaptureIntegrityFailClosed();
         testAutomaticBatch48Wavs();
         testWavAndTrim();
