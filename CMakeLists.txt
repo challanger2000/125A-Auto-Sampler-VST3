@@ -32,6 +32,7 @@ if(BUILD_VST3)
     add_subdirectory("${VST3_SDK_ROOT}" "${CMAKE_BINARY_DIR}/steinberg-sdk" EXCLUDE_FROM_ALL)
 
     smtg_add_vst3plugin(AutosamplerVST3
+        "${VST3_SDK_ROOT}/public.sdk/source/vst/vstsinglecomponenteffect.cpp"
         src/vst3/Plugin.cpp
         src/core/SamplingPlan.h
         src/core/SampleProcessing.h
