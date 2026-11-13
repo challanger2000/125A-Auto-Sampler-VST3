@@ -1,0 +1,36 @@
+name: P002 Windows VST3 build
+on:
+  push:
+    branches: ['develop/**']
+    paths: ['src/**','CMakeLists.txt','.github/workflows/windows-vst3.yml']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  vst3:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checkout Steinberg VST3 SDK
+        uses: actions/checkout@v4
+        with:
+          repository: steinbergmedia/vst3sdk
+          ref: 3cdf9ca5d1f5b1b21e0a86832aa4abe55607bd96
+          path: _sdk
+          submodules: recursive
+          fetch-depth: 1
+      - name: Configure
+        shell: pwsh
+        run: cmake -S . -B build-vst3 -G "Visual Studio 17 2022" -A x64 -DBUILD_VST3=ON -DBUILD_TESTING=ON -DVST3_SDK_ROOT="$PWD/_sdk" -DSMTG_CREATE_PLUGIN_LINK=OFF
+      - name: Build
+        run: cmake --build build-vst3 --config Release --target AutosamplerVST3 --parallel
+      - name: Core regression tests
+        run: cmake --build build-vst3 --config Release --target autosampler_core_tests --parallel && ctest --test-dir build-vst3 -C Release --output-on-failure
+        shell: bash
+      - name: Upload VST3 test binary
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: 125A-AutoSampler-P002-Win64
+          path: build-vst3/VST3/Release/*.vst3
+          if-no-files-found: warn
