@@ -69,7 +69,7 @@ if(BUILD_VST3)
         target_compile_features(AutosamplerIntegration PRIVATE cxx_std_23)
         target_compile_definitions(AutosamplerIntegration PRIVATE NOMINMAX _CRT_SECURE_NO_WARNINGS)
         target_link_libraries(AutosamplerIntegration PRIVATE
-            AutosamplerQAWinModule sdk_hosting sdk_common base pluginterfaces)
+            AutosamplerQAWinModule sdk_hosting sdk_common base pluginterfaces user32 gdi32 ole32)
         if(MSVC)
             target_compile_options(AutosamplerIntegration PRIVATE /W4 /permissive- /utf-8)
         endif()
