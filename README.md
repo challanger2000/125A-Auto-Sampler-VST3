@@ -7,7 +7,7 @@
 - **125A AutoSampler MIDI:** generiert Note-On/Off, Notenbereiche, Velocity-Stufen und Round Robins; eigene anthrazitfarbene VSTGUI-Oberfläche mit Start/Stop und Live-Zählern.
 - **125A AutoSampler Recorder:** letzter Audio-Insert auf dem Quellinstrument, sammelt dessen echte Audiosamples und schreibt separate WAVs auf einem Hintergrundthread.
 
-## P005 – nachweislich implementiert
+## P006 – nachweislich implementiert
 
 - MIDI-Noten 0–127, Schrittweite 1–12 Halbtöne
 - 1–3 frei einstellbare Velocity-Layer (Werte 1–127), 1–16 Round Robins
@@ -20,15 +20,18 @@
 - Projekt-Speichern/Laden; Start wird beim Projekt-Reload bewusst deaktiviert
 - Note-Off mit korrekter Note-ID bei Stop und Song-Positionssprüngen
 
-## P005 – unabhängig geprüfte Technik
+## P005–P006 – unabhängig geprüfte Technik
 
 Ein privater, **nicht ausgelieferter Windows-Test-Host** lädt beide **tatsächlichen VST3-Klassen** und speist ein synthetisches Instrumentensignal ein.
 
 **Ergebnis:** acht echte VST3-Note-On, acht Note-Off, acht voneinander getrennte hörbare Stereo-24-Bit-WAVs, 0 verworfene Takes und 0 verlorene Frames. Zusätzlich wurden der Stop-Test mit springender Songposition sowie das echte Öffnen/Schließen der VSTGUI-Oberfläche auf Windows erfolgreich ausgeführt. Der offizielle Steinberg-Validator, die GUI-Paketprüfung und sämtliche Core-Regressionen sind erfolgreich.
 
-- [Erfolgreicher Windows-P005-Build samt VST3-Artefakt](https://github.com/challanger2000/125A-Auto-Sampler-VST3/actions/runs/43528728186)
+**P006 zusätzlicher Nachweis:** drei tatsächlich ausgeführte Integrationsszenarien mit den beiden geladenen VST3-Klassen, sämtlich bestanden. **44,1 kHz / 64 Samples: 8 WAVs**, **48 kHz / 1024 Samples: 8 WAVs**, **44,1 kHz / 512 Samples: 48 WAVs** (2 Noten × 3 Velocity-Layer × 8 RR), insgesamt **64 von 64**. Sämtliche WAV-Dateinamen wurden gegen die vollständige Sollmenge geprüft; 0 verlorene Audioframes.
+
+- [Erfolgreicher Windows-P006-Build samt VST3-Artefakt](https://github.com/challanger2000/125A-Auto-Sampler-VST3/actions/runs/43530522001)
 - [START-HERE: Installations- und Prüfanleitung](START-HERE.md)
-- [P005: Nachweis und Abnahmegrenzen](docs/P005-VALIDATION.md)
+- [P006: echte VST3-Testmatrix und Nachweise](docs/P006-TEST-MATRIX.md)
+- [P005: historischer Nachweis](docs/P005-VALIDATION.md)
 - [PR #2](https://github.com/challanger2000/125A-Auto-Sampler-VST3/pull/2)
 
-**Noch nicht als fertiges Produkt freigegeben.** Die vollständige Weiterleitung MIDI → Fremd-VST → Recorder innerhalb **Fender Studio Pro** sowie ASIO-Hardware und die finale Bedienung im echten Song sind noch nicht abgenommen. Der synthetische Windows-Test ist kein Klangtest mit EVM Isotope. P005 bleibt ein Entwicklungsstand.
+**Noch nicht als fertiges Produkt freigegeben.** Die vollständige Weiterleitung MIDI → Fremd-VST → Recorder innerhalb **Fender Studio Pro** sowie ASIO-Hardware und die finale Bedienung im echten Song sind noch nicht abgenommen. Der synthetische Windows-Test ist kein Klangtest mit EVM Isotope. P006 bleibt ein Entwicklungsstand.

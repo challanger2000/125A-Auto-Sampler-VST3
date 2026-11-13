@@ -1,15 +1,15 @@
-# START HERE – 125A AutoSampler P005
+# START HERE – 125A AutoSampler P006
 
-## 1. Was in P005 getestet ist
+## 1. Was bis P006 getestet ist
 
 - Windows-x64-VST3 mit zwei echten Klassen: MIDI-Generator und Audio-Recorder
 - VSTGUI-Editor tatsächlich über Win32-HWND geöffnet, Status-Timer gestartet und sauber geschlossen
 - Steinberg-Validator, automatisierte GUI-Bundle-Prüfung und C++-Regressionstests bestanden
-- **Vollständige native Integrationsprüfung:** 8 echte VST3-Note-On, 8 Note-Off, 8 hörbare Stereo-24-Bit-WAVs aus synthetischer Signalquelle, kein Frameverlust
+- **Vollständige native Integrationsprüfung:** 64 echte VST3-Note-On, 64 Note-Off und 64 hörbare Stereo-24-Bit-WAVs in drei getrennten Szenarien: 44,1 kHz/64 Samples (8 Takes), 48 kHz/1024 Samples (8 Takes), 44,1 kHz/512 Samples (48 Takes aus 2 Noten × 3 Velocities × 8 RR). Kein Frameverlust
 - Realer Plugin-Stop mit springender Songposition sendet die passende Note-Off-ID
 - Getrennte RUN-REPORT.csv-Einträge; korrupte und abgebrochene Takes werden nicht exportiert
 
-[Abgenommener Windows-Build samt VST3-Artefakt](https://github.com/challanger2000/125A-Auto-Sampler-VST3/actions/runs/43528728186) – ZIP-Name **125A-AutoSampler-P005-Win64**. Nur die VST3-Datei installieren; das Testprogramm ist nicht Bestandteil des Plugins.
+[Abgenommener Windows-Build samt VST3-Artefakt](https://github.com/challanger2000/125A-Auto-Sampler-VST3/actions/runs/43530522001) – ZIP-Name **125A-AutoSampler-P006-Win64**. Nur die VST3-Datei installieren; das Testprogramm ist nicht Bestandteil des Plugins.
 
 ## 2. Installation für spätere Fender-Studio-Pro-Abnahme
 
@@ -68,7 +68,9 @@ Bei mehreren aktiven Velocity-Layern werden ihre Werte aufsteigend angeordnet. *
 - Eigener DAW-Transportstart aus dem Plugin ist nicht garantiert; Play muss in Fender Studio Pro laufen
 - Keine bestätigte Fender-Studio-Pro-End-to-End-Abnahme mit EVM Isotope
 - Kein physischer ASIO-Hardwaretest; dieser folgt erst bei der abschließenden DAW-Praxisabnahme
-- 125A Plugin Test Lab P68/P74 behandelt Mehrklassen-VST3 noch nicht automatisch; der P005-Windows-Integrationstest ist eine separate, produktbezogene echte VST3-Prüfung, **keine Behauptung über einen Lab-P74-PASS**
+- 125A Plugin Test Lab P68/P74 behandelt Mehrklassen-VST3 noch nicht automatisch; der P006-Windows-Integrationstest ist eine separate, produktbezogene echte VST3-Prüfung, **keine Behauptung über einen Lab-P74-PASS**
 - PR #2 bleibt bis zur Produkt-Abnahme ein **Draft**, kein Release
 
-Diese Einschränkungen gelten trotz bestandener Steinberg- und P005-Windows-Tests.
+Diese Einschränkungen gelten trotz bestandener Steinberg- und P006-Windows-Tests.
+
+Ausführliche Prüfmatrix: [docs/P006-TEST-MATRIX.md](docs/P006-TEST-MATRIX.md).

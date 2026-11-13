@@ -5,7 +5,7 @@ Kein eingebauter Plugin-Host im Produkt. Der nur unter `tests/vst3_integration.c
 
 ## Drei Windows-Prüffälle
 
-| Prüf-Fall | Samplerate | Audioblock | Note(n) | Velocity | Round Robins | Erwartete WAVs |
+| Prüf-Fall | Samplerate | Audioblock | Note(n) | Velocity | Round Robins | Verifizierte WAVs |
 |---|---:|---:|---|---|---:|---:|
 | P006-A | 44.100 Hz | 64 | 60 | 100 | 8 | 8 |
 | P006-B | 48.000 Hz | 1024 | 60 | 100 | 8 | 8 |
@@ -22,11 +22,19 @@ Für alle Fälle wird die echte VST3-Ereignisliste ausgelesen. Prüfungsumfang:
 
 Jeder Prüf-Fall startet in einem eigenen Prozess und verwendet einen isolierten Zielordner. Damit werden Überbleibsel früherer Tests nicht fälschlich mitgezählt.
 
-## Automatischer CI-Nachweis
+## Automatischer CI-Nachweis – **PASS**
 
-[GitHub Actions – P006 Windows VST3 Integration Matrix](https://github.com/challanger2000/125A-Auto-Sampler-VST3/actions/workflows/windows-vst3.yml)
+[GitHub Actions, erfolgreicher P006-Lauf #43530522001](https://github.com/challanger2000/125A-Auto-Sampler-VST3/actions/runs/43530522001)
 
-Der genaue PASS/FAIL-Status ergibt sich aus dem Workflow. Ein bloßer SDK-Build bedeutet ausdrücklich **noch keinen PASS** der Integrationsmatrix.
+Der geprüfte Code-Commit ist `be33b9f5fde630b10081407937bc4d008d63e8b1`. Alle drei konkreten Integrationstests sind **PASS**:
+
+- 44,1 kHz / Block 64: 8 Note-On / 8 Note-Off / 8 nichtstumme PCM24-WAVs
+- 48 kHz / Block 1024: 8 Note-On / 8 Note-Off / 8 nichtstumme PCM24-WAVs
+- 44,1 kHz / Block 512: 48 Note-On / 48 Note-Off / 48 eindeutig zugeordnete PCM24-WAVs
+- Summe: **64/64 WAVs, 0 verlorene Audioframes**, keine fehlenden, doppelten oder unerwarteten Dateinamen
+- Steinberg-Validator, VSTGUI-HWND-Attach/Detach und C++-Regressionen ebenfalls **PASS**
+
+Das binäre Artefakt heißt `125A-AutoSampler-P006-Win64`. Diese PASS-Aussage bezieht sich ausschließlich auf die beschriebenen nativen Windows-Tests, **nicht** auf Fender Studio Pro oder ASIO-Hardware.
 
 ## Nicht abgedeckt
 - Fender Studio Pro als tatsächlicher Host und seine MIDI-Zwischenspur-Routing-Konfiguration
