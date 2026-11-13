@@ -104,6 +104,59 @@ void testJobBlockEdgeCases() {
     require(t.noteOff==10 && t.captureEnd==30,"correct NoteOn/Off/End edges");
 }
 
+void testAutomaticBatch48Wavs() {
+    a125::JobConfig cfg;
+    cfg.firstNote=60;cfg.lastNote=61;cfg.semitoneStep=1;
+    cfg.velocityLayers=3;cfg.velocities={40,80,120};cfg.roundRobins=8;
+    cfg.holdFrames=80;cfg.tailFrames=120;cfg.gapFrames=15;
+    const auto root=std::filesystem::temp_directory_path()/"125a_p003_batch_regression";
+    std::filesystem::remove_all(root);
+    std::filesystem::create_directory(root);
+    std::size_t files=0;
+    try {
+        std::vector<a125::StereoFrame> current;
+        std::size_t active=0;
+        for(std::uint64_t frame=0;
+            frame<static_cast<std::uint64_t>(cfg.takeCount())*cfg.period();++frame) {
+            const auto capture=a125::locateJobFrame(cfg,frame);
+            if(!capture)continue;
+            const auto& take=capture->take;
+            if(capture->offset==0) {
+                current.clear();active=take.takeIndex;
+            }
+            require(active==take.takeIndex,"do not overlap RR takes");
+            const float level=static_cast<float>(take.velocity)/127.f;
+            const float release=capture->offset<cfg.holdFrames?1.f:
+                1.f-static_cast<float>(capture->offset-cfg.holdFrames)/
+                      static_cast<float>(cfg.tailFrames);
+            const float sample=level*release;
+            current.push_back({sample,-sample*.5f});
+            if(capture->last) {
+                const std::string filename="N"+std::to_string(take.note)+
+                  "_V"+std::to_string(take.velocity)+"_RR"+
+                  (take.roundRobin<10?"0":"")+std::to_string(take.roundRobin)+".wav";
+                const auto processed=a125::trimAndFade(current,{0.0001f,0,0,4});
+                require(!processed.empty(),"non-silent take should export");
+                const auto path=root/filename;
+                require(!std::filesystem::exists(path),"no duplicate RR filenames");
+                a125::writeWav24(path.string(),44100,processed);
+                require(std::filesystem::file_size(path)==44+processed.size()*6,
+                        "truncated 24-bit WAV frame count");
+                ++files;
+            }
+        }
+        require(files==48,"2 MIDI notes * 3 velocity layers * 8 RR = 48 WAVs");
+        std::size_t count=0;
+        for(const auto& entry:std::filesystem::directory_iterator(root))
+            if(entry.path().extension()==".wav")++count;
+        require(count==48,"48 unique WAVs physically present");
+    } catch(...) {
+        std::filesystem::remove_all(root);
+        throw;
+    }
+    std::filesystem::remove_all(root);
+}
+
 void testWavAndTrim() {
     std::vector<a125::StereoFrame> samples(32,{0.f,0.f});
     for(int i=8;i<24;++i) samples[static_cast<std::size_t>(i)]={0.5f,-0.25f};
@@ -131,6 +184,7 @@ int main() {
         testValidation();
         testJobSchedule();
         testJobBlockEdgeCases();
+        testAutomaticBatch48Wavs();
         testWavAndTrim();
         std::cout << "P001 core tests PASSED\n";
         return 0;
