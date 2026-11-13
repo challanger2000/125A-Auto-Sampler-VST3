@@ -62,15 +62,15 @@ jobs:
           $runner = "build-vst3/Release/AutosamplerIntegration.exe"
           if (!(Test-Path $runner)) { throw "AutoSamplerIntegration test executable missing" }
           # Actual dual-VST3 integration. No fake success from standalone core fixtures.
-          foreach ($case in @(
-            @("44100", "64"),
-            @("48000", "1024"),
-            @("44100", "512", "matrix")
-          )) {
-            Write-Host "Native VST3 integration at $($case -join ' ')"
-            & $runner $plugin.FullName @case
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          }
+          Write-Host "Integration: 44.1kHz, block 64, 8 takes"
+          & $runner $plugin.FullName 44100 64
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Write-Host "Integration: 48kHz, block 1024, 8 takes"
+          & $runner $plugin.FullName 48000 1024
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Write-Host "Integration: 44.1kHz, block 512, 48-take velocity/RR matrix"
+          & $runner $plugin.FullName 44100 512 matrix
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Upload VST3 test binary
         if: success()
         uses: actions/upload-artifact@v4
