@@ -303,7 +303,13 @@ int run(const char* vst3path,bool matrix){
             require(std::abs(passL[static_cast<std::size_t>(i)]-
                              audioL[static_cast<std::size_t>(i)])<1.e-7f,
                     "recorder must pass source audio through unchanged");
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        // Throttle periodic batches instead of sleeping on every 64-frame
+        // block (Windows default timer granularity can turn Sleep(1) into
+        // 15ms). The recorder still runs concurrently; any overrun fails QA.
+        if ((start / kBlock) % 8 == 0)
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        else
+            std::this_thread::yield();
     }
     require(noteOns==expectedTakes && noteOffs==expectedTakes &&
             static_cast<int>(noteIDs.size())==expectedTakes,
