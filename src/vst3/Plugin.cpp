@@ -2,6 +2,7 @@
 // A single VST3 bundle exports both components. No third-party VST host.
 #include "core/JobSchedule.h"
 #include "core/SampleProcessing.h"
+#include "base/source/fstreamer.h"
 #include "pluginterfaces/base/ibstream.h"
 #include "pluginterfaces/vst/ivstevents.h"
 #include "pluginterfaces/vst/ivstparameterchanges.h"
@@ -141,6 +142,35 @@ public:
     }
     tresult PLUGIN_API canProcessSampleSize(int32 size) override {
         return size==V::kSample32?Steinberg::kResultTrue:Steinberg::kResultFalse;
+    }
+    tresult PLUGIN_API getState(Steinberg::IBStream* state) override {
+        if(!state) return Steinberg::kResultFalse;
+        Steinberg::IBStreamer io(state,Steinberg::kLittleEndian);
+        if(!io.writeInt32(0x125A0301)) return Steinberg::kResultFalse;
+        // The Run switch is deliberately not persisted: project reopen
+        // must never create WAV files before the user explicitly starts.
+        for(std::size_t i=1;i<values_.size();++i)
+            if(!io.writeDouble(values_[i]))return Steinberg::kResultFalse;
+        return Steinberg::kResultOk;
+    }
+    tresult PLUGIN_API setState(Steinberg::IBStream* state) override {
+        if(!state) return Steinberg::kResultFalse;
+        Steinberg::IBStreamer io(state,Steinberg::kLittleEndian);
+        Steinberg::int32 version=0;
+        if(!io.readInt32(version) || version!=0x125A0301)
+            return Steinberg::kResultFalse;
+        std::array<double,kParamCount> loaded=values_;
+        loaded[0]=0.;
+        for(std::size_t i=1;i<loaded.size();++i) {
+            if(!io.readDouble(loaded[i]) || !std::isfinite(loaded[i]) ||
+               loaded[i]<0. || loaded[i]>1.) return Steinberg::kResultFalse;
+        }
+        cancel(); run_=false;
+        values_=loaded;
+        for(std::size_t i=0;i<values_.size();++i)
+            SingleComponentEffect::setParamNormalized(
+                kRunParam+static_cast<V::ParamID>(i),values_[i]);
+        return Steinberg::kResultOk;
     }
     tresult PLUGIN_API setActive(TBool active) override {
         if(!active) cancel();
