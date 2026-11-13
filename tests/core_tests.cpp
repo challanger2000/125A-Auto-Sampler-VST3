@@ -158,7 +158,7 @@ void testStopAndJumpNoteRecovery() {
     require(tracker.pending() && tracker.pending()->pitch==60 &&
             tracker.pending()->noteId==101, "note identity retained");
     tracker.acceptedOff(100);
-    require(tracker.pending(), "wrong note ID must not clear sounding note");
+    require(tracker.pending().has_value(), "wrong note ID must not clear sounding note");
     // A loop or transport jump no longer relies on playhead position.
     tracker.acceptedOff(101);
     require(!tracker.pending(), "matching Note-Off clears active voice");
