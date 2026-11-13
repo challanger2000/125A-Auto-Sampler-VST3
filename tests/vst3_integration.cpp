@@ -213,6 +213,67 @@ int run(const char* vst3path){
             "cannot deactivate MIDI generator");
     generator.active=false;
 
+    // Prove actual Note-Off recovery on transport stop, even if the host
+    // has already moved the playhead to an unrelated position.
+    require(generator.component->setActive(true)==kResultOk,
+            "cannot reactivate MIDI generator for stop regression");
+    generator.active=true;
+    bool recovered=false;
+    for(std::int64_t at=0;at<24000 && !recovered;at+=kBlock) {
+        EventList outEvents(8);
+        ProcessContext running{};
+        running.state=ProcessContext::kPlaying;
+        running.sampleRate=kRate;
+        running.projectTimeSamples=at;
+        ProcessData data{};
+        data.processMode=kRealtime;
+        data.symbolicSampleSize=kSample32;
+        data.numSamples=kBlock;
+        data.numOutputs=1;data.outputs=&genOut;
+        data.outputEvents=&outEvents;
+        data.processContext=&running;
+        require(generator.processor->process(data)==kResultOk,
+                "MIDI generator could not restart");
+        for(int32 i=0;i<outEvents.getEventCount();++i) {
+            Event on{};
+            require(outEvents.getEvent(i,on)==kResultOk,"cannot read restart event");
+            if(on.type!=Event::kNoteOnEvent)continue;
+            require(on.noteOn.pitch==60,"restart pitch mismatch");
+            EventList stoppedEvents(8);
+            ParameterChanges stopValues(1);
+            int32 index=0,point=0;
+            auto* change=stopValues.addParameterData(1000,index);
+            require(change && change->addPoint(0,0.,point)==kResultOk,
+                    "cannot request STOP via plugin parameter");
+            ProcessContext stopped{};
+            stopped.sampleRate=kRate;
+            stopped.projectTimeSamples=-12345; // intentionally unrelated playhead
+            ProcessData offData{};
+            offData.processMode=kRealtime;
+            offData.symbolicSampleSize=kSample32;
+            offData.numSamples=kBlock;
+            offData.numOutputs=1;offData.outputs=&genOut;
+            offData.outputEvents=&stoppedEvents;
+            offData.inputParameterChanges=&stopValues;
+            offData.processContext=&stopped;
+            require(generator.processor->process(offData)==kResultOk,
+                    "STOP callback failed");
+            require(stoppedEvents.getEventCount()==1,
+                    "STOP must send one real pending Note-Off");
+            Event off{};
+            require(stoppedEvents.getEvent(0,off)==kResultOk &&
+                    off.type==Event::kNoteOffEvent &&
+                    off.noteOff.pitch==60 && off.noteOff.noteId==on.noteOn.noteId,
+                    "STOP note-off must match accepted Note-On by ID");
+            recovered=true;
+            break;
+        }
+    }
+    require(recovered,"no restart Note-On / STOP note-off observed");
+    require(generator.component->setActive(false)==kResultOk,
+            "cannot deactivate generator after STOP test");
+    generator.active=false;
+
     const auto output=base/"Documents"/"125A AutoSampler";
     require(std::filesystem::exists(output),"recorder created no run folder");
     std::size_t wavs=0,reports=0;
