@@ -5,6 +5,7 @@
 #include "core/SampleProcessing.h"
 #include "base/source/fstreamer.h"
 #include "pluginterfaces/base/ibstream.h"
+#include "pluginterfaces/base/ustring.h"
 #include "pluginterfaces/vst/ivstevents.h"
 #include "pluginterfaces/vst/ivstparameterchanges.h"
 #include "pluginterfaces/vst/ivstprocesscontext.h"
@@ -19,6 +20,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <cstdio>
 #include <filesystem>
 #include <limits>
 #include <string>
@@ -138,11 +140,11 @@ public:
            V::ParameterInfo::kCanAutomate,kTailParam);
         parameters.addParameter(STR16("Gap (0.05-0.5s)"),nullptr,0,kDefaultGap,
            V::ParameterInfo::kCanAutomate,kGapParam);
-        parameters.addParameter(STR16("Velocity 1 (1-127)"),nullptr,126,100./127.,
+        parameters.addParameter(STR16("Velocity 1 (1-127)"),nullptr,126,99./126.,
            V::ParameterInfo::kCanAutomate,kVelocity1Param);
-        parameters.addParameter(STR16("Velocity 2 (1-127)"),nullptr,126,60./127.,
+        parameters.addParameter(STR16("Velocity 2 (1-127)"),nullptr,126,59./126.,
            V::ParameterInfo::kCanAutomate,kVelocity2Param);
-        parameters.addParameter(STR16("Velocity 3 (1-127)"),nullptr,126,120./127.,
+        parameters.addParameter(STR16("Velocity 3 (1-127)"),nullptr,126,119./126.,
            V::ParameterInfo::kCanAutomate,kVelocity3Param);
         return Steinberg::kResultOk;
     }
@@ -321,7 +323,7 @@ private:
     }
     std::array<std::atomic<double>,kParamCount> values_{
         0.,60./127.,60./127.,0.,7./15.,0.,kDefaultHold,kDefaultTail,kDefaultGap,
-        100./127.,60./127.,120./127.};
+        99./126.,59./126.,119./126.};
     a125::JobConfig config_{};
     double sampleRate_=44100.;
     bool run_=false,activeRun_=false;
