@@ -2,6 +2,7 @@
 #include "core/SampleProcessing.h"
 #include "core/JobSchedule.h"
 #include "core/JobParameters.h"
+#include "core/CaptureIntegrity.h"
 #include <array>
 #include <filesystem>
 #include <fstream>
@@ -149,6 +150,65 @@ void testJobBlockEdgeCases() {
     require(t.noteOff==10 && t.captureEnd==30,"correct NoteOn/Off/End edges");
 }
 
+void testCaptureIntegrityFailClosed() {
+    a125::TakeIntegrity gate;
+    for(std::uint64_t offset=0;offset<17;++offset) {
+        const auto d=gate.consume({1,0,offset,17,offset==16});
+        require(d.acceptFrame, "contiguous capture should be accepted");
+        require(d.completed==(offset==16), "only complete take is valid");
+        require(!d.rejected && !d.abandonedPrevious, "good take never rejected");
+    }
+    require(!gate.abandon(), "completed take has no residual state");
+    {
+        a125::TakeIntegrity g;
+        g.consume({1,0,0,4,false});
+        const auto d=g.consume({1,0,2,4,false});
+        require(!d.acceptFrame && !d.completed, "missing middle frame invalidates take");
+        const auto end=g.consume({1,0,3,4,true});
+        require(end.rejected && !end.completed, "incomplete take cannot be WAV");
+    }
+    {
+        a125::TakeIntegrity g;
+        g.consume({1,0,0,2,false});
+        const auto d=g.consume({1,1,0,2,false});
+        require(d.abandonedPrevious, "missing final frame must be counted");
+        const auto end=g.consume({1,1,1,2,true});
+        require(end.completed, "next independent take can complete");
+    }
+    {
+        a125::TakeIntegrity g;
+        g.consume({1,0,0,3,false});
+        auto d=g.consume({1,0,1,3,true});
+        require(d.rejected && !d.completed, "premature last marker");
+    }
+    {
+        a125::TakeIntegrity g;
+        g.consume({1,0,0,3,false});
+        auto d=g.consume({1,0,1,4,false});
+        require(!d.acceptFrame, "changed capture duration rejects sample");
+        d=g.consume({1,0,2,3,true});
+        require(d.rejected, "changed duration cannot export");
+    }
+    {
+        a125::TakeIntegrity g;
+        g.consume({1,0,0,3,false});
+        const auto d=g.consume({2,0,0,1,true});
+        require(d.abandonedPrevious && d.completed,
+                "session restart must not finish old capture");
+    }
+    {
+        a125::TakeIntegrity g;
+        g.consume({1,0,0,100,false});
+        require(g.abandon(), "shutdown must detect unfinished capture");
+        require(!g.abandon(), "do not double count interruption");
+    }
+    {
+        a125::TakeIntegrity g;
+        auto d=g.consume({1,0,0,0,true});
+        require(d.rejected && !d.completed, "zero-length take is invalid");
+    }
+}
+
 void testAutomaticBatch48Wavs() {
     a125::JobConfig cfg;
     cfg.firstNote=60;cfg.lastNote=61;cfg.semitoneStep=1;
@@ -231,6 +291,7 @@ int main() {
         testEditableVelocitiesAndRanges();
         testJobSchedule();
         testJobBlockEdgeCases();
+        testCaptureIntegrityFailClosed();
         testAutomaticBatch48Wavs();
         testWavAndTrim();
         std::cout << "P001 core tests PASSED\n";
