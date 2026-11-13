@@ -1,27 +1,34 @@
 # 125A Auto Sampler VST3
 
-Windows-x64-VST3 für automatisches Sampling von Instrumenten in **Fender Studio Pro**. Das Quell-VST wird **ausschließlich von der DAW gehostet**, nicht vom AutoSampler.
+**Windows-x64-VST3 zum automatischen Sampeln bereits in Fender Studio Pro geladener Instrumente.**
 
-## P004 – Entwicklerstand
+**Kein eigener VST-Host im Produkt.** Das Quellinstrument bleibt in der DAW. Zwei 125A-Plugin-Klassen bilden das System:
 
-**Zwei Plugin-Klassen im selben VST3-Bundle:**
-- `125A AutoSampler MIDI`: autonomer MIDI-Notengenerator mit eigenem dunklem VSTGUI-Bedienfeld
-- `125A AutoSampler Recorder`: Audio-Insert für WAV-Aufnahmen
+- **125A AutoSampler MIDI:** generiert Note-On/Off, Notenbereiche, Velocity-Stufen und Round Robins; eigene anthrazitfarbene VSTGUI-Oberfläche mit Start/Stop und Live-Zählern.
+- **125A AutoSampler Recorder:** letzter Audio-Insert auf dem Quellinstrument, sammelt dessen echte Audiosamples und schreibt separate WAVs auf einem Hintergrundthread.
 
-Einstellbar sind: Notenbereich, Notenabstand (Halbtöne), 1–16 Round Robins, 1–3 Velocity-Layer mit **individuell einstellbaren MIDI-Velocities 1–127**, Notenlänge, Release-Aufnahmezeit und Pausenlänge.
+## P005 – nachweislich implementiert
 
-Der Recorder erzeugt getrennte **Stereo-24-Bit-WAV-Dateien**, erkennt Stille, trimmt die Samples und fügt Fades hinzu. WAV-Export erfolgt auf einem Hintergrundthread; die Aufnahme-Daten kommen aus einem lockfreien Ringpuffer.
+- MIDI-Noten 0–127, Schrittweite 1–12 Halbtöne
+- 1–3 frei einstellbare Velocity-Layer (Werte 1–127), 1–16 Round Robins
+- Notenlänge 0,25–8 s, Release-Capture 0,25–10 s, Pausen 0,05–0,5 s
+- 24-Bit-Stereo-WAV, Stille-Trim, kurze Fades, keine Normalisierung
+- Eindeutiger Ordner pro Sampling-Durchlauf, automatisch benannte WAVs
+- **Fail-closed Audioaufnahme:** verlorene, lückenhafte, abgebrochene oder nicht vollständige Takes werden NICHT als gültige WAVs ausgegeben
+- **RUN-REPORT.csv** je Lauf mit Einzelresultaten und Zusammenfassung
+- Live-Zähler im Editor: Takes, fertige WAVs, Rejects, Silence, Exportfehler und verlorene Audioframes
+- Projekt-Speichern/Laden; Start wird beim Projekt-Reload bewusst deaktiviert
+- Note-Off mit korrekter Note-ID bei Stop und Song-Positionssprüngen
 
-Ein Aufnahmelauf erhält einen eigenen Ordner, damit keine alten Samples überschrieben werden. Bei Projekt-Reopen bleiben Parameter erhalten, aber **Run startet nicht automatisch**.
+## P005 – unabhängig geprüfte Technik
 
-## Teststatus
+Ein privater, **nicht ausgelieferter Windows-Test-Host** lädt beide **tatsächlichen VST3-Klassen** und speist ein synthetisches Instrumentensignal ein.
 
-- Windows-x64-VST3-Build mit offiziellem Steinberg-SDK.
-- Steinberg-Validator prüft beide Plugin-Klassen.
-- C++-Tests prüfen Zeitplan, Note-On/Off, Release-Ende, alle 127 Velocity-Werte und den simulierten Export von **48 eindeutigen WAV-Dateien** (2 Noten × 3 Velocity × 8 RR).
-- Die erste dunkle VSTGUI-Oberfläche ist im Quellcode. **Ihre korrekte Darstellung in Fender Studio Pro ist noch nicht praktisch geprüft.**
-- **Offen:** MIDI-Routing und echte Aufnahme eines Quell-VSTs in Fender Studio Pro; eigener Recorder-Status, Plugin-Test-Lab-Multi-Class-Test und abschließende UI-/ASIO-Praxisabnahme.
+**Ergebnis:** acht echte VST3-Note-On, acht Note-Off, acht voneinander getrennte hörbare Stereo-24-Bit-WAVs, 0 verworfene Takes und 0 verlorene Frames. Zusätzlich wurden der Stop-Test mit springender Songposition sowie das echte Öffnen/Schließen der VSTGUI-Oberfläche auf Windows erfolgreich ausgeführt. Der offizielle Steinberg-Validator, die GUI-Paketprüfung und sämtliche Core-Regressionen sind erfolgreich.
 
-Ausführlicher Ablauf: [START-HERE.md](START-HERE.md). Entwicklungs-PR: [#2](https://github.com/challanger2000/125A-Auto-Sampler-VST3/pull/2).
+- [Erfolgreicher Windows-P005-Build samt VST3-Artefakt](https://github.com/challanger2000/125A-Auto-Sampler-VST3/actions/runs/43528728186)
+- [START-HERE: Installations- und Prüfanleitung](START-HERE.md)
+- [P005: Nachweis und Abnahmegrenzen](docs/P005-VALIDATION.md)
+- [PR #2](https://github.com/challanger2000/125A-Auto-Sampler-VST3/pull/2)
 
-**P004 ist ein Entwicklungsprototyp, keine vollständige Release-Freigabe.**
+**Noch nicht als fertiges Produkt freigegeben.** Die vollständige Weiterleitung MIDI → Fremd-VST → Recorder innerhalb **Fender Studio Pro** sowie ASIO-Hardware und die finale Bedienung im echten Song sind noch nicht abgenommen. Der synthetische Windows-Test ist kein Klangtest mit EVM Isotope. P005 bleibt ein Entwicklungsstand.
