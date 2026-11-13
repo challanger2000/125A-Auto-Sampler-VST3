@@ -69,6 +69,7 @@ void testWavAndTrim() {
     require(std::string(data.data(),4)=="RIFF","missing RIFF");
     require(std::string(data.data()+8,4)=="WAVE","missing WAVE");
     require(std::string(data.data()+36,4)=="data","missing data");
+    in.close(); // Windows prevents deleting a file held by an open reader.
     std::filesystem::remove(file);
     require(a125::trimAndFade(std::vector<a125::StereoFrame>(16,{0.f,0.f}),{}).empty(),
             "silence should not create a phantom WAV");
