@@ -1,4 +1,4 @@
-name: P003 Windows VST3 build
+name: P004 Windows VST3 and GUI validation
 on:
   push:
     branches: ['develop/**']
@@ -26,6 +26,22 @@ jobs:
         run: cmake -S . -B build-vst3 -G "Visual Studio 17 2022" -A x64 -DBUILD_VST3=ON -DBUILD_VST3_VALIDATOR=ON -DBUILD_TESTING=ON -DVST3_SDK_ROOT="$PWD/_sdk" -DSMTG_CREATE_PLUGIN_LINK=OFF
       - name: Build
         run: cmake --build build-vst3 --config Release --target AutosamplerVST3 validator --parallel
+      - name: Validate packaged VSTGUI
+        shell: pwsh
+        run: |
+          $bundle = Get-ChildItem -Path "build-vst3/VST3/Release" -Directory -Filter "AutosamplerVST3.vst3" | Select-Object -First 1
+          if (-not $bundle) { throw "VST3 bundle missing" }
+          $resource = Get-ChildItem -Path $bundle.FullName -Recurse -File -Filter "autosampler.uidesc" | Select-Object -First 1
+          if (-not $resource) { throw "Native GUI description not packaged" }
+          [xml]$gui = Get-Content -LiteralPath $resource.FullName -Raw
+          $tags = @($gui.'vstgui-ui-description'.'control-tags'.'control-tag')
+          if ($tags.Count -ne 12) { throw "Expected 12 GUI parameter tags, got $($tags.Count)" }
+          $actual = @($tags | ForEach-Object { [int]$_.tag } | Sort-Object)
+          $expected = @(1000..1011)
+          if (@(Compare-Object -ReferenceObject $expected -DifferenceObject $actual).Count -ne 0) { throw "GUI parameter IDs differ from VST3" }
+          $controls = @($gui.'vstgui-ui-description'.template.view | Where-Object { $_.'control-tag' -eq "Run" })
+          if ($controls.Count -ne 1) { throw "Run button must be present" }
+          Write-Host "VSTGUI XML, 12 parameter tags, Run control and bundled resource: PASS"
       - name: Official VST3 validator
         shell: pwsh
         run: |
@@ -42,6 +58,6 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: 125A-AutoSampler-P003-Win64
+          name: 125A-AutoSampler-P004-Win64
           path: build-vst3/VST3/Release/*.vst3
           if-no-files-found: error
