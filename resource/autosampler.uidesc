@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<vstgui-ui-description version="1">
+  <colors>
+    <color name="Dark" rgba="#191C21FF"/>
+    <color name="Panel" rgba="#282D34FF"/>
+    <color name="Track" rgba="#414B56FF"/>
+    <color name="Frame" rgba="#59616DFF"/>
+    <color name="Accent" rgba="#B69D70FF"/>
+    <color name="Silver" rgba="#E4E5E7FF"/>
+    <color name="Muted" rgba="#9FAAB5FF"/>
+  </colors>
+  <template name="view" class="CViewContainer" origin="0, 0" size="686, 450" background-color="Dark" background-color-draw-style="filled" mouse-enabled="true" transparent="false">
+    <view class="CViewContainer" origin="14, 16" size="656, 78" background-color="Panel" background-color-draw-style="filled" transparent="false" mouse-enabled="false"/>
+    <view class="CTextLabel" origin="29, 22" size="435, 34" title="125A   AUTO SAMPLER" font="~ NormalFontVeryBig" font-color="Silver" back-color="Panel" frame-color="Panel" frame-width="0" transparent="true" mouse-enabled="false" text-alignment="left"/>
+    <view class="CTextLabel" origin="31, 56" size="447, 26" title="MIDI GENERATOR  /  WINDOWS VST3" font="~ NormalFont" font-color="Muted" back-color="Panel" frame-color="Panel" frame-width="0" transparent="true" mouse-enabled="false" text-alignment="left"/>
+    <view class="CTextButton" control-tag="Run" origin="516, 31" size="135, 48" title="START / STOP" font="~ NormalFont" text-color="Silver" text-color-highlighted="Dark" frame-color="Accent" frame-color-highlighted="Accent" frame-width="1" round-radius="7" gradient="Idle" gradient-highlighted="Active" kick-style="false" mouse-enabled="true" wants-focus="true" />
+    <view class="CTextLabel" origin="22, 111" size="190, 18" title="FIRST MIDI NOTE" font="~ NormalFont" font-color="Muted" back-color="Dark" frame-color="Dark" frame-width="0" transparent="true" mouse-enabled="false" text-alignment="left"/>
+    <view class="CSlider" control-tag="P1001" origin="22, 135" size="151, 22" orientation="horizontal" mode="free click" draw-back="true" draw-back-color="Track" draw-frame="true" draw-frame-color="Panel" draw-value="true" draw-value-color="Accent" draw-value-from-center="false" max-value="1" min-value="0" default-value="0" mouse-enabled="true" transparent="false" wheel-inc-value="0.01" zoom-factor="10" />
+    <view class="CTextEdit" control-tag="P1001" origin="179, 133" size="47, 25" font="~ NormalFont" font-color="Silver" back-color="Panel" frame-color="Frame" frame-width="1" text-alignment="center" transparent="false" mouse-enabled="true" min-value="0" max-value="1" value-precision="2" />
+    <view class="CTextLabel" origin="240, 111" size="190, 18" title="LAST MIDI NOTE" font="~ NormalFont" font-color="Muted" back-color="Dark" frame-color="Dark" frame-width="0" transparent="true" mouse-enabled="false" text-alignment="left"/>
+    <view class="CSlider" control-tag="P1002" origin="240, 135" size="151, 22" orientation="horizontal" mode="free click" draw-back="true" draw-back-color="Track" draw-frame="true" draw-frame-color="Panel" draw-value="true" draw-value-color="Accent" draw-value-from-center="false" max-value="1" min-value="0" default-value="0" mouse-enabled="true" transparent="false" wheel-inc-value="0.01" zoom-factor="10" />
+    <view class="CTextEdit" control-tag="P1002" origin="397, 133" size="47, 25" font="~ NormalFont" font-color="Silver" back-color="Panel" frame-color="Frame" frame-width="1" text-alignment="center" transparent="false" mouse-enabled="true" min-value="0" max-value="1" value-precision="2" />
+    <view class="CTextLabel" origin="458, 111" size="190, 18" title="NOTE STEP" font="~ NormalFont" font-color="Muted" back-color="Dark" frame-color="Dark" frame-width="0" transparent="true" mouse-enabled="false" text-alignment="left"/>
+    <view class="CSlider" control-tag="P1003" origin="458, 135" size="151, 22" orientation="horizontal" mode="free click" draw-back="true" draw-back-color="Track" draw-frame="true" draw-frame-color="Panel" draw-value="true" draw-value-color="Accent" draw-value-from-center="false" max-value="1" min-value="0" default-value="0" mouse-enabled="true" transparent="false" wheel-inc-value="0.01" zoom-factor="10" />
+    <view class="CTextEdit" control-tag="P1003" origin="615, 133" size="47, 25" font="~ NormalFont" font-color="Silver" back-color="Panel" frame-color="Frame" frame-width="1" text-alignment="center" transparent="false" mouse-enabled="true" min-value="0" max-value="1" value-precision="2" />
+    <view class="CTextLabel" origin="22, 181" size="190, 18" title="ROUND ROBINS" font="~ NormalFont" font-color="Muted" back-color="Dark" frame-color="Dark" frame-width="0" transparent="true" mouse-enabled="false" text-alignment="left"/>
+    <view class="CSlider" control-tag="P1004" origin="22, 205" size="151, 22" orientation="horizontal" mode="free click" draw-back="true" draw-back-color="Track" draw-frame="true" draw-frame-color="Panel" draw-value="true" draw-value-color="Accent" draw-value-from-center="false" max-value="1" min-value="0" default-value="0" mouse-enabled="true" transparent="false" wheel-inc-value="0.01" zoom-factor="10" />
+    <view class="CTextEdit" control-tag="P1004" origin="179, 203" size="47, 25" font="~ NormalFont" font-color="Silver" back-color="Panel" frame-color="Frame" frame-width="1" text-alignment="center" transparent="false" mouse-enabled="true" min-value="0" max-value="1" value-precision="2" />
+    <view class="CTextLabel" origin="240, 181" size="190, 18" title="VELOCITY LAYERS" font="~ NormalFont" font-color="Muted" back-color="Dark" frame-color="Dark" frame-width="0" transparent="true" mouse-enabled="false" text-alignment="left"/>
+    <view class="CSlider" control-tag="P1005" origin="240, 205" size="151, 22" orientation="horizontal" mode="free click" draw-back="true" draw-back-color="Track" draw-frame="true" draw-frame-color="Panel" draw-value="true" draw-value-color="Accent" draw-value-from-center="false" max-value="1" min-value="0" default-value="0" mouse-enabled="true" transparent="false" wheel-inc-value="0.01" zoom-factor="10" />
+    <view class="CTextEdit" control-tag="P1005" origin="397, 203" size="47, 25" font="~ NormalFont" font-color="Silver" back-color="Panel" frame-color="Frame" frame-width="1" text-alignment="center" transparent="false" mouse-enabled="true" min-value="0" max-value="1" value-precision="2" />
+    <view class="CTextLabel" origin="458, 181" size="190, 18" title="VELOCITY 1" font="~ NormalFont" font-color="Muted" back-color="Dark" frame-color="Dark" frame-width="0" transparent="true" mouse-enabled="false" text-alignment="left"/>
+    <view class="CSlider" control-tag="P1009" origin="458, 205" size="151, 22" orientation="horizontal" mode="free click" draw-back="true" draw-back-color="Track" draw-frame="true" draw-frame-color="Panel" draw-value="true" draw-value-color="Accent" draw-value-from-center="false" max-value="1" min-value="0" default-value="0" mouse-enabled="true" transparent="false" wheel-inc-value="0.01" zoom-factor="10" />
+    <view class="CTextEdit" control-tag="P1009" origin="615, 203" size="47, 25" font="~ NormalFont" font-color="Silver" back-color="Panel" frame-color="Frame" frame-width="1" text-alignment="center" transparent="false" mouse-enabled="true" min-value="0" max-value="1" value-precision="2" />
+    <view class="CTextLabel" origin="22, 251" size="190, 18" title="VELOCITY 2" font="~ NormalFont" font-color="Muted" back-color="Dark" frame-color="Dark" frame-width="0" transparent="true" mouse-enabled="false" text-alignment="left"/>
+    <view class="CSlider" control-tag="P1010" origin="22, 275" size="151, 22" orientation="horizontal" mode="free click" draw-back="true" draw-back-color="Track" draw-frame="true" draw-frame-color="Panel" draw-value="true" draw-value-color="Accent" draw-value-from-center="false" max-value="1" min-value="0" default-value="0" mouse-enabled="true" transparent="false" wheel-inc-value="0.01" zoom-factor="10" />
+    <view class="CTextEdit" control-tag="P1010" origin="179, 273" size="47, 25" font="~ NormalFont" font-color="Silver" back-color="Panel" frame-color="Frame" frame-width="1" text-alignment="center" transparent="false" mouse-enabled="true" min-value="0" max-value="1" value-precision="2" />
+    <view class="CTextLabel" origin="240, 251" size="190, 18" title="VELOCITY 3" font="~ NormalFont" font-color="Muted" back-color="Dark" frame-color="Dark" frame-width="0" transparent="true" mouse-enabled="false" text-alignment="left"/>
+    <view class="CSlider" control-tag="P1011" origin="240, 275" size="151, 22" orientation="horizontal" mode="free click" draw-back="true" draw-back-color="Track" draw-frame="true" draw-frame-color="Panel" draw-value="true" draw-value-color="Accent" draw-value-from-center="false" max-value="1" min-value="0" default-value="0" mouse-enabled="true" transparent="false" wheel-inc-value="0.01" zoom-factor="10" />
+    <view class="CTextEdit" control-tag="P1011" origin="397, 273" size="47, 25" font="~ NormalFont" font-color="Silver" back-color="Panel" frame-color="Frame" frame-width="1" text-alignment="center" transparent="false" mouse-enabled="true" min-value="0" max-value="1" value-precision="2" />
+    <view class="CTextLabel" origin="458, 251" size="190, 18" title="NOTE HOLD" font="~ NormalFont" font-color="Muted" back-color="Dark" frame-color="Dark" frame-width="0" transparent="true" mouse-enabled="false" text-alignment="left"/>
+    <view class="CSlider" control-tag="P1006" origin="458, 275" size="151, 22" orientation="horizontal" mode="free click" draw-back="true" draw-back-color="Track" draw-frame="true" draw-frame-color="Panel" draw-value="true" draw-value-color="Accent" draw-value-from-center="false" max-value="1" min-value="0" default-value="0" mouse-enabled="true" transparent="false" wheel-inc-value="0.01" zoom-factor="10" />
+    <view class="CTextEdit" control-tag="P1006" origin="615, 273" size="47, 25" font="~ NormalFont" font-color="Silver" back-color="Panel" frame-color="Frame" frame-width="1" text-alignment="center" transparent="false" mouse-enabled="true" min-value="0" max-value="1" value-precision="2" />
+    <view class="CTextLabel" origin="22, 321" size="190, 18" title="RELEASE CAPTURE" font="~ NormalFont" font-color="Muted" back-color="Dark" frame-color="Dark" frame-width="0" transparent="true" mouse-enabled="false" text-alignment="left"/>
+    <view class="CSlider" control-tag="P1007" origin="22, 345" size="151, 22" orientation="horizontal" mode="free click" draw-back="true" draw-back-color="Track" draw-frame="true" draw-frame-color="Panel" draw-value="true" draw-value-color="Accent" draw-value-from-center="false" max-value="1" min-value="0" default-value="0" mouse-enabled="true" transparent="false" wheel-inc-value="0.01" zoom-factor="10" />
+    <view class="CTextEdit" control-tag="P1007" origin="179, 343" size="47, 25" font="~ NormalFont" font-color="Silver" back-color="Panel" frame-color="Frame" frame-width="1" text-alignment="center" transparent="false" mouse-enabled="true" min-value="0" max-value="1" value-precision="2" />
+    <view class="CTextLabel" origin="240, 321" size="190, 18" title="GAP" font="~ NormalFont" font-color="Muted" back-color="Dark" frame-color="Dark" frame-width="0" transparent="true" mouse-enabled="false" text-alignment="left"/>
+    <view class="CSlider" control-tag="P1008" origin="240, 345" size="151, 22" orientation="horizontal" mode="free click" draw-back="true" draw-back-color="Track" draw-frame="true" draw-frame-color="Panel" draw-value="true" draw-value-color="Accent" draw-value-from-center="false" max-value="1" min-value="0" default-value="0" mouse-enabled="true" transparent="false" wheel-inc-value="0.01" zoom-factor="10" />
+    <view class="CTextEdit" control-tag="P1008" origin="397, 343" size="47, 25" font="~ NormalFont" font-color="Silver" back-color="Panel" frame-color="Frame" frame-width="1" text-alignment="center" transparent="false" mouse-enabled="true" min-value="0" max-value="1" value-precision="2" />
+    <view class="CTextLabel" origin="21, 409" size="642, 30" title="SOURCE INSTRUMENT: SET MIDI INPUT IN DAW   |   RECORDER: LAST INSERT" font="~ NormalFont" font-color="Muted" back-color="Dark" frame-color="Dark" frame-width="0" transparent="true" mouse-enabled="false" text-alignment="center"/>
+  </template>
+  <control-tags>
+    <control-tag name="Run" tag="1000"/>
+    <control-tag name="P1001" tag="1001"/>
+    <control-tag name="P1002" tag="1002"/>
+    <control-tag name="P1003" tag="1003"/>
+    <control-tag name="P1004" tag="1004"/>
+    <control-tag name="P1005" tag="1005"/>
+    <control-tag name="P1009" tag="1009"/>
+    <control-tag name="P1010" tag="1010"/>
+    <control-tag name="P1011" tag="1011"/>
+    <control-tag name="P1006" tag="1006"/>
+    <control-tag name="P1007" tag="1007"/>
+    <control-tag name="P1008" tag="1008"/>
+  </control-tags>
+  <gradients>
+    <gradient name="Idle">
+      <color-stop rgba="#353B43FF" start="0"/>
+      <color-stop rgba="#23272DFF" start="1"/>
+    </gradient>
+    <gradient name="Active">
+      <color-stop rgba="#D9C397FF" start="0"/>
+      <color-stop rgba="#B69D70FF" start="1"/>
+    </gradient>
+  </gradients>
+</vstgui-ui-description>
