@@ -53,4 +53,23 @@ if(BUILD_VST3)
     if(MSVC)
         target_compile_options(AutosamplerVST3 PRIVATE /W4 /permissive-)
     endif()
+    if(BUILD_TESTING AND WIN32)
+        # The QA host is a private test executable. It never ships inside
+        # the VST3 bundle and never hosts any customer VST instruments.
+        add_library(AutosamplerQAWinModule OBJECT
+            "${VST3_SDK_ROOT}/public.sdk/source/vst/hosting/module_win32.cpp")
+        set_target_properties(AutosamplerQAWinModule PROPERTIES
+            CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
+        target_compile_definitions(AutosamplerQAWinModule PRIVATE NOMINMAX _CRT_SECURE_NO_WARNINGS)
+        target_link_libraries(AutosamplerQAWinModule PRIVATE sdk_hosting sdk_common base pluginterfaces)
+
+        add_executable(AutosamplerIntegration tests/vst3_integration.cpp)
+        target_compile_features(AutosamplerIntegration PRIVATE cxx_std_23)
+        target_compile_definitions(AutosamplerIntegration PRIVATE NOMINMAX _CRT_SECURE_NO_WARNINGS)
+        target_link_libraries(AutosamplerIntegration PRIVATE
+            AutosamplerQAWinModule sdk_hosting sdk_common base pluginterfaces)
+        if(MSVC)
+            target_compile_options(AutosamplerIntegration PRIVATE /W4 /permissive- /utf-8)
+        endif()
+    endif()
 endif()
