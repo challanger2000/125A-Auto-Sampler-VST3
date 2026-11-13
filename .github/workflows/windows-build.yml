@@ -1,0 +1,30 @@
+name: P001 Windows VST3
+on:
+  push:
+    branches: [main, 'develop/**']
+  pull_request:
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checkout Steinberg VST3 SDK (pinned)
+        uses: actions/checkout@v4
+        with:
+          repository: steinbergmedia/vst3sdk
+          ref: 3cdf9ca5d1f5b1b21e0a86832aa4abe55607bd96
+          path: third_party/vst3sdk
+          submodules: recursive
+      - name: Configure
+        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DBUILD_TESTING=ON
+      - name: Build
+        run: cmake --build build --config Release --parallel 4
+      - name: DSP tests
+        run: ctest --test-dir build -C Release --output-on-failure
+      - name: Publish test artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: 125A-Digital-Bass-P001-Windows-x64
+          path: build/**/*.vst3
+          if-no-files-found: error
