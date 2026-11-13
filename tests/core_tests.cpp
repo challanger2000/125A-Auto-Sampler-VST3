@@ -1,5 +1,6 @@
 #include "core/SamplingPlan.h"
 #include "core/SampleProcessing.h"
+#include "core/JobSchedule.h"
 #include <array>
 #include <filesystem>
 #include <fstream>
@@ -55,6 +56,54 @@ void testValidation() {
     cfg.roundRobins=8; cfg.velocities={0};
     require(throws([&]{(void)a125::makePlan(cfg);}),"velocity zero must reject");
 }
+void testJobSchedule() {
+    a125::JobConfig cfg;
+    cfg.firstNote=48; cfg.lastNote=52; cfg.semitoneStep=2;
+    cfg.roundRobins=8; cfg.velocityLayers=3;
+    cfg.velocities={40,80,120};
+    cfg.holdFrames=11; cfg.tailFrames=7; cfg.gapFrames=5;
+    require(cfg.valid(), "job configuration must be valid");
+    require(cfg.noteCount()==3, "C3 D3 E3 notes");
+    require(cfg.takeCount()==72, "3 notes * 3 velocities * 8 RR");
+    for(std::size_t i=0;i<cfg.takeCount();++i) {
+        const auto t=a125::jobTake(cfg,i);
+        const auto r=a125::locateJobFrame(cfg,t.start);
+        require(r.has_value() && r->take.takeIndex==i &&
+                r->take.note==t.note && r->take.velocity==t.velocity &&
+                r->take.roundRobin==t.roundRobin && r->offset==0,
+                "job start must resolve to its exact note/velocity/RR");
+        const auto off=a125::locateJobFrame(cfg,t.noteOff);
+        require(off && off->take.takeIndex==i && off->offset==cfg.holdFrames,
+                "release must start exactly at note-off");
+        const auto last=a125::locateJobFrame(cfg,t.captureEnd-1);
+        require(last && last->last, "last frame must close this take");
+        require(!a125::locateJobFrame(cfg,t.captureEnd),
+                "inter-take gap must never be recorded");
+    }
+    require(!a125::locateJobFrame(cfg,
+        static_cast<std::uint64_t>(cfg.takeCount())*cfg.period()),
+        "end-of-job must not generate a phantom take");
+    require(a125::jobTake(cfg,0).roundRobin==1 &&
+            a125::jobTake(cfg,7).roundRobin==8 &&
+            a125::jobTake(cfg,8).velocity==80 &&
+            a125::jobTake(cfg,24).note==50,
+            "RR / velocity / note ordering");
+    cfg.firstNote=88;cfg.lastNote=80;
+    require(!cfg.valid() && cfg.takeCount()==0, "invalid note range");
+    cfg.firstNote=60; cfg.lastNote=60; cfg.velocityLayers=4;
+    require(!cfg.valid(), "reject more than 3 velocity layers");
+}
+void testJobBlockEdgeCases() {
+    a125::JobConfig cfg; cfg.roundRobins=1;
+    cfg.holdFrames=10;cfg.tailFrames=20;cfg.gapFrames=4;
+    const auto t=a125::jobTake(cfg,0);
+    for(std::uint64_t frame=0;frame<34;++frame){
+        const auto where=a125::locateJobFrame(cfg,frame);
+        require(bool(where)==(frame<30),"capture boundary precise");
+    }
+    require(t.noteOff==10 && t.captureEnd==30,"correct NoteOn/Off/End edges");
+}
+
 void testWavAndTrim() {
     std::vector<a125::StereoFrame> samples(32,{0.f,0.f});
     for(int i=8;i<24;++i) samples[static_cast<std::size_t>(i)]={0.5f,-0.25f};
@@ -80,6 +129,8 @@ int main() {
         testEightRoundRobins();
         testSchedulerSampleOffsets();
         testValidation();
+        testJobSchedule();
+        testJobBlockEdgeCases();
         testWavAndTrim();
         std::cout << "P001 core tests PASSED\n";
         return 0;
