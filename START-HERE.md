@@ -1,42 +1,46 @@
-# START HERE — 125A AutoSampler P002 (Entwickler-Prototyp)
+# START HERE — 125A AutoSampler P003 (Testversion)
 
-## Was hier bereits funktioniert
-- Windows-x64-Build einer **VST3 mit zwei Plugin-Klassen** im selben Bundle:
-  - `125A AutoSampler MIDI` — Instrument mit MIDI-Event-Ausgang
-  - `125A AutoSampler Recorder` — Stereo-Audioeffekt für einen Insert
-- Fester Testablauf: **MIDI-Note 60, Velocity 100, acht Round-Robin-Takes**, jeweils 1 s Note-On, 2 s Release-Capture und 100 ms Pause.
-- Eigenständige 24-Bit-Stereo-WAV-Dateien, Trimming und Fades im Hintergrund-Worker.
-- Keine Plugin-Hosting-Funktion; das Quellinstrument bleibt in der DAW.
-- GitHub Actions Windows-2022 Build und Kern-Regressionstests: bestanden.
-  - [Windows Build 43519720850](https://github.com/challanger2000/125A-Auto-Sampler-VST3/actions/runs/43519720850)
+## Ziel
+Jedes VST-Instrument bleibt ganz normal in Fender Studio Pro geladen. Die beiden 125A-VST3-Komponenten übernehmen MIDI-Sequenz und Audioaufzeichnung. **Kein eigener Plugin-Host**, kein Mapping/Import in andere Sampler.
 
-## Installation (nur für kontrollierten Test)
-1. Bei der oben verlinkten GitHub Action unter **Artifacts** die ZIP `125A-AutoSampler-P002-Win64` abrufen.
-2. Den Inhalt so installieren, dass die vollständige `.vst3`-Bundle-Struktur unter `C:\\Program Files\\Common Files\\VST3\\` liegt.
-3. Fender Studio Pro neu starten und die beiden Klassen in der Plugin-Liste prüfen.
+## Windows-Installation
+1. Den aktuellen erfolgreichen [P003-Windows-Build](https://github.com/challanger2000/125A-Auto-Sampler-VST3/actions) öffnen und das Artefakt `125A-AutoSampler-P003-Win64` herunterladen.
+2. Die komplette VST3-Bundle-Struktur in `C:\Program Files\Common Files\VST3\` ablegen.
+3. Fender Studio Pro neu starten und `125A AutoSampler MIDI` sowie `125A AutoSampler Recorder` im Plugin-Browser prüfen.
+4. **Nur in einem Testprojekt verwenden.** Diese Version ist noch nicht in Fender Studio Pro freigegeben.
 
-## Vorgesehener Signalweg — noch nicht in Studio Pro verifiziert
-1. Auf einer Instrumentenspur `125A AutoSampler MIDI` laden.
-2. EVM Isotope oder das gewünschte Quell-VST auf einer zweiten Instrumentenspur laden.
-3. Den MIDI-Ausgang der AutoSampler-Spur als MIDI-Eingang des Quellinstruments wählen.
-4. Auf der Quellinstrumentenspur `125A AutoSampler Recorder` als **letztes** Audio-Insert laden.
-5. In den generischen Parametern des MIDI-Generators **Run = On** aktivieren und den DAW-Transport starten.
-6. Erwartet werden nach den acht Einzelaufnahmen Dateien im Standardordner:
-   `%USERPROFILE%\\Documents\\125A AutoSampler\\`
-   mit Namen `G1_N60_V100_RR01.wav` bis `...RR08.wav`.
+## Einmaliges DAW-Routing
+1. Auf einer eigenen Instrumentenspur `125A AutoSampler MIDI` laden.
+2. Auf einer zweiten Instrumentenspur z. B. EVM Isotope laden.
+3. MIDI-Ausgang der 125A-Spur als MIDI-Eingang des Quellinstruments wählen.
+4. `125A AutoSampler Recorder` als letzten Stereo-Audio-Insert auf die Quellinstrumentenspur setzen.
+5. In der generischen Parameteranzeige der MIDI-Komponente zunächst die Standardwerte verwenden; **Run = On** und die DAW-Wiedergabe starten.
+6. Die WAVs erscheinen bei erfolgreichem Routing unter `%USERPROFILE%\Documents\125A AutoSampler\Run_<Zeit>_G<Nummer>_<Zähler>\`, etwa `N60_V100_RR01.wav` bis `N60_V100_RR08.wav`.
 
-## Grenzen dieser Entwicklerfassung
-- **Noch keine** GUI, kein Auswahlfeld für Notenbereich, Velocity-Layer oder WAV-Zielpfad.
-- Nur **ein** MIDI-/Recorder-Paar pro Prozess; die zeitliche Kopplung zwischen den beiden Plugin-Klassen benötigt einen echten Studio-Pro-Test.
-- Exportfehler werden noch nicht in einer Benutzeroberfläche angezeigt.
-- Kein automatischer vollständiger Abnahmetest mit dem 125A Plugin Test Lab.
-- Es gibt noch keine Freigabe für den produktiven Einsatz; Sampletreue, Pegel und Release-Enden sind in der DAW noch zu prüfen.
-- MIDI-Notennummer 60 ist absichtlich zusätzlich zur Oktavbezeichnung angegeben, weil DAWs die Oktavnummer unterschiedlich anzeigen.
+**Wichtig:** MIDI-Notennummer 60 ist eindeutig; die zugehörige Oktavbezeichnung C3/C4 hängt von der DAW-Anzeige ab.
 
-## Abnahmekriterien der nächsten Stufe
-1. Beide VST3-Plugin-Klassen werden geladen, ohne Instabilität.
-2. Acht Note-On- und acht Note-Off-Ereignisse erreichen das Quellinstrument.
-3. Es entstehen acht getrennte WAV-Dateien; keine Dopplung, Überlagerung, Stille oder Überschreibung.
-4. Jede WAV enthält Attack, gehaltenen Klang und Ausklang.
-5. Stop, Neustart, verschiedene ASIO-Blockgrößen und unterschiedliche Samplerates erzeugen keine beschädigten Dateien.
-6. Erst anschließend UI, frei konfigurierbare Noten-/Velocity-Layer und weitere Funktionsausbauten.
+## Parameter der 125A-MIDI-Komponente
+| Parameter | Werte | Standard |
+|---|---|---|
+| Run (Play in DAW) | Aus / Ein | Aus |
+| First MIDI note | 0–127 | 60 |
+| Last MIDI note | 0–127 | 60 |
+| Note step | 1–12 Halbtöne | 1 |
+| Round Robins | 1–16 | 8 |
+| Velocity layers | 1–3 | 1 |
+| Note hold | 0,25–8 s | 1 s |
+| Release capture | 0,25–10 s | 2 s |
+| Gap | 0,05–0,5 s | 0,1 s |
+
+Velocity-Layer sind derzeit fest als 100 (ein Layer), 60/110 (zwei) oder 40/80/120 (drei) definiert. Parameteränderungen während eines laufenden Jobs wirken **erst beim nächsten Start**. Run für Neustart zunächst aus- und dann wieder einschalten. Beim Projekt-Reload bleibt Run aus.
+
+## Nachprüfbare Abnahme
+- Standalone-Windows-Kerntests: MIDI-Timing, RR/Velocity-Mapping, WAV-Header, Stilleerkennung.
+- Simulierter Batch-Test: 2 Noten × 3 Velocity-Layer × 8 RR = **48 separat erzeugte WAVs**, ohne doppelte Dateinamen oder verkürzte PCM-Daten.
+- VST3 SDK-Windows-Build + offizieller Steinberg-Validator für beide registrierten Klassen.
+- **Offen:** Test in Fender Studio Pro mit realer MIDI-Weiterleitung und Audioaufnahme.
+- **Offen:** GUI, individuelle Velocity-Werte, Error-UI, Multi-Pair-Betrieb, Studio-Pro-/ASIO-Praxistest.
+
+Das 125A Plugin Test Lab unterstützt laut P68-Dokumentation bei automatischer Erkennung aktuell nur eindeutig wählbare Einzel-Prozessorklassen. Unser VST3 enthält **zwei Klassen**. Die generische automatische P74-Abnahme wird daher nicht als erfolgreich behauptet; dafür brauchen wir einen expliziten Klassen-Auswahlschritt oder eine eigenständige Integrationsprüfung. Der offizielle Steinberg-Validator prüft bereits beide Klassen.
+
+Die WAV-Dateien stammen bei den Regressionstests aus synthetischen Signalen, **nicht** aus dem EVM-Isotope-VST. Ein erfolgreicher Build ist keine praktische DAW-Abnahme.

@@ -1,4 +1,4 @@
-name: P002 Windows VST3 build
+name: P003 Windows VST3 build
 on:
   push:
     branches: ['develop/**']
@@ -42,6 +42,6 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: 125A-AutoSampler-P002-Win64
+          name: 125A-AutoSampler-P003-Win64
           path: build-vst3/VST3/Release/*.vst3
-          if-no-files-found: warn
+          if-no-files-found: error
