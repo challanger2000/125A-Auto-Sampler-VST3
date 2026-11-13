@@ -14,6 +14,8 @@
 #include "public.sdk/source/main/pluginfactory.h"
 #include "public.sdk/source/vst/vstsinglecomponenteffect.h"
 #include "vstgui/plugin-bindings/vst3editor.h"
+#include "vstgui/lib/cvstguitimer.h"
+#include "vstgui/lib/controls/ctextlabel.h"
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -58,12 +60,21 @@ struct Session {
     std::atomic<std::int64_t> anchor{kDisarmed};
     std::atomic<std::uint32_t> generation{0};
     std::atomic<int> sampleRate{44100};
+    // Observable per-run counts, updated atomically by the recorder.
+    std::atomic<std::uint32_t> observed{0},written{0},rejected{0},silent{0},errors{0};
+    std::atomic<std::uint64_t> dropped{0};
     std::atomic<int> firstNote{60},lastNote{60},step{1},roundRobins{8},layers{1};
     std::atomic<int> velocity0{100},velocity1{80},velocity2{120};
     std::atomic<std::uint64_t> hold{44100},tail{88200},gap{4410};
 
     void publish(const a125::JobConfig& config,int sr,std::int64_t newAnchor) noexcept {
         anchor.store(kDisarmed,std::memory_order_release);
+        observed.store(0,std::memory_order_relaxed);
+        written.store(0,std::memory_order_relaxed);
+        rejected.store(0,std::memory_order_relaxed);
+        silent.store(0,std::memory_order_relaxed);
+        errors.store(0,std::memory_order_relaxed);
+        dropped.store(0,std::memory_order_relaxed);
         sampleRate.store(sr,std::memory_order_relaxed);
         firstNote.store(config.firstNote,std::memory_order_relaxed);
         lastNote.store(config.lastNote,std::memory_order_relaxed);
@@ -112,13 +123,49 @@ void copyAudio(const V::ProcessData& data) noexcept {
     }
 }
 
-class MidiGenerator final : public V::SingleComponentEffect {
+class MidiGenerator final : public V::SingleComponentEffect,
+                            public VSTGUI::VST3EditorDelegate {
 public:
     static FUnknown* createInstance(void*) {return (V::IAudioProcessor*)new MidiGenerator();}
     Steinberg::IPlugView* PLUGIN_API createView(Steinberg::FIDString name) override {
-        if(Steinberg::FIDStringsEqual(name,V::ViewType::kEditor))
-            return new VSTGUI::VST3Editor(this,"view","autosampler.uidesc");
+        if(Steinberg::FIDStringsEqual(name,V::ViewType::kEditor)){
+            auto* editor=new VSTGUI::VST3Editor(this,"view","autosampler.uidesc");
+            editor->setDelegate(this);
+            return editor;
+        }
         return nullptr;
+    }
+    VSTGUI::CView* verifyView(VSTGUI::CView* view,
+            const VSTGUI::UIAttributes&,const VSTGUI::IUIDescription*,
+            VSTGUI::VST3Editor*) override {
+        if(auto* label=dynamic_cast<VSTGUI::CTextLabel*>(view);
+            label && label->getText()=="STATUS: READY")statusLabel_=label;
+        return view;
+    }
+    void didOpen(VSTGUI::VST3Editor*) override {
+        updateStatus();
+        timer_=VSTGUI::makeOwned<VSTGUI::CVSTGUITimer>(
+            [this](VSTGUI::CVSTGUITimer*){updateStatus();},250);
+    }
+    void willClose(VSTGUI::VST3Editor*) override {
+        timer_=nullptr;
+        statusLabel_=nullptr;
+    }
+    void updateStatus() {
+        if(!statusLabel_)return;
+        const auto config=makeConfig();
+        const auto seen=session().observed.load(std::memory_order_relaxed);
+        const auto written=session().written.load(std::memory_order_relaxed);
+        const auto rejected=session().rejected.load(std::memory_order_relaxed);
+        const auto silent=session().silent.load(std::memory_order_relaxed);
+        const auto errors=session().errors.load(std::memory_order_relaxed);
+        const auto dropped=session().dropped.load(std::memory_order_relaxed);
+        char line[180]{};
+        std::snprintf(line,sizeof(line),
+            "TAKES %u/%zu   WAV %u   REJECT %u   SILENCE %u   ERR %u   LOST %llu",
+            seen,config.takeCount(),written,rejected,silent,errors,
+            static_cast<unsigned long long>(dropped));
+        statusLabel_->setText(line);
     }
     tresult PLUGIN_API initialize(FUnknown* context) override {
         if(SingleComponentEffect::initialize(context)!=Steinberg::kResultOk)
@@ -389,6 +436,8 @@ private:
         99./126.,59./126.,119./126.};
     a125::JobConfig config_{};
     a125::ActiveNote note_{};
+    VSTGUI::CTextLabel* statusLabel_{nullptr};  // owned by active editor
+    VSTGUI::SharedPointer<VSTGUI::CVSTGUITimer> timer_{};
     double sampleRate_=44100.;
     bool run_=false,activeRun_=false;
     std::int64_t lastBlockEnd_=kDisarmed;
@@ -498,7 +547,11 @@ public:
                 static_cast<std::uint8_t>(take.note),
                 static_cast<std::uint8_t>(take.velocity),
                 static_cast<std::uint8_t>(take.roundRobin),loc->last};
-            queue_.push(frame);
+            if(!queue_.push(frame))
+                session().dropped.fetch_add(1,std::memory_order_relaxed);
+            if(loc->last)
+                session().observed.store(static_cast<std::uint32_t>(take.takeIndex+1),
+                                         std::memory_order_release);
         }
         return Steinberg::kResultOk;
     }
@@ -543,6 +596,7 @@ private:
         };
         auto reject=[&](const char* reason) {
             rejected_.fetch_add(1,std::memory_order_relaxed);
+            session().rejected.fetch_add(1,std::memory_order_relaxed);
             record(reason,current.size());
             current.clear();
         };
@@ -569,6 +623,7 @@ private:
                 report.flush();
             } catch(const std::exception&) {
                 exportErrors_.fetch_add(1,std::memory_order_relaxed);
+                session().errors.fetch_add(1,std::memory_order_relaxed);
                 report.close();
                 haveRun=false;
             }
@@ -604,6 +659,7 @@ private:
                     const auto wav=a125::trimAndFade(current,{});
                     if(wav.empty()){
                         silent_.fetch_add(1,std::memory_order_relaxed);
+                        session().silent.fetch_add(1,std::memory_order_relaxed);
                         record("SILENCE",current.size());
                     } else {
                         const std::string filename="N"+std::to_string(note)+
@@ -614,10 +670,12 @@ private:
                             throw std::runtime_error("duplicate take output");
                         a125::writeWav24(output.string(),sampleRate_,wav);
                         exported_.fetch_add(1,std::memory_order_relaxed);
+                        session().written.fetch_add(1,std::memory_order_relaxed);
                         record("OK",current.size());
                     }
                 } catch(const std::exception&) {
                     exportErrors_.fetch_add(1,std::memory_order_relaxed);
+                    session().errors.fetch_add(1,std::memory_order_relaxed);
                     record("EXPORT_ERROR",current.size());
                 }
                 current.clear();

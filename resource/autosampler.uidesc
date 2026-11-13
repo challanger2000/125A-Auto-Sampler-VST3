@@ -47,6 +47,7 @@
     <view class="CTextLabel" origin="240, 321" size="190, 18" title="GAP" font="~ NormalFont" font-color="Muted" back-color="Dark" frame-color="Dark" frame-width="0" transparent="true" mouse-enabled="false" text-alignment="left"/>
     <view class="CSlider" control-tag="P1008" origin="240, 345" size="151, 22" orientation="horizontal" mode="free click" draw-back="true" draw-back-color="Track" draw-frame="true" draw-frame-color="Panel" draw-value="true" draw-value-color="Accent" draw-value-from-center="false" max-value="1" min-value="0" default-value="0" mouse-enabled="true" transparent="false" wheel-inc-value="0.01" zoom-factor="10" />
     <view class="CTextEdit" control-tag="P1008" origin="397, 343" size="47, 25" font="~ NormalFont" font-color="Silver" back-color="Panel" frame-color="Frame" frame-width="1" text-alignment="center" transparent="false" mouse-enabled="true" min-value="0" max-value="1" value-precision="2" />
+    <view class="CTextLabel" origin="21, 382" size="644, 26" title="STATUS: READY" font="~ NormalFont" font-color="Accent" back-color="Dark" frame-color="Dark" frame-width="0" transparent="true" mouse-enabled="false" text-alignment="center"/>
     <view class="CTextLabel" origin="21, 409" size="642, 30" title="SOURCE INSTRUMENT: SET MIDI INPUT IN DAW   |   RECORDER: LAST INSERT" font="~ NormalFont" font-color="Muted" back-color="Dark" frame-color="Dark" frame-width="0" transparent="true" mouse-enabled="false" text-alignment="center"/>
   </template>
   <control-tags>
