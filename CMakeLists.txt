@@ -36,8 +36,11 @@ if(BUILD_VST3)
     # Use relative forward-slash paths: absolute Windows paths contain invalid \\a escapes.
     file(RELATIVE_PATH _125A_SCE_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}"
         "${VST3_SDK_ROOT}/public.sdk/source/vst/vstsinglecomponenteffect.cpp")
+    file(RELATIVE_PATH _125A_DLLMAIN_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}"
+        "${VST3_SDK_ROOT}/public.sdk/source/main/dllmain.cpp")
     smtg_add_vst3plugin(AutosamplerVST3
         ${_125A_SCE_SOURCE}
+        ${_125A_DLLMAIN_SOURCE}
         src/vst3/Plugin.cpp
         src/core/SamplingPlan.h
         src/core/SampleProcessing.h
