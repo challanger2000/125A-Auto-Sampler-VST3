@@ -1,7 +1,8 @@
-// 125A Auto Sampler P003: DAW-hosted VST3 MIDI generator and audio recorder.
+// 125A Auto Sampler P005: DAW-hosted VST3 MIDI generator and audio recorder.
 // A single VST3 bundle exports both components. No third-party VST host.
 #include "core/JobSchedule.h"
 #include "core/JobParameters.h"
+#include "core/CaptureIntegrity.h"
 #include "core/SampleProcessing.h"
 #include "base/source/fstreamer.h"
 #include "pluginterfaces/base/ibstream.h"
@@ -22,6 +23,7 @@
 #include <cstring>
 #include <cstdio>
 #include <filesystem>
+#include <fstream>
 #include <limits>
 #include <string>
 #include <thread>
@@ -388,6 +390,7 @@ private:
 // file operations or heap allocations occur inside the audio callback.
 struct CapturedFrame {
     std::uint64_t offset=0;
+    std::uint64_t expectedFrames=0;
     float left=0,right=0;
     std::uint32_t generation=0;
     std::uint32_t take=0;
@@ -478,7 +481,8 @@ public:
                           static_cast<std::uint64_t>(absFrame-anchor));
             if(!loc) continue;
             const auto& take=loc->take;
-            const CapturedFrame frame{loc->offset,left[i],right[i],generation,
+            const CapturedFrame frame{loc->offset,config.holdFrames+config.tailFrames,
+                left[i],right[i],generation,
                 static_cast<std::uint32_t>(take.takeIndex),
                 static_cast<std::uint8_t>(take.note),
                 static_cast<std::uint8_t>(take.velocity),
@@ -509,75 +513,130 @@ private:
     }
     void consume(){
         std::vector<a125::StereoFrame> current;
+        a125::TakeIntegrity integrity;
         std::uint32_t generation=0;
-        std::uint32_t takeIndex=std::numeric_limits<std::uint32_t>::max();
-        std::uint64_t nextOffset=0;
-        bool broken=false;
+        std::uint32_t takeIndex=0;
+        std::uint8_t note=0,velocity=0,rr=0;
         std::filesystem::path dir;
-        bool ready=false;
+        std::ofstream report;
+        bool haveRun=false;
         const auto root=outputRoot();
-        for(;;){
+        auto record=[&](const char* status,std::uint64_t frames) {
+            if(report) {
+                report << takeIndex << ',' << static_cast<unsigned>(note) << ','
+                       << static_cast<unsigned>(velocity) << ','
+                       << static_cast<unsigned>(rr) << ',' << status << ','
+                       << frames << '\n';
+                report.flush();
+            }
+        };
+        auto reject=[&](const char* reason) {
+            rejected_.fetch_add(1,std::memory_order_relaxed);
+            record(reason,current.size());
+            current.clear();
+        };
+        auto openRun=[&](std::uint32_t gen) {
+            report.close();
+            dir.clear();
+            haveRun=false;
+            try {
+                std::filesystem::create_directories(root);
+                const auto stamp=std::chrono::duration_cast<
+                    std::chrono::milliseconds>(
+                    std::chrono::system_clock::now().time_since_epoch()).count();
+                for(int n=0;n<1000 && !haveRun;++n) {
+                    const auto candidate=root/("Run_"+std::to_string(stamp)+
+                        "_G"+std::to_string(gen)+"_"+std::to_string(n));
+                    if(std::filesystem::create_directory(candidate)){
+                        dir=candidate; haveRun=true;
+                    }
+                }
+                if(!haveRun) throw std::runtime_error("cannot create unique run folder");
+                report.open(dir/"RUN-REPORT.csv",std::ios::binary|std::ios::trunc);
+                if(!report) throw std::runtime_error("cannot create run report");
+                report << "take,note,velocity,rr,result,frames\n";
+                report.flush();
+            } catch(const std::exception&) {
+                exportErrors_.fetch_add(1,std::memory_order_relaxed);
+                report.close();
+                haveRun=false;
+            }
+        };
+        for(;;) {
             CapturedFrame f;
-            if(!queue_.pop(f)){
+            if(!queue_.pop(f)) {
                 if(exit_.load(std::memory_order_acquire) && queue_.empty()) break;
                 std::this_thread::sleep_for(std::chrono::milliseconds(2));
                 continue;
             }
-            if(generation!=f.generation){
-                generation=f.generation;takeIndex=std::numeric_limits<std::uint32_t>::max();
-                dir.clear();ready=false;
+            const auto decision=integrity.consume(
+                {f.generation,f.take,f.offset,f.expectedFrames,f.last});
+            if(decision.abandonedPrevious) reject("INCOMPLETE");
+            if(!haveRun || generation!=f.generation) {
+                generation=f.generation;
+                openRun(generation);
             }
-            if(takeIndex!=f.take){
-                takeIndex=f.take; current.clear();nextOffset=0;broken=false;
+            if(decision.started){
+                current.clear();
+                takeIndex=f.take;
+                note=f.note;
+                velocity=f.velocity;
+                rr=f.roundRobin;
             }
-            if(f.offset!=nextOffset) broken=true;
-            nextOffset=f.offset+1;
-            if(!broken)current.push_back({f.left,f.right});
-            if(f.last){
-                if(!broken && !current.empty()){
-                    try{
-                        if(!ready){
-                            std::filesystem::create_directories(root);
-                            const auto time=std::chrono::duration_cast<
-                                std::chrono::milliseconds>(
-                                std::chrono::system_clock::now().time_since_epoch()).count();
-                            for(int n=0;n<1000 && !ready;++n){
-                                const auto candidate=root/("Run_"+std::to_string(time)+
-                                      "_G"+std::to_string(f.generation)+"_"+std::to_string(n));
-                                if(std::filesystem::create_directory(candidate)){
-                                    dir=candidate;ready=true;
-                                }
-                            }
-                            if(!ready)throw std::runtime_error("no output directory");
-                        }
-                        const std::string filename="N"+std::to_string(f.note)+
-                             "_V"+std::to_string(f.velocity)+"_RR"+
-                             (f.roundRobin<10?"0":"")+std::to_string(f.roundRobin)+".wav";
-                        const auto wav=a125::trimAndFade(current,{});
-                        if(!wav.empty())a125::writeWav24((dir/filename).string(),sampleRate_,wav);
-                    }catch(const std::exception&){exportErrors_.fetch_add(1);}
-                } else if(broken){
-                    rejected_.fetch_add(1);
+            if(decision.acceptFrame) current.push_back({f.left,f.right});
+            else current.clear();
+            if(decision.rejected) reject("INVALID");
+            if(decision.completed){
+                // Even a silent take must be reported; silence is not success.
+                try{
+                    if(!haveRun) throw std::runtime_error("run directory unavailable");
+                    const auto wav=a125::trimAndFade(current,{});
+                    if(wav.empty()){
+                        silent_.fetch_add(1,std::memory_order_relaxed);
+                        record("SILENCE",current.size());
+                    } else {
+                        const std::string filename="N"+std::to_string(note)+
+                            "_V"+std::to_string(velocity)+"_RR"+
+                            (rr<10?"0":"")+std::to_string(rr)+".wav";
+                        const auto output=dir/filename;
+                        if(std::filesystem::exists(output))
+                            throw std::runtime_error("duplicate take output");
+                        a125::writeWav24(output.string(),sampleRate_,wav);
+                        exported_.fetch_add(1,std::memory_order_relaxed);
+                        record("OK",current.size());
+                    }
+                } catch(const std::exception&) {
+                    exportErrors_.fetch_add(1,std::memory_order_relaxed);
+                    record("EXPORT_ERROR",current.size());
                 }
-                current.clear();takeIndex=std::numeric_limits<std::uint32_t>::max();
+                current.clear();
             }
+        }
+        if(integrity.abandon()) reject("ABORTED");
+        if(report) {
+            report << "SUMMARY,exported," << exported_.load() << "\n"
+                   << "SUMMARY,rejected," << rejected_.load() << "\n"
+                   << "SUMMARY,silent," << silent_.load() << "\n"
+                   << "SUMMARY,exportErrors," << exportErrors_.load() << "\n"
+                   << "SUMMARY,droppedFrames," << queue_.dropped() << "\n";
+            report.flush();
         }
     }
     std::uint32_t sampleRate_=44100;
     SpscQueue queue_;
     std::atomic<bool> exit_{false};
     std::thread worker_;
-    std::atomic<std::uint64_t> rejected_{0},exportErrors_{0};
+    std::atomic<std::uint64_t> rejected_{0},exportErrors_{0},exported_{0},silent_{0};
 };
 } // namespace
 
 BEGIN_FACTORY_DEF("125A","https://github.com/challanger2000","")
  DEF_CLASS2(INLINE_UID_FROM_FUID(kMidiID),
   Steinberg::PClassInfo::kManyInstances,kVstAudioEffectClass,
-  "125A AutoSampler MIDI",0,"Instrument","0.4.0",kVstVersionString,
+  "125A AutoSampler MIDI",0,"Instrument","0.5.0",kVstVersionString,
   MidiGenerator::createInstance)
  DEF_CLASS2(INLINE_UID_FROM_FUID(kRecorderID),
   Steinberg::PClassInfo::kManyInstances,kVstAudioEffectClass,
-  "125A AutoSampler Recorder",0,"Fx","0.4.0",kVstVersionString,
+  "125A AutoSampler Recorder",0,"Fx","0.5.0",kVstVersionString,
   Recorder::createInstance)
 END_FACTORY
