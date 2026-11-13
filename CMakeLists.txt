@@ -31,8 +31,12 @@ if(BUILD_VST3)
     set(SMTG_CREATE_PLUGIN_LINK 0 CACHE BOOL "" FORCE)
     add_subdirectory("${VST3_SDK_ROOT}" "${CMAKE_BINARY_DIR}/steinberg-sdk" EXCLUDE_FROM_ALL)
 
+    # Steinberg's VST3 CMake macro expands source lists via a CMake string.
+    # Use relative forward-slash paths: absolute Windows paths contain invalid \\a escapes.
+    file(RELATIVE_PATH _125A_SCE_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}"
+        "${VST3_SDK_ROOT}/public.sdk/source/vst/vstsinglecomponenteffect.cpp")
     smtg_add_vst3plugin(AutosamplerVST3
-        "${VST3_SDK_ROOT}/public.sdk/source/vst/vstsinglecomponenteffect.cpp"
+        ${_125A_SCE_SOURCE}
         src/vst3/Plugin.cpp
         src/core/SamplingPlan.h
         src/core/SampleProcessing.h
