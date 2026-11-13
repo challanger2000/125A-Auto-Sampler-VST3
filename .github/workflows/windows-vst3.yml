@@ -1,4 +1,4 @@
-name: P005 Windows VST3 Integration QA
+name: P006 Windows VST3 Integration Matrix
 on:
   push:
     branches: ['develop/**']
@@ -61,12 +61,20 @@ jobs:
           if (-not $plugin) { throw "AutoSampler VST3 bundle missing" }
           $runner = "build-vst3/Release/AutosamplerIntegration.exe"
           if (!(Test-Path $runner)) { throw "AutoSamplerIntegration test executable missing" }
-          & $runner $plugin.FullName
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # Actual dual-VST3 integration. No fake success from standalone core fixtures.
+          foreach ($case in @(
+            @("44100", "64"),
+            @("48000", "1024"),
+            @("44100", "512", "matrix")
+          )) {
+            Write-Host "Native VST3 integration at $($case -join ' ')"
+            & $runner $plugin.FullName @case
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
       - name: Upload VST3 test binary
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: 125A-AutoSampler-P005-Win64
+          name: 125A-AutoSampler-P006-Win64
           path: build-vst3/VST3/Release/*.vst3
           if-no-files-found: error
