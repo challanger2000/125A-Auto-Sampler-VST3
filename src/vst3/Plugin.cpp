@@ -148,6 +148,60 @@ public:
            V::ParameterInfo::kCanAutomate,kVelocity3Param);
         return Steinberg::kResultOk;
     }
+
+    // Display actual MIDI note/velocity/round-robin integers rather than
+    // normalized 0..1 fractions in the editor.
+    tresult PLUGIN_API getParamStringByValue(
+            V::ParamID tag,V::ParamValue value,V::String128 text) override {
+        if(tag<=kRunParam || tag>kVelocity3Param)
+            return SingleComponentEffect::getParamStringByValue(tag,value,text);
+        if(!text)return Steinberg::kResultFalse;
+        char buf[32]{};
+        switch(tag) {
+        case kFirstParam: case kLastParam:
+            std::snprintf(buf,sizeof(buf),"%d",a125::stepped(value,0,127));break;
+        case kStepParam:
+            std::snprintf(buf,sizeof(buf),"%d",a125::stepped(value,1,12));break;
+        case kRRParam:
+            std::snprintf(buf,sizeof(buf),"%d",a125::stepped(value,1,16));break;
+        case kLayersParam:
+            std::snprintf(buf,sizeof(buf),"%d",a125::stepped(value,1,3));break;
+        case kVelocity1Param: case kVelocity2Param: case kVelocity3Param:
+            std::snprintf(buf,sizeof(buf),"%d",a125::midiValue(value));break;
+        case kHoldParam:
+            std::snprintf(buf,sizeof(buf),"%.2f",.25+value*7.75);break;
+        case kTailParam:
+            std::snprintf(buf,sizeof(buf),"%.2f",.25+value*9.75);break;
+        case kGapParam:
+            std::snprintf(buf,sizeof(buf),"%.2f",.05+value*.45);break;
+        default:return Steinberg::kResultFalse;
+        }
+        Steinberg::UString(text,128).fromAscii(buf);
+        return Steinberg::kResultTrue;
+    }
+    tresult PLUGIN_API getParamValueByString(
+            V::ParamID tag,V::TChar* text,V::ParamValue& normalized) override {
+        if(tag<=kRunParam || tag>kVelocity3Param)
+            return SingleComponentEffect::getParamValueByString(tag,text,normalized);
+        if(!text)return Steinberg::kResultFalse;
+        double entered=0.;
+        if(!Steinberg::UString(text,128).scanFloat(entered) ||
+           !std::isfinite(entered))return Steinberg::kResultFalse;
+        switch(tag) {
+        case kFirstParam: case kLastParam: normalized=entered/127.;break;
+        case kStepParam: normalized=(entered-1.)/11.;break;
+        case kRRParam: normalized=(entered-1.)/15.;break;
+        case kLayersParam: normalized=(entered-1.)/2.;break;
+        case kVelocity1Param: case kVelocity2Param: case kVelocity3Param:
+            normalized=(entered-1.)/126.;break;
+        case kHoldParam: normalized=(entered-.25)/7.75;break;
+        case kTailParam: normalized=(entered-.25)/9.75;break;
+        case kGapParam: normalized=(entered-.05)/.45;break;
+        default:return Steinberg::kResultFalse;
+        }
+        normalized=std::clamp(normalized,0.,1.);
+        return Steinberg::kResultTrue;
+    }
     tresult PLUGIN_API setupProcessing(V::ProcessSetup& setup) override {
         sampleRate_=setup.sampleRate;
         cancel();
