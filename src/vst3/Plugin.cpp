@@ -584,7 +584,21 @@ private:
         std::filesystem::path dir;
         std::ofstream report;
         bool haveRun=false;
+        bool attemptedRun=false;
+        std::uint64_t runWritten=0,runRejected=0,runSilent=0,runErrors=0;
+        std::uint64_t droppedAtRunStart=0;
         const auto root=outputRoot();
+        auto finishReport=[&] {
+            if(report){
+                report << "SUMMARY,exported," << runWritten << "\n"
+                       << "SUMMARY,rejected," << runRejected << "\n"
+                       << "SUMMARY,silent," << runSilent << "\n"
+                       << "SUMMARY,exportErrors," << runErrors << "\n"
+                       << "SUMMARY,droppedFrames,"
+                       << (queue_.dropped()-droppedAtRunStart) << "\n";
+                report.flush();
+            }
+        };
         auto record=[&](const char* status,std::uint64_t frames) {
             if(report) {
                 report << takeIndex << ',' << static_cast<unsigned>(note) << ','
@@ -596,14 +610,19 @@ private:
         };
         auto reject=[&](const char* reason) {
             rejected_.fetch_add(1,std::memory_order_relaxed);
+            ++runRejected;
             session().rejected.fetch_add(1,std::memory_order_relaxed);
             record(reason,current.size());
             current.clear();
         };
         auto openRun=[&](std::uint32_t gen) {
+            finishReport();
             report.close();
             dir.clear();
             haveRun=false;
+            attemptedRun=true;
+            runWritten=runRejected=runSilent=runErrors=0;
+            droppedAtRunStart=queue_.dropped();
             try {
                 std::filesystem::create_directories(root);
                 const auto stamp=std::chrono::duration_cast<
@@ -623,6 +642,7 @@ private:
                 report.flush();
             } catch(const std::exception&) {
                 exportErrors_.fetch_add(1,std::memory_order_relaxed);
+                ++runErrors;
                 session().errors.fetch_add(1,std::memory_order_relaxed);
                 report.close();
                 haveRun=false;
@@ -638,7 +658,7 @@ private:
             const auto decision=integrity.consume(
                 {f.generation,f.take,f.offset,f.expectedFrames,f.last});
             if(decision.abandonedPrevious) reject("INCOMPLETE");
-            if(!haveRun || generation!=f.generation) {
+            if(!attemptedRun || generation!=f.generation) {
                 generation=f.generation;
                 openRun(generation);
             }
@@ -659,6 +679,7 @@ private:
                     const auto wav=a125::trimAndFade(current,{});
                     if(wav.empty()){
                         silent_.fetch_add(1,std::memory_order_relaxed);
+                        ++runSilent;
                         session().silent.fetch_add(1,std::memory_order_relaxed);
                         record("SILENCE",current.size());
                     } else {
@@ -670,11 +691,13 @@ private:
                             throw std::runtime_error("duplicate take output");
                         a125::writeWav24(output.string(),sampleRate_,wav);
                         exported_.fetch_add(1,std::memory_order_relaxed);
+                        ++runWritten;
                         session().written.fetch_add(1,std::memory_order_relaxed);
                         record("OK",current.size());
                     }
                 } catch(const std::exception&) {
                     exportErrors_.fetch_add(1,std::memory_order_relaxed);
+                    ++runErrors;
                     session().errors.fetch_add(1,std::memory_order_relaxed);
                     record("EXPORT_ERROR",current.size());
                 }
@@ -682,14 +705,7 @@ private:
             }
         }
         if(integrity.abandon()) reject("ABORTED");
-        if(report) {
-            report << "SUMMARY,exported," << exported_.load() << "\n"
-                   << "SUMMARY,rejected," << rejected_.load() << "\n"
-                   << "SUMMARY,silent," << silent_.load() << "\n"
-                   << "SUMMARY,exportErrors," << exportErrors_.load() << "\n"
-                   << "SUMMARY,droppedFrames," << queue_.dropped() << "\n";
-            report.flush();
-        }
+        finishReport();
     }
     std::uint32_t sampleRate_=44100;
     SpscQueue queue_;
