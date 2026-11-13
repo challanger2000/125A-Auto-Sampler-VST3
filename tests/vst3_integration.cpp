@@ -2,6 +2,12 @@
 // Loads both actual VST3 classes, generates their MIDI events, supplies a
 // synthetic oscillator as stand-in for a DAW-hosted instrument, and checks
 // the exact WAV files written by the real recorder worker.
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#include <ole2.h>
+#include "base/source/fobject.h"
+#include "pluginterfaces/gui/iplugview.h"
+#include "pluginterfaces/vst/ivsteditcontroller.h"
 #include "public.sdk/source/vst/hosting/module.h"
 #include "public.sdk/source/vst/hosting/hostclasses.h"
 #include "public.sdk/source/vst/hosting/eventlist.h"
@@ -34,6 +40,77 @@ constexpr int kBlock=256;
 constexpr double kTau=6.28318530717958647692;
 void require(bool value,const char* what) {
     if(!value)throw std::runtime_error(what);
+}
+class TestHostFrame final : public FObject, public IPlugFrame {
+public:
+    tresult PLUGIN_API resizeView(IPlugView* view,ViewRect* desired) override {
+        if(!view || !desired || desired->getWidth()<=0 ||
+           desired->getHeight()<=0) return kInvalidArgument;
+        return view->onSize(desired);
+    }
+    OBJ_METHODS(TestHostFrame,FObject)
+    DEFINE_INTERFACES
+        DEF_INTERFACE(IPlugFrame)
+    END_DEFINE_INTERFACES(FObject)
+    REFCOUNT_METHODS(FObject)
+};
+LRESULT CALLBACK testWindowProc(HWND hwnd,UINT msg,WPARAM w,LPARAM l) {
+    return DefWindowProcW(hwnd,msg,w,l);
+}
+void smokeNativeGui(IComponent* component){
+    const HRESULT com=CoInitializeEx(nullptr,COINIT_APARTMENTTHREADED);
+    require(SUCCEEDED(com),"cannot initialize Win32 COM STA for VSTGUI");
+    IEditController* controller=nullptr;
+    require(component->queryInterface(IEditController::iid,
+              reinterpret_cast<void**>(&controller))==kResultOk && controller,
+            "MIDI VST3 combined edit controller not available");
+    require(controller->getParameterCount()==12,
+            "native MIDI editor must expose 12 VST3 parameters");
+    IPlugView* view=controller->createView(ViewType::kEditor);
+    require(view,"MIDI VST3 supplies no real editor");
+    ViewRect rect{};
+    require(view->getSize(&rect)==kResultTrue &&
+            rect.getWidth()>=600 && rect.getHeight()>=400,
+            "native GUI has invalid editor geometry");
+    require(view->isPlatformTypeSupported(kPlatformTypeHWND)==kResultTrue,
+            "native GUI does not support HWND");
+    WNDCLASSW wc{};
+    wc.hInstance=GetModuleHandleW(nullptr);
+    wc.lpfnWndProc=testWindowProc;
+    wc.lpszClassName=L"125A_AutoSampler_P005_GUI";
+    require(RegisterClassW(&wc) ||
+            GetLastError()==ERROR_CLASS_ALREADY_EXISTS,"register GUI host class");
+    HWND hwnd=CreateWindowExW(0,wc.lpszClassName,L"125A AutoSampler Test",
+         WS_OVERLAPPEDWINDOW,CW_USEDEFAULT,CW_USEDEFAULT,
+         rect.getWidth()+32,rect.getHeight()+64,
+         nullptr,nullptr,GetModuleHandleW(nullptr),nullptr);
+    require(hwnd!=nullptr,"cannot create actual Win32 GUI parent");
+    auto* frame=new TestHostFrame();
+    require(view->setFrame(frame)==kResultTrue,"cannot set VST3 editor host frame");
+    require(view->attached(hwnd,kPlatformTypeHWND)==kResultTrue,
+            "actual VSTGUI editor refused HWND attach");
+    ShowWindow(hwnd,SW_SHOWNA);
+    UpdateWindow(hwnd);
+    // Exercise the 250ms progress-status timer on a real Win32 UI thread.
+    const auto end=GetTickCount64()+350;
+    MSG msg{};
+    do{
+        while(PeekMessageW(&msg,nullptr,0,0,PM_REMOVE)){
+            TranslateMessage(&msg);DispatchMessageW(&msg);
+        }
+        Sleep(2);
+    }while(GetTickCount64()<end);
+    require(GetWindow(hwnd,GW_CHILD)!=nullptr,
+            "VSTGUI failed to create its own editor child window");
+    require(view->removed()==kResultTrue,"VSTGUI could not detach cleanly");
+    require(view->setFrame(nullptr)==kResultTrue,"VSTGUI host frame release failed");
+    frame->release();
+    view->release();
+    controller->release();
+    DestroyWindow(hwnd);
+    CoUninitialize();
+    std::cout<<"[PASS] REAL VSTGUI editor: 12 parameters, Win32 HWND attach, "
+                "live timer and clean detach\\n";
 }
 struct Instance {
     IPtr<IComponent> component;
@@ -110,6 +187,7 @@ int run(const char* vst3path){
 
     auto generator=load(factory,host,"125A AutoSampler MIDI");
     auto recorder=load(factory,host,"125A AutoSampler Recorder");
+    smokeNativeGui(generator.component.get());
     require(generator.component->getBusCount(kEvent,kOutput)==1,
             "MIDI generator must expose an event output bus");
     require(recorder.component->getBusCount(kAudio,kInput)==1 &&
