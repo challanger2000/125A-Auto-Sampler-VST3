@@ -16,8 +16,11 @@ using ParameterValues=std::array<double,ParameterCount>;
 inline constexpr ParameterValues defaultParameters{
     0.,60./127.,60./127.,0.,7./15.,0.,
     (1.-.25)/7.75,(2.-.25)/9.75,(.1-.05)/.45,
-    100./127.,60./127.,120./127.
+    99./126.,59./126.,119./126.
 };
+inline double midiNormalized(int velocity) noexcept {
+    return static_cast<double>(std::clamp(velocity,1,127)-1)/126.;
+}
 inline int midiValue(double value) noexcept {
     return static_cast<int>(std::lround(std::clamp(value,0.,1.)*126.))+1;
 }
