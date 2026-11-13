@@ -27,6 +27,7 @@
 #include <iostream>
 #include <iterator>
 #include <stdexcept>
+#include <set>
 #include <string>
 #include <thread>
 #include <vector>
@@ -35,8 +36,8 @@ using namespace Steinberg;
 using namespace Steinberg::Vst;
 using namespace VST3::Hosting;
 namespace {
-constexpr int kRate=44100;
-constexpr int kBlock=256;
+int kRate=44100;
+int kBlock=256;
 constexpr double kTau=6.28318530717958647692;
 void require(bool value,const char* what) {
     if(!value)throw std::runtime_error(what);
@@ -172,7 +173,7 @@ std::size_t nonzeroWav(const std::filesystem::path& path) {
     require(count>12000,"WAV must contain genuinely audible synthetic signal");
     return bytes.size();
 }
-int run(const char* vst3path){
+int run(const char* vst3path,bool matrix){
     const auto base=std::filesystem::absolute("p005-real-vst3-output");
     std::filesystem::remove_all(base);
     std::filesystem::create_directories(base/"Documents");
@@ -195,7 +196,9 @@ int run(const char* vst3path){
             "recorder must expose stereo input/output");
     (void)generator.component->activateBus(kEvent,kOutput,0,true);
 
-    std::array<Sample32,kBlock> genL{},genR{},audioL{},audioR{},passL{},passR{};
+    std::vector<Sample32> genL(static_cast<std::size_t>(kBlock)),genR(static_cast<std::size_t>(kBlock)),
+        audioL(static_cast<std::size_t>(kBlock)),audioR(static_cast<std::size_t>(kBlock)),
+        passL(static_cast<std::size_t>(kBlock)),passR(static_cast<std::size_t>(kBlock));
     std::array<Sample32*,2> genPtrs{genL.data(),genR.data()};
     std::array<Sample32*,2> audioPtrs{audioL.data(),audioR.data()};
     std::array<Sample32*,2> passPtrs{passL.data(),passR.data()};
@@ -207,17 +210,30 @@ int run(const char* vst3path){
     passthrough.numChannels=2;passthrough.channelBuffers32=passPtrs.data();
 
     EventList midiOut(32);
-    ParameterChanges params(1);
-    int32 queueIndex=0,pointIndex=0;
-    auto* runQueue=params.addParameterData(1000,queueIndex);
-    require(runQueue && runQueue->addPoint(0,1.,pointIndex)==kResultOk,
-            "cannot start MIDI via VST3 parameter queue");
+    ParameterChanges params(7);
+    auto param=[&](ParamID id,double value){
+        int32 queueIndex=0,pointIndex=0;
+        auto* q=params.addParameterData(id,queueIndex);
+        require(q && q->addPoint(0,value,pointIndex)==kResultOk,
+                "cannot configure VST3 parameter");
+    };
+    param(1000,1.); // RUN
+    if(matrix){
+        param(1001,60./127.);
+        param(1002,61./127.);
+        param(1005,1.); // Three velocities
+        param(1009,39./126.); // 40
+        param(1010,79./126.); // 80
+        param(1011,119./126.); // 120
+    }
     double phase=0.;
     float amplitude=0.f;
     bool held=false;
     int noteOns=0,noteOffs=0;
-    constexpr std::int64_t period=44100+88200+4410;
-    constexpr std::int64_t total=22050+8*period+512;
+    std::set<int32> noteIDs;
+    const int expectedTakes=matrix?48:8;
+    const std::int64_t period=static_cast<std::int64_t>(kRate)*3+kRate/10;
+    const std::int64_t total=kRate/2+static_cast<std::int64_t>(expectedTakes)*period+kBlock;
     // Feed the exact same sample positions through both plugin components.
     // A 1ms pause approximates a working host and lets the I/O worker drain.
     for(std::int64_t start=0;start<total;start+=kBlock){
@@ -249,14 +265,21 @@ int run(const char* vst3path){
             while(next<eventCount && blockEvents[static_cast<std::size_t>(next)].sampleOffset==i){
                 const auto& event=blockEvents[static_cast<std::size_t>(next++)];
                 if(event.type==Event::kNoteOnEvent){
-                    require(event.noteOn.pitch==60,"wrong generated MIDI pitch");
-                    require(std::abs(event.noteOn.velocity-100.f/127.f)<.00001f,
-                            "wrong generated MIDI velocity");
+                    const auto pitch=event.noteOn.pitch;
+                    require(pitch==60 || (matrix && pitch==61),"wrong generated MIDI pitch");
+                    const auto velocity=static_cast<int>(std::lround(event.noteOn.velocity*127.));
+                    require(matrix?(velocity==40 || velocity==80 || velocity==120):
+                        velocity==100,"wrong generated MIDI velocity");
+                    require(noteIDs.insert(event.noteOn.noteId).second,
+                        "repeated MIDI noteID across RR/velocity/note");
                     held=true;
                     amplitude=.4f*event.noteOn.velocity;
                     ++noteOns;
                 } else if(event.type==Event::kNoteOffEvent){
-                    require(event.noteOff.pitch==60,"wrong Note-Off pitch");
+                    require(event.noteOff.pitch==60 ||
+                            (matrix && event.noteOff.pitch==61),"wrong Note-Off pitch");
+                    require(noteIDs.count(event.noteOff.noteId)==1,
+                        "Note-Off must reference previously emitted Note-On");
                     held=false;++noteOffs;
                 }
             }
@@ -282,8 +305,9 @@ int run(const char* vst3path){
                     "recorder must pass source audio through unchanged");
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
-    require(noteOns==8 && noteOffs==8,
-            "expected eight actual VST3 Note-On and Note-Off pairs");
+    require(noteOns==expectedTakes && noteOffs==expectedTakes &&
+            static_cast<int>(noteIDs.size())==expectedTakes,
+            "actual VST3 MIDI notes differ from configured note/velocity/RR matrix");
     require(recorder.component->setActive(false)==kResultOk,
             "cannot flush recorder on deactivation");
     recorder.active=false;
@@ -297,7 +321,7 @@ int run(const char* vst3path){
             "cannot reactivate MIDI generator for stop regression");
     generator.active=true;
     bool recovered=false;
-    for(std::int64_t at=0;at<24000 && !recovered;at+=kBlock) {
+    for(std::int64_t at=0;at<kRate+kBlock && !recovered;at+=kBlock) {
         EventList outEvents(8);
         ProcessContext running{};
         running.state=ProcessContext::kPlaying;
@@ -355,16 +379,25 @@ int run(const char* vst3path){
     const auto output=base/"Documents"/"125A AutoSampler";
     require(std::filesystem::exists(output),"recorder created no run folder");
     std::size_t wavs=0,reports=0;
+    std::set<std::string> expectedNames;
+    for(int note=60;note<=(matrix?61:60);++note)
+        for(const int vel:matrix?std::vector<int>{40,80,120}:std::vector<int>{100})
+            for(int rr=1;rr<=8;++rr)
+                expectedNames.insert("N"+std::to_string(note)+"_V"+std::to_string(vel)+
+                    "_RR"+(rr<10?"0":"")+std::to_string(rr)+".wav");
     for(const auto& entry:std::filesystem::recursive_directory_iterator(output)){
         if(!entry.is_regular_file())continue;
         if(entry.path().extension()==".wav"){
             (void)nonzeroWav(entry.path());
+            require(expectedNames.erase(entry.path().filename().string())==1,
+                "wrong, duplicated or unexpected MIDI note/velocity/RR WAV filename");
             ++wavs;
         } else if(entry.path().filename()=="RUN-REPORT.csv"){
             std::ifstream in(entry.path());
             const std::string contents((std::istreambuf_iterator<char>(in)),{});
-            require(contents.find("SUMMARY,exported,8")!=std::string::npos,
-                    "run report missing 8 successful WAVs");
+            require(contents.find("SUMMARY,exported,"+
+                std::to_string(expectedTakes))!=std::string::npos,
+                    "run report does not match expected successful WAV count");
             require(contents.find("SUMMARY,rejected,0")!=std::string::npos,
                     "run report indicates rejected takes");
             require(contents.find("SUMMARY,droppedFrames,0")!=std::string::npos,
@@ -372,18 +405,26 @@ int run(const char* vst3path){
             ++reports;
         }
     }
-    require(wavs==8 && reports==1,
-            "real recorder must export 8 distinct WAVs and one run report");
+    require(static_cast<int>(wavs)==expectedTakes && expectedNames.empty() &&
+            reports==1,"real recorder failed full note/velocity/RR WAV matrix");
     std::cout<<"[PASS] REAL VST3 MIDI->synthetic synth->REAL VST3 Recorder: "
              <<noteOns<<" NoteOns, "<<noteOffs<<" NoteOffs, "<<wavs
-             <<" 24-bit stereo WAVs; no lost frames\n";
+             <<" 24-bit stereo WAVs at "<<kRate<<" Hz, block "<<kBlock
+             <<"; no lost frames\n";
     return 0;
 }
 }
 int main(int argc,char** argv){
     try{
-        require(argc==2,"usage: autosampler_plugin_integration <path-to-bundle.vst3>");
-        return run(argv[1]);
+        require(argc>=2 && argc<=5,
+            "usage: AutosamplerIntegration <bundle.vst3> [sampleRate] [blockSize] [matrix]");
+        if(argc>=3)kRate=std::stoi(argv[2]);
+        if(argc>=4)kBlock=std::stoi(argv[3]);
+        require((kRate==44100 || kRate==48000 || kRate==96000) &&
+                (kBlock==64 || kBlock==256 || kBlock==512 || kBlock==1024),
+                "invalid sample rate or block size");
+        const bool matrix=argc>=5 && std::string(argv[4])=="matrix";
+        return run(argv[1],matrix);
     }catch(const std::exception& e){
         std::cerr<<"[FAIL] P005 REAL VST3 integration: "<<e.what()<<"\n";
         return 1;
