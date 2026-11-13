@@ -161,10 +161,10 @@ BEGIN_FACTORY_DEF("125A","https://github.com/challanger2000/125A-Digital-Bass-VS
         Steinberg::PClassInfo::kManyInstances,
         Steinberg::kVstAudioEffectClass,"125A Digital Bass",
         Steinberg::Vst::kDistributable,Steinberg::Vst::PlugType::kInstrumentSynth,
-        "0.1.0",Steinberg::Vst::kVstVersionString,a125::Processor::createInstance)
+        "0.1.0",kVstVersionString,a125::Processor::createInstance)
     DEF_CLASS2(INLINE_UID_FROM_FUID(a125::controllerId),
         Steinberg::PClassInfo::kManyInstances,
         Steinberg::kVstComponentControllerClass,"125A Digital Bass Controller",
-        0,"","0.1.0",Steinberg::Vst::kVstVersionString,
+        0,"","0.1.0",kVstVersionString,
         a125::Controller::createInstance)
 END_FACTORY
