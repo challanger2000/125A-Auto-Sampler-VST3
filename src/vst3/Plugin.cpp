@@ -145,7 +145,7 @@ public:
     }
     tresult PLUGIN_API getState(Steinberg::IBStream* state) override {
         if(!state) return Steinberg::kResultFalse;
-        Steinberg::IBStreamer io(state,Steinberg::kLittleEndian);
+        Steinberg::IBStreamer io(state,kLittleEndian);
         if(!io.writeInt32(0x125A0301)) return Steinberg::kResultFalse;
         // The Run switch is deliberately not persisted: project reopen
         // must never create WAV files before the user explicitly starts.
@@ -155,7 +155,7 @@ public:
     }
     tresult PLUGIN_API setState(Steinberg::IBStream* state) override {
         if(!state) return Steinberg::kResultFalse;
-        Steinberg::IBStreamer io(state,Steinberg::kLittleEndian);
+        Steinberg::IBStreamer io(state,kLittleEndian);
         Steinberg::int32 version=0;
         if(!io.readInt32(version) || version!=0x125A0301)
             return Steinberg::kResultFalse;
