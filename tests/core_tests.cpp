@@ -5,6 +5,7 @@
 #include "core/CaptureIntegrity.h"
 #include "core/ActiveNote.h"
 #include "core/RunGate.h"
+#include "core/ExportTarget.h"
 #include <array>
 #include <filesystem>
 #include <fstream>
@@ -190,6 +191,22 @@ void testJobBlockEdgeCases() {
     require(t.noteOff==10 && t.captureEnd==30,"correct NoteOn/Off/End edges");
 }
 
+void testExportTargetSelection() {
+    a125::ExportTarget target;
+    const auto fallback=std::filesystem::path("Default Output");
+    require(a125::ExportTarget::resolve(target.chosenFolder(),fallback)==fallback,
+            "empty selection uses default destination");
+    const auto first=std::filesystem::path(u8"C:/Music Projects/Sample Output");
+    target.choose(first);
+    require(target.chosenFolder()==first,"custom destination survives snapshot");
+    require(a125::ExportTarget::resolve(target.chosenFolder(),fallback)==first,
+            "custom destination overrides fallback");
+    target.choose({});
+    require(target.chosenFolder().empty() &&
+            a125::ExportTarget::resolve(target.chosenFolder(),fallback)==fallback,
+            "blank preference restores default");
+}
+
 void testRunNeedsExplicitRearm() {
     a125::RunGate gate;
     require(!gate.observe(false,true), "Run Off cannot start");
@@ -367,6 +384,7 @@ int main() {
         testJobSchedule();
         testJobBlockEdgeCases();
         testAutomaticJobEndBoundary();
+        testExportTargetSelection();
         testRunNeedsExplicitRearm();
         testStopAndJumpNoteRecovery();
         testCaptureIntegrityFailClosed();
