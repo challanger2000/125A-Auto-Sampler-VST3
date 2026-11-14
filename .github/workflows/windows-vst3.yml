@@ -1,4 +1,4 @@
-name: P011 Windows VST3 SFZ Bank QA
+name: P012 Windows VST3 SFZ and GUI Status QA
 on:
   push:
     branches: ['develop/**']
@@ -81,6 +81,6 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: 125A-AutoSampler-P011-Win64
+          name: 125A-AutoSampler-P012-Win64
           path: build-vst3/VST3/Release/*.vst3
           if-no-files-found: error
