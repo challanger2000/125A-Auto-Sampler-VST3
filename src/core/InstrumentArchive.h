@@ -6,6 +6,7 @@
 #include "BuiltInSampler.h"
 #include <array>
 #include <cstdint>
+#include <cctype>
 #include <filesystem>
 #include <fstream>
 #include <map>
@@ -79,6 +80,12 @@ inline std::string safe125AStem(std::string_view displayName){
     while(!stem.empty() && (stem.back()==' ' || stem.back()=='.'))
         stem.pop_back();
     if(stem.empty() || stem=="." || stem=="..")stem="Instrument";
+    std::string upper=stem;
+    std::transform(upper.begin(),upper.end(),upper.begin(),
+        [](unsigned char c){return static_cast<char>(std::toupper(c));});
+    if(upper=="CON" || upper=="PRN" || upper=="AUX" || upper=="NUL" ||
+       (upper.size()==4 && (upper.starts_with("COM") || upper.starts_with("LPT")) &&
+        upper[3]>='1' && upper[3]<='9'))stem+="_";
     return stem;
 }
 inline bool valid125AName(const std::string& name){
@@ -87,8 +94,9 @@ inline bool valid125AName(const std::string& name){
 }
 inline std::string instrumentManifest(const std::string& name,std::size_t count,
                                       const ArchivePlayback& playback){
-    if(name.empty() || name.size()>192)
-        throw std::invalid_argument("125A instrument name is empty or too long");
+    if(name.empty() || name.size()>192 ||
+       std::any_of(name.begin(),name.end(),[](unsigned char c){return c<32;}))
+        throw std::invalid_argument("125A instrument name invalid");
     std::string text=std::string("{\n  \"format\":\"125A\",\n  \"version\":1,\n  \"name\":\"")+
         json125Escape(name)+"\",\n  \"sampleCount\":"+std::to_string(count)+
         ",\n  \"sampleFormat\":\"PCM24 stereo WAV\",\n  \"mapping\":\"root-note-velocity-round-robin filenames\",\n  \"playbackNormalized\":[";
@@ -128,7 +136,8 @@ inline void write125AArchive(const std::filesystem::path& source,
         throw std::runtime_error("invalid 125A sample count");
     std::sort(files.begin(),files.end());
     const auto manifest=instrumentManifest(instrumentName,files.size(),playback);
-    const fs::path partial=destination.string()+".partial";
+    fs::path partial=destination;
+    partial+=".partial";
     if(fs::exists(partial))throw std::runtime_error("stale partial archive");
     try {
         std::ofstream out(partial,std::ios::binary|std::ios::trunc);
@@ -236,6 +245,7 @@ inline std::vector<ArchiveEntry> inspect125A(
     const auto eocdOff=length-tailLen+eocd;
     if(zipRd16(end+4)!=0 || zipRd16(end+6)!=0 ||
        count!=zipRd16(end+8) || count<2 || count>6145 ||
+       centralSize>static_cast<std::uint32_t>(count)*(46u+80u) ||
        centralOff>=length || static_cast<std::uint64_t>(centralOff)+centralSize!=eocdOff)
         throw std::runtime_error("125A invalid ZIP directory metadata");
     if(centralOffset)*centralOffset=centralOff;
@@ -254,7 +264,7 @@ inline std::vector<ArchiveEntry> inspect125A(
         const auto nameSize=zipRd16(c+28),extra=zipRd16(c+30),comment=zipRd16(c+32);
         const auto offset=zipRd32(c+42);
         if(flags!=0 || method!=0 || size!=packed || nameSize==0 ||
-           nameSize>80 || zipRd16(c+34)!=0 || zipRd16(c+36)!=0 ||
+           nameSize>80 || extra!=0 || comment!=0 || zipRd16(c+34)!=0 || zipRd16(c+36)!=0 ||
            static_cast<std::uint64_t>(pos)+46+nameSize+extra+comment>central.size() ||
            offset>=centralOff)
             throw std::runtime_error("125A unsupported or malformed ZIP member");
@@ -287,7 +297,7 @@ inline std::vector<unsigned char> read125AEntry(
        zipRd32(header.data()+14)!=e.crc ||
        zipRd32(header.data()+18)!=e.size ||
        zipRd32(header.data()+22)!=e.size ||
-       nameSize!=e.name.size() ||
+       nameSize!=e.name.size() || extra!=0 ||
        dataOff+e.size>centralOff)
         throw std::runtime_error("125A local ZIP header mismatch");
     std::vector<unsigned char> name(nameSize);
