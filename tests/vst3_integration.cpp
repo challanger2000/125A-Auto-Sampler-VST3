@@ -893,8 +893,59 @@ int run(const char* vst3path,bool matrix,bool customFolder){
             require(std::abs(genL[static_cast<std::size_t>(i)])<1.e-7f &&
                     std::abs(genR[static_cast<std::size_t>(i)])<1.e-7f,
                 "A01 saved rejected state became audible on second recall");
+        // A01 negative control #2: a NONZERO but wrong fingerprint is
+        // equally unauthorized across save/restore. No new identity may be
+        // silently minted by getState() merely because the file is present.
+        ResizableMemoryIBStream wrongState;
+        IBStreamer wrong(&wrongState,kLittleEndian);
+        require(wrong.writeInt32(0x125A2201),
+                "A01 wrong-fingerprint state version unavailable");
+        for(const double param:parameters)
+            require(wrong.writeDouble(param),
+                    "A01 wrong-fingerprint state parameters unavailable");
+        require(wrong.writeInt32(0),
+                "A01 wrong-fingerprint export folder unavailable");
+        require(wrong.writeInt32(static_cast<int32>(archivePath.size())),
+                "A01 wrong-fingerprint bank path length unavailable");
+        written=0;
+        require(wrongState.write(archivePath.data(),
+                    static_cast<int32>(archivePath.size()),&written)==kResultOk &&
+                written==static_cast<int32>(archivePath.size()),
+                "A01 wrong-fingerprint bank path unavailable");
+        require(wrong.writeInt32(static_cast<int32>(name.size())),
+                "A01 wrong-fingerprint name length unavailable");
+        written=0;
+        require(wrongState.write(name.data(),static_cast<int32>(name.size()),&written)==
+                kResultOk && written==static_cast<int32>(name.size()),
+                "A01 wrong-fingerprint name unavailable");
+        const auto genuine=a125::archive125AFingerprint(capturedArchive).value_or(0);
+        require(genuine!=0,"A01 genuine ZIP fingerprint missing");
+        const auto incorrect=genuine^0x1234567890ABCDEFull;
+        require(incorrect!=0 && incorrect!=genuine,
+                "A01 wrong fingerprint fixture must be nonzero and different");
+        require(wrong.writeInt64(static_cast<Steinberg::int64>(incorrect)),
+                "A01 wrong-fingerprint identity unavailable");
+        wrongState.rewind();
+        require(generator.component->setState(&wrongState)==kResultOk,
+                "A01 wrong-fingerprint project recall rejected improperly");
+        for(int cycle=0;cycle<3;++cycle){
+            ResizableMemoryIBStream savedWrong;
+            require(generator.component->getState(&savedWrong)==kResultOk,
+                "A01 rejected nonzero fingerprint must remain saveable");
+            savedWrong.rewind();
+            require(generator.component->setState(&savedWrong)==kResultOk,
+                "A01 rejected nonzero fingerprint must survive repeated recalls");
+            std::fill(genL.begin(),genL.end(),.123f);
+            std::fill(genR.begin(),genR.end(),.123f);
+            require(generator.processor->process(probe)==kResultOk,
+                "A01 wrong-fingerprint audio regression cannot render");
+            for(int32 i=0;i<kBlock;++i)
+                require(std::abs(genL[static_cast<std::size_t>(i)])<1.e-7f &&
+                        std::abs(genR[static_cast<std::size_t>(i)])<1.e-7f,
+                    "A01 wrong nonzero identity became audible after autosaves");
+        }
         std::cout<<"[PASS] P024/A01 rejected project bank remains silent "
-                    "through save and second recall\\n";
+                    "through zero/wrong fingerprint and repeated recalls\\n";
     }
     // P013: the SAME 125A instrument must directly play the just-recorded
     // WAV bank. No SFZ file, second sampler, or external playback VST.
