@@ -64,12 +64,12 @@ enum : V::ParamID {
 };
 constexpr std::size_t kParamCount=a125::ParameterCount+6;
 constexpr std::array<double,kParamCount> kDefaultParams{
-    0.,60./127.,60./127.,0.,7./15.,0.,
-    (1.-.25)/7.75,(2.-.25)/9.75,(.1-.05)/.45,
+    0.,60./127.,60./127.,1.,0.,0.,
+    (.5-.25)/7.75,(.5-.25)/9.75,(.1-.05)/.45,
     99./126.,59./126.,119./126., 1.,0.,0.,0.,1.,.15/3.
 };
-constexpr double kDefaultHold=(1.0-0.25)/7.75;
-constexpr double kDefaultTail=(2.0-0.25)/9.75;
+constexpr double kDefaultHold=(0.5-0.25)/7.75;
+constexpr double kDefaultTail=(0.5-0.25)/9.75;
 constexpr double kDefaultGap=(0.10-0.05)/0.45;
 
 
@@ -92,9 +92,9 @@ struct Session {
     a125::ExportTarget exportTarget;
     a125::ExportTarget latestCompletedRun;
     std::atomic<std::uint32_t> readyBankGeneration{0};
-    std::atomic<int> firstNote{60},lastNote{60},step{1},roundRobins{8},layers{1};
+    std::atomic<int> firstNote{60},lastNote{60},step{12},roundRobins{1},layers{1};
     std::atomic<int> velocity0{100},velocity1{80},velocity2{120};
-    std::atomic<std::uint64_t> hold{44100},tail{88200},gap{4410};
+    std::atomic<std::uint64_t> hold{22050},tail{22050},gap{4410};
 
     void publish(const a125::JobConfig& config,int sr,std::int64_t newAnchor) noexcept {
         anchor.store(kDisarmed,std::memory_order_release);
@@ -375,9 +375,9 @@ public:
            V::ParameterInfo::kCanAutomate,kFirstParam);
         parameters.addParameter(STR16("Last MIDI note"),nullptr,127,60./127.,
            V::ParameterInfo::kCanAutomate,kLastParam);
-        parameters.addParameter(STR16("Note step (1-12)"),nullptr,11,0.,
+        parameters.addParameter(STR16("Note step (1-12)"),nullptr,11,1.,
            V::ParameterInfo::kCanAutomate,kStepParam);
-        parameters.addParameter(STR16("Round Robins (1-16)"),nullptr,15,7./15.,
+        parameters.addParameter(STR16("Round Robins (1-16)"),nullptr,15,0.,
            V::ParameterInfo::kCanAutomate,kRRParam);
         parameters.addParameter(STR16("Velocity layers (1-3)"),nullptr,2,0.,
            V::ParameterInfo::kCanAutomate,kLayersParam);
@@ -803,7 +803,7 @@ private:
         }
     }
     std::array<std::atomic<double>,kParamCount> values_{
-        0.,60./127.,60./127.,0.,7./15.,0.,kDefaultHold,kDefaultTail,kDefaultGap,
+        0.,60./127.,60./127.,1.,0.,0.,kDefaultHold,kDefaultTail,kDefaultGap,
         99./126.,59./126.,119./126., 1.,0.,0.,0.,1.,.15/3.};
     a125::JobConfig config_{};
     a125::BuiltInSampler player_{};
