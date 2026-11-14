@@ -4,8 +4,10 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
 #include <fstream>
 #include <limits>
+#include <ostream>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -62,16 +64,15 @@ inline void writeLE32(std::ostream& out, std::uint32_t value) {
     writeLE16(out, static_cast<std::uint16_t>(value >> 16));
 }
 
-// Must be called on a worker thread, NEVER the VST3 process() audio callback.
-inline void writeWav24(const std::string& path, std::uint32_t sampleRate,
-                       std::span<const StereoFrame> audio) {
+// Testable WAV serializer: a deliberately failing streambuf can inject a
+// late flush error without filling a real Windows disk. Never on audio.
+inline void writeWav24Stream(std::ostream& out,std::uint32_t sampleRate,
+                             std::span<const StereoFrame> audio) {
     if (sampleRate < 8000 || sampleRate > 384000)
         throw std::invalid_argument("invalid sample rate");
     if (audio.size() > (std::numeric_limits<std::uint32_t>::max() - 36u) / 6u)
         throw std::length_error("WAV exceeds RIFF size limit");
     const auto dataBytes = static_cast<std::uint32_t>(audio.size() * 6);
-    std::ofstream out(path, std::ios::binary | std::ios::trunc);
-    if (!out) throw std::runtime_error("cannot open WAV output");
     out.write("RIFF", 4); writeLE32(out, 36u + dataBytes);
     out.write("WAVEfmt ", 8); writeLE32(out, 16);
     writeLE16(out, 1); writeLE16(out, 2);
@@ -90,6 +91,33 @@ inline void writeWav24(const std::string& path, std::uint32_t sampleRate,
             out.put(static_cast<char>((bits >> 16) & 255));
         }
     }
-    if (!out) throw std::runtime_error("WAV write failed");
+    out.flush();
+    if(!out)throw std::runtime_error("WAV write/flush failed");
+}
+// Must be called on a worker thread, NEVER the VST3 process() audio callback.
+inline void writeWav24(const std::string& path, std::uint32_t sampleRate,
+                       std::span<const StereoFrame> audio) {
+    namespace fs=std::filesystem;
+    const fs::path destination(path);
+    fs::path partial=destination;
+    partial+=".partial";
+    if(fs::exists(destination) || fs::exists(partial))
+        throw std::runtime_error("WAV destination or partial already exists");
+    try{
+        std::ofstream out(partial,std::ios::binary|std::ios::trunc);
+        if(!out)throw std::runtime_error("cannot open WAV partial output");
+        writeWav24Stream(out,sampleRate,audio);
+        out.close();
+        if(!out)throw std::runtime_error("WAV close failed");
+        const auto expected=44ull+static_cast<std::uint64_t>(audio.size())*6ull;
+        if(fs::file_size(partial)!=expected)
+            throw std::runtime_error("WAV final length mismatch");
+        if(fs::exists(destination))throw std::runtime_error("WAV destination appeared");
+        fs::rename(partial,destination);
+    }catch(...){
+        std::error_code ec;
+        fs::remove(partial,ec);
+        throw;
+    }
 }
 } // namespace a125

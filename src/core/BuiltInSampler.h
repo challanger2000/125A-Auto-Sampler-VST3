@@ -28,6 +28,9 @@ struct SampleZone {
     std::uint32_t sampleRate=44100;
     std::vector<StereoFrame> pcm;
 };
+// Decoded float PCM per instrument is bounded before allocating full banks.
+// This is a resource limit, not a musical-quality setting.
+inline constexpr std::uint64_t kMaxBankDecodedBytes=512ull*1024*1024;
 struct SampleBank {
     std::vector<SampleZone> zones;
     // One shared gain for all zones preserves the original velocity-layer
@@ -125,6 +128,7 @@ inline std::unique_ptr<SampleBank> loadCapturedBank(
     auto bank=std::make_unique<SampleBank>();
     std::map<std::pair<int,int>,std::set<int>> groups;
     std::uint32_t sampleRate=0;
+    std::uint64_t decodedTotal=0;
     for(const auto& file:std::filesystem::directory_iterator(directory,ec)) {
         if(ec) return {};
         if(!file.is_regular_file())continue;
@@ -132,6 +136,12 @@ inline std::unique_ptr<SampleBank> loadCapturedBank(
         if(file.path().extension()!=".wav")continue;
         int note=0,vel=0,rr=0;
         if(!parseSampleName(name,note,vel,rr)) return {};
+        const auto bytes=file.file_size(ec);
+        if(ec || bytes<50 || bytes>128ull*1024*1024 ||
+           (bytes-44)%6!=0)return {};
+        const auto decoded=((bytes-44)/6)*sizeof(StereoFrame);
+        if(decoded>kMaxBankDecodedBytes-decodedTotal)return {};
+        decodedTotal+=decoded;
         if(bank->zones.size()>=6144 || !groups[{note,vel}].insert(rr).second)
             return {};
         SampleZone z;
@@ -176,26 +186,64 @@ public:
         sustain_=std::clamp(sustain,0.f,1.f);
         release_=std::clamp(release,0.f,3.f);
     }
-    // Loading a replacement does not deallocate a bank while an ASIO
-    // callback might still be playing it. The old bank lives until teardown.
+    // Resource publication/deletion is control-thread-only. Each live voice
+    // pins its immutable bank by an atomic hazard reference; GUI/audio reads
+    // use short reader scopes. Retired banks are reclaimed only off audio.
     bool publish(std::unique_ptr<SampleBank> bank) {
-        if(!bank || bank->zones.empty() || owned_.size()>=16) return false;
+        if(!bank || bank->zones.empty())return false;
+        std::uint64_t newBytes=0;
+        for(const auto& zone:bank->zones){
+            const auto bytes=static_cast<std::uint64_t>(zone.pcm.size())*
+                sizeof(StereoFrame);
+            if(bytes>kMaxBankDecodedBytes-newBytes)return false;
+            newBytes+=bytes;
+        }
+        reclaimRetired();
+        std::uint64_t retained=newBytes;
+        for(const auto& old:owned_)
+            for(const auto& zone:old->zones){
+                const auto bytes=static_cast<std::uint64_t>(zone.pcm.size())*
+                    sizeof(StereoFrame);
+                if(bytes>2*kMaxBankDecodedBytes-retained)return false;
+                retained+=bytes;
+            }
+        if(owned_.size()>=maxVoices+2)return false;
         const auto* ptr=bank.get();
         owned_.push_back(std::move(bank));
         current_.store(ptr,std::memory_order_release);
+        reclaimRetired();
         return true;
+    }
+    // May run from GUI/worker/control, never from an ASIO callback.
+    void reclaimRetired() {
+        if(readers_.load(std::memory_order_acquire)!=0)return;
+        const auto* current=current_.load(std::memory_order_acquire);
+        std::array<const SampleBank*,maxVoices> pinned{};
+        for(std::size_t i=0;i<pinned.size();++i)
+            pinned[i]=voiceBanks_[i].load(std::memory_order_acquire);
+        if(readers_.load(std::memory_order_acquire)!=0)return;
+        owned_.erase(std::remove_if(owned_.begin(),owned_.end(),
+            [&](const auto& bank){
+                return bank.get()!=current &&
+                    std::find(pinned.begin(),pinned.end(),bank.get())==pinned.end();
+            }),owned_.end());
+    }
+    void requestVoiceReset() noexcept {
+        clearVoices_.store(true,std::memory_order_release);
     }
     // State-restore failure must not leave a different project's bank
     // playable. The audio callback retires active voices at the next block.
     void clearCurrent() noexcept {
         current_.store(nullptr,std::memory_order_release);
-        clearVoices_.store(true,std::memory_order_release);
+        requestVoiceReset();
     }
     std::size_t loadedZones() const noexcept {
+        ReaderScope scope(readers_);
         const auto* bank=current_.load(std::memory_order_acquire);
         return bank?bank->zones.size():0;
     }
     std::array<bool,128> rootNotes() const noexcept {
+        ReaderScope scope(readers_);
         std::array<bool,128> roots{};
         const auto* bank=current_.load(std::memory_order_acquire);
         if(bank)
@@ -208,6 +256,7 @@ public:
     // until plugin teardown, so the GUI can read sample data without locks.
     template<std::size_t N> bool waveform(
             std::array<float,N>& output,int selectedKey=60) const noexcept {
+        ReaderScope scope(readers_);
         output.fill(0.f);
         const auto* bank=current_.load(std::memory_order_acquire);
         if(!bank || bank->zones.empty() || N==0)return false;
@@ -234,6 +283,7 @@ public:
         return true;
     }
     void noteOn(int key,int velocity,double outputRate,int noteId=-1,int channel=0) noexcept {
+        ReaderScope scope(readers_);
         clearVoicesIfRequested();
         if(key<0 || key>127 || velocity<1 || velocity>127 ||
            outputRate<8000 || outputRate>384000)return;
@@ -278,6 +328,9 @@ public:
         if(!voice)voice=&*std::min_element(voices_.begin(),voices_.end(),
             [](const Voice& a,const Voice& b){return a.stamp<b.stamp;});
         voice->zone=chosen;
+        voiceBanks_[static_cast<std::size_t>(voice-voices_.data())].store(
+            bank,std::memory_order_release);
+        outputRate_=outputRate;
         voice->position=0.;
         voice->increment=(static_cast<double>(chosen->sampleRate)/outputRate)*
             std::pow(2.,static_cast<double>(key-chosen->root)/12.);
@@ -299,38 +352,55 @@ public:
         voice->releaseStep=0.f;
     }
     void noteOff(int key,int noteId=-1,int channel=0) noexcept {
+        ReaderScope scope(readers_);
         // For identified VST3 notes, release only the matching voice. Hosts
         // using noteId=-1 fall back to the pitch + channel contract.
         if(!gate_)return;
-        for(auto& v:voices_)if(v.zone && v.channel==channel &&
-            (noteId>=0 ? v.noteId==noteId : v.key==key) &&
-            v.stage!=Stage::Release){
-            if(release_<=0.f){v.zone=nullptr;continue;}
+        for(std::size_t i=0;i<voices_.size();++i){
+            auto& v=voices_[i];
+            if(!v.zone || v.channel!=channel ||
+               !(noteId>=0 ? v.noteId==noteId : v.key==key) ||
+               v.stage==Stage::Release)continue;
+            if(release_<=0.f){
+                v.zone=nullptr;
+                voiceBanks_[i].store(nullptr,std::memory_order_release);
+                continue;
+            }
             v.releaseStep=v.level/static_cast<float>(
                 std::max(1.,release_*v.outputRate));
             v.stage=Stage::Release;
         }
     }
     StereoFrame renderOne() noexcept {
+        ReaderScope scope(readers_);
         clearVoicesIfRequested();
         StereoFrame mix{};
         unsigned activeVoices=0;
-        for(auto& voice:voices_) {
+        float envelopeSum=0.f;
+        for(std::size_t voiceIndex=0;voiceIndex<voices_.size();++voiceIndex) {
+            auto& voice=voices_[voiceIndex];
             if(!voice.zone)continue;
             const auto& wave=voice.zone->pcm;
             const auto index=static_cast<std::size_t>(voice.position);
-            if(index>=wave.size()) {voice.zone=nullptr;continue;}
+            if(index>=wave.size()) {
+                voice.zone=nullptr;
+                voiceBanks_[voiceIndex].store(nullptr,std::memory_order_release);
+                continue;
+            }
             ++activeVoices;
             const auto next=std::min(index+1,wave.size()-1);
             const auto frac=static_cast<float>(voice.position-index);
-            const float gain=advanceEnvelope(voice)*
-                (normalize_?voice.normalizeGain:1.f);
+            const float envelope=advanceEnvelope(voice);
+            envelopeSum+=envelope;
+            const float gain=envelope*(normalize_?voice.normalizeGain:1.f);
             for(int ch=0;ch<2;++ch)
                 mix[static_cast<std::size_t>(ch)]+=
                     (wave[index][static_cast<std::size_t>(ch)]*(1.f-frac)+
                     wave[next][static_cast<std::size_t>(ch)]*frac)*gain;
             voice.position+=voice.increment;
             if(voice.position>=static_cast<double>(wave.size()))voice.zone=nullptr;
+            if(!voice.zone)
+                voiceBanks_[voiceIndex].store(nullptr,std::memory_order_release);
         }
         if(normalize_){
             // Bank-wide peak normalization is -1 dBFS PER VOICE. Two
@@ -338,10 +408,18 @@ public:
             // the old hard clipper. Share the available headroom across
             // currently audible voices; this is a linear gain stage, NOT
             // saturation/soft clipping, and does not touch the source WAVs.
-            const float target=1.f/static_cast<float>(std::max(1u,activeVoices));
-            if(activeVoices==0)polyMixGain_=1.f; // reset in actual silence
-            else if(target<polyMixGain_)polyMixGain_=target; // fast safe attack
-            else polyMixGain_+= (target-polyMixGain_)*.005f; // smooth recovery
+            // Measure *actual envelope contributions*, not allocated voice
+            // count. An almost silent new Attack must not drop a held tone
+            // by 6 dB in one sample. The contribution sum still bounds
+            // normalized peaks even when several voices peak together.
+            const float target=1.f/std::max(1.f,envelopeSum);
+            if(activeVoices==0)polyMixGain_=1.f;
+            else if(target<polyMixGain_)polyMixGain_=target;
+            else {
+                const float alpha=1.f-std::exp(-1.f/static_cast<float>(
+                    std::max(1.,outputRate_*.01)));
+                polyMixGain_+=(target-polyMixGain_)*alpha;
+            }
             for(float& x:mix)x*=polyMixGain_;
         }else polyMixGain_=1.f;
         // Never hard-clip inside a float VST3 bus. A downstream DAW gain
@@ -351,8 +429,17 @@ public:
 private:
     void clearVoicesIfRequested() noexcept {
         if(clearVoices_.exchange(false,std::memory_order_acq_rel))
-            for(auto& voice:voices_)voice.zone=nullptr;
+            for(std::size_t i=0;i<voices_.size();++i){
+                voices_[i].zone=nullptr;
+                voiceBanks_[i].store(nullptr,std::memory_order_release);
+            }
     }
+    struct ReaderScope {
+        explicit ReaderScope(std::atomic<std::uint32_t>& readers) noexcept:
+            readers_(readers){readers_.fetch_add(1,std::memory_order_acq_rel);}
+        ~ReaderScope(){readers_.fetch_sub(1,std::memory_order_acq_rel);}
+        std::atomic<std::uint32_t>& readers_;
+    };
     enum class Stage:std::uint8_t {Attack,Decay,Sustain,Release};
     struct Voice {
         const SampleZone* zone=nullptr;
@@ -386,6 +473,8 @@ private:
         return v.level;
     }
     std::vector<std::unique_ptr<SampleBank>> owned_;
+    mutable std::atomic<std::uint32_t> readers_{0};
+    std::array<std::atomic<const SampleBank*>,maxVoices> voiceBanks_{};
     std::atomic<const SampleBank*> current_{nullptr};
     std::atomic<bool> clearVoices_{false};
     std::array<Voice,maxVoices> voices_{};
@@ -395,5 +484,6 @@ private:
     bool normalize_=false,gate_=false;
     // Audio-thread-only gain follower: no heap, mutex or lookahead latency.
     float polyMixGain_=1.f;
+    double outputRate_=44100.;
 };
 } // namespace a125

@@ -126,14 +126,20 @@ inline void write125AArchive(const std::filesystem::path& source,
     if(fs::exists(destination))
         throw std::runtime_error("125A archive already exists");
     std::vector<fs::path> files;
+    std::uint64_t decodedTotal=0;
     for(const auto& f:fs::directory_iterator(source)){
         if(!f.is_regular_file() || f.path().extension()!=".wav")continue;
         const auto filename=f.path().filename().string();
         int n=0,v=0,rr=0;
         if(!parseSampleName(filename,n,v,rr))
             throw std::runtime_error("unknown WAV in 125A source");
-        if(f.file_size()<50 || f.file_size()>128ull*1024*1024)
+        const auto size=f.file_size();
+        if(size<50 || size>128ull*1024*1024 || (size-44)%6!=0)
             throw std::runtime_error("invalid WAV size in 125A source");
+        const auto decoded=(size-44)/6*sizeof(StereoFrame);
+        if(decoded>kMaxBankDecodedBytes-decodedTotal)
+            throw std::runtime_error("125A source exceeds PCM budget");
+        decodedTotal+=decoded;
         files.push_back(f.path());
     }
     if(files.empty() || files.size()>6144)
@@ -178,6 +184,20 @@ inline void write125AArchive(const std::filesystem::path& source,
             in.read(reinterpret_cast<char*>(bytes.data()),
                     static_cast<std::streamsize>(bytes.size()));
             if(!in)throw std::runtime_error("125A input read failed");
+            // Validate the COMPLETE WAV header and payload length before
+            // publishing an archive. A valid-looking name/size is insufficient.
+            const auto* h=bytes.data();
+            const auto payload=samplerLE32(h+40);
+            if(std::string(reinterpret_cast<const char*>(h),4)!="RIFF" ||
+               std::string(reinterpret_cast<const char*>(h+8),4)!="WAVE" ||
+               std::string(reinterpret_cast<const char*>(h+12),4)!="fmt " ||
+               samplerLE32(h+16)!=16 || samplerLE16(h+20)!=1 ||
+               samplerLE16(h+22)!=2 || samplerLE16(h+32)!=6 ||
+               samplerLE16(h+34)!=24 ||
+               std::string(reinterpret_cast<const char*>(h+36),4)!="data" ||
+               payload+44ull!=bytes.size() || samplerLE32(h+4)!=payload+36u ||
+               samplerLE32(h+28)!=samplerLE32(h+24)*6u)
+                throw std::runtime_error("125A invalid source WAV header");
             add(path.filename().string(),bytes.data(),bytes.size());
         }
         const auto central=zipPos(out);
@@ -259,6 +279,9 @@ inline std::vector<ArchiveEntry> inspect125A(
     std::vector<ArchiveEntry> entries;
     entries.reserve(count);
     std::map<std::string,bool> names;
+    std::vector<std::pair<std::uint64_t,std::uint64_t>> intervals;
+    intervals.reserve(count);
+    std::uint64_t decodedTotal=0;
     for(unsigned i=0;i<count;++i){
         if(pos+46>central.size() || zipRd32(central.data()+pos)!=0x02014B50u)
             throw std::runtime_error("125A corrupt ZIP central directory");
@@ -279,11 +302,30 @@ inline std::vector<ArchiveEntry> inspect125A(
            (entry.name=="instrument.json" && entry.size>4096) ||
            (entry.name!="instrument.json" && (size<50 || size>128u*1024u*1024u)))
             throw std::runtime_error("125A invalid or duplicated entry");
+        // Reject ZIP members which overlap one another or the directory,
+        // before any large WAV allocation takes place.
+        const auto localEnd=static_cast<std::uint64_t>(entry.offset)+30+
+            entry.name.size()+entry.size;
+        if(localEnd>centralOff)throw std::runtime_error("125A ZIP entry out of bounds");
+        intervals.emplace_back(entry.offset,localEnd);
+        if(entry.name!="instrument.json"){
+            if(entry.size<50 || (entry.size-44)%6!=0)
+                throw std::runtime_error("125A invalid PCM size");
+            const auto decoded=(static_cast<std::uint64_t>(entry.size)-44)/6*
+                sizeof(StereoFrame);
+            if(decoded>kMaxBankDecodedBytes-decodedTotal)
+                throw std::runtime_error("125A decoded PCM memory budget exceeded");
+            decodedTotal+=decoded;
+        }
         entries.push_back(std::move(entry));
         pos+=46+nameSize+extra+comment;
     }
     if(pos!=central.size() || !names.contains("instrument.json"))
         throw std::runtime_error("125A ZIP missing manifest or unexpected data");
+    std::sort(intervals.begin(),intervals.end());
+    for(std::size_t i=1;i<intervals.size();++i)
+        if(intervals[i].first<intervals[i-1].second)
+            throw std::runtime_error("125A overlapping ZIP local entries");
     return entries;
 }
 // Read only ZIP central directory metadata, no WAV allocations. The new

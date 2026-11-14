@@ -16,6 +16,7 @@
 #include <iostream>
 #include <iterator>
 #include <stdexcept>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -770,6 +771,42 @@ void testAutomaticBatch48Wavs() {
     std::filesystem::remove_all(root);
 }
 
+class FailOnFlushBuffer final:public std::stringbuf {
+public:
+    int sync() override {return -1;}
+};
+void testAuditBankLifetimeAndWavPersistence() {
+    a125::BuiltInSampler player;
+    for(int n=0;n<110;++n){
+        auto bank=std::make_unique<a125::SampleBank>();
+        a125::SampleZone z;
+        z.root=60;z.velocity=100;z.rr=1;
+        z.pcm.assign(48,{.2f,-.2f});
+        bank->zones.push_back(std::move(z));
+        require(player.publish(std::move(bank)),
+                "A04 100+ bank replacements must not exhaust lifetime slots");
+        player.noteOn(60,100,44100.);
+        for(int i=0;i<48;++i)(void)player.renderOne();
+    }
+    const auto temp=std::filesystem::temp_directory_path()/
+        "125a_audit_wav_atomic.wav";
+    std::filesystem::remove(temp);
+    std::filesystem::remove(temp.string()+".partial");
+    std::vector<a125::StereoFrame> pcm(100,{.25f,-.25f});
+    a125::writeWav24(temp.string(),44100,pcm);
+    require(std::filesystem::file_size(temp)==44+pcm.size()*6 &&
+            !std::filesystem::exists(temp.string()+".partial"),
+            "A06 published WAV must have full bytes and no leftover partial");
+    require(throws([&]{a125::writeWav24(temp.string(),44100,pcm);}),
+            "A06 no silent replacement of a previously published WAV");
+    require(std::filesystem::file_size(temp)==44+pcm.size()*6,
+            "A06 failed duplicate write must leave original WAV intact");
+    std::filesystem::remove(temp);
+    FailOnFlushBuffer fault;
+    std::ostream target(&fault);
+    require(throws([&]{a125::writeWav24Stream(target,44100,pcm);}),
+            "A06 late stream flush error must be detected and reported");
+}
 void testAuditSamplerNoteIdentityAndNames() {
     int key=0,velocity=0,rr=0;
     require(!a125::parseSampleName("N060_V100_RR01.wav",key,velocity,rr) &&
@@ -842,6 +879,7 @@ int main() {
         testAutomaticBatch48Wavs();
         testWavAndTrim();
         testAuditSamplerNoteIdentityAndNames();
+        testAuditBankLifetimeAndWavPersistence();
         std::cout << "P001 core tests PASSED\n";
         return 0;
     } catch(const std::exception& e) {
