@@ -4,6 +4,7 @@
 #include "core/JobParameters.h"
 #include "core/CaptureIntegrity.h"
 #include "core/ActiveNote.h"
+#include "core/RunGate.h"
 #include <array>
 #include <filesystem>
 #include <fstream>
@@ -149,6 +150,25 @@ void testJobBlockEdgeCases() {
         require(bool(where)==(frame<30),"capture boundary precise");
     }
     require(t.noteOff==10 && t.captureEnd==30,"correct NoteOn/Off/End edges");
+}
+
+void testRunNeedsExplicitRearm() {
+    a125::RunGate gate;
+    require(!gate.observe(false,true), "Run Off cannot start");
+    require(gate.observe(true,true), "manual Run On starts exactly once");
+    require(!gate.observe(true,true), "steady Run On must not start twice");
+    require(!gate.observe(true,false), "transport stop invalidates the job");
+    require(!gate.observe(true,true), "pressing DAW Play must not restart WAV export");
+    gate.disarm();
+    require(!gate.observe(true,true), "reactivated VST3 must not auto-start");
+    require(!gate.observe(false,true), "Run Off only rearms");
+    require(gate.observe(true,true), "subsequent user OFF->ON starts a new job");
+    require(!gate.observe(true,true), "job never restarts without OFF");
+    require(!gate.observe(false,false), "Off while stopped rearms");
+    require(!gate.observe(true,false), "Run On while transport stopped cannot start");
+    require(!gate.observe(true,true), "transport Play without rearm must not start");
+    require(!gate.observe(false,true), "user OFF rearms once more");
+    require(gate.observe(true,true), "explicit user START works after transport resumes");
 }
 
 void testStopAndJumpNoteRecovery() {
@@ -308,6 +328,7 @@ int main() {
         testEditableVelocitiesAndRanges();
         testJobSchedule();
         testJobBlockEdgeCases();
+        testRunNeedsExplicitRearm();
         testStopAndJumpNoteRecovery();
         testCaptureIntegrityFailClosed();
         testAutomaticBatch48Wavs();
