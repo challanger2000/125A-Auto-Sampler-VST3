@@ -69,7 +69,7 @@ std::vector<std::filesystem::path> regularFilesSnapshot(
             if(!ec)return found;
         }
         if(ec!=std::errc::no_such_file_or_directory &&
-           ec!=std::errc::path_not_found)
+           ec!=std::errc::not_a_directory)
             throw fs::filesystem_error(
                 "125A QA directory walk failed",root,ec);
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
