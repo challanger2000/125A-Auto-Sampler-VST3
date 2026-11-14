@@ -73,7 +73,8 @@ inline bool parseSampleName(const std::string& s,int& note,int& vel,int& rr) noe
 
 // Read the exact standard 44-byte PCM24 stereo files emitted by our recorder.
 // Reject truncated/foreign files instead of playing uninitialized samples.
-inline bool readCapturedWav(const std::filesystem::path& path,SampleZone& zone) {
+inline bool readCapturedWav(const std::filesystem::path& path,SampleZone& zone,
+        std::uint64_t remainingDecodedBytes=kMaxBankDecodedBytes) {
     std::ifstream in(path,std::ios::binary|std::ios::ate);
     if(!in) return false;
     const auto length=in.tellg();
@@ -95,6 +96,11 @@ inline bool readCapturedWav(const std::filesystem::path& path,SampleZone& zone) 
        static_cast<std::uint64_t>(size)+44!=static_cast<std::uint64_t>(length) ||
        samplerLE32(header.data()+4)!=size+36 ||
        samplerLE32(header.data()+28)!=rate*6u) return false;
+    // The limits are derived from the SAME opened file handle and decoded
+    // header. No separate file_size(path) preflight may authorize allocation:
+    // paths can be replaced between directory enumeration and ifstream open.
+    const auto decodedBytes=static_cast<std::uint64_t>(size/6)*sizeof(StereoFrame);
+    if(decodedBytes>remainingDecodedBytes)return false;
     zone.sampleRate=rate;
     // Read large banks with ONE buffered I/O operation per WAV, not millions
     // of 6-byte ifstream calls. This keeps automatic post-capture import fast.
@@ -122,7 +128,9 @@ inline bool readCapturedWav(const std::filesystem::path& path,SampleZone& zone) 
 // Loading is restricted to the GUI/control thread, never process().
 // Complete captured note/velocity groups must have RR 1..N without gaps.
 inline std::unique_ptr<SampleBank> loadCapturedBank(
-        const std::filesystem::path& directory) {
+        const std::filesystem::path& directory,
+        std::uint64_t pcmBudget=kMaxBankDecodedBytes) {
+    pcmBudget=std::min(pcmBudget,kMaxBankDecodedBytes);
     std::error_code ec;
     if(!std::filesystem::is_directory(directory,ec) || ec) return {};
     auto bank=std::make_unique<SampleBank>();
@@ -136,18 +144,16 @@ inline std::unique_ptr<SampleBank> loadCapturedBank(
         if(file.path().extension()!=".wav")continue;
         int note=0,vel=0,rr=0;
         if(!parseSampleName(name,note,vel,rr)) return {};
-        const auto bytes=file.file_size(ec);
-        if(ec || bytes<50 || bytes>128ull*1024*1024 ||
-           (bytes-44)%6!=0)return {};
-        const auto decoded=((bytes-44)/6)*sizeof(StereoFrame);
-        if(decoded>kMaxBankDecodedBytes-decodedTotal)return {};
-        decodedTotal+=decoded;
         if(bank->zones.size()>=6144 || !groups[{note,vel}].insert(rr).second)
             return {};
         SampleZone z;
         z.root=note;z.velocity=vel;z.rr=rr;
-        if(!readCapturedWav(file.path(),z) ||
+        if(!readCapturedWav(file.path(),z,pcmBudget-decodedTotal) ||
            (sampleRate && sampleRate!=z.sampleRate)) return {};
+        const auto decoded=static_cast<std::uint64_t>(z.pcm.size())*
+                           sizeof(StereoFrame);
+        if(decoded>pcmBudget-decodedTotal)return {};
+        decodedTotal+=decoded;
         sampleRate=z.sampleRate;
         bank->zones.emplace_back(std::move(z));
     }
@@ -312,8 +318,15 @@ public:
         for(const auto& zone:bank->zones)
             if(zone.root==chosenRoot && zone.velocity==selectedVel)++variants;
         if(variants==0)return;
-        auto& sequence=rrCounters_[static_cast<std::size_t>(chosenRoot)*128+
-                                   static_cast<std::size_t>(selectedVel)];
+        const auto group=static_cast<std::size_t>(chosenRoot)*128+
+                         static_cast<std::size_t>(selectedVel);
+        // A recalled instrument is a new musical context. Invalidate old RR
+        // counters lazily in constant time instead of zeroing 64 KiB on ASIO.
+        if(rrEpochs_[group]!=rrEpoch_){
+            rrEpochs_[group]=rrEpoch_;
+            rrCounters_[group]=0;
+        }
+        auto& sequence=rrCounters_[group];
         const unsigned selected=sequence++%static_cast<unsigned>(variants);
         const SampleZone* chosen=nullptr;
         for(const auto& zone:bank->zones)
@@ -428,11 +441,20 @@ public:
     }
 private:
     void clearVoicesIfRequested() noexcept {
-        if(clearVoices_.exchange(false,std::memory_order_acq_rel))
+        if(clearVoices_.exchange(false,std::memory_order_acq_rel)){
             for(std::size_t i=0;i<voices_.size();++i){
                 voices_[i].zone=nullptr;
                 voiceBanks_[i].store(nullptr,std::memory_order_release);
             }
+            // Neither the previous bank's headroom attenuation nor its RR
+            // position belongs to the new project. This executes on ASIO,
+            // without allocating, locking, or touching any retired sample.
+            polyMixGain_=1.f;
+            if(++rrEpoch_==0){
+                rrEpochs_.fill(0); // 2^64 resets; defensive wraparound only
+                rrEpoch_=1;
+            }
+        }
     }
     struct ReaderScope {
         explicit ReaderScope(std::atomic<std::uint32_t>& readers) noexcept:
@@ -479,6 +501,8 @@ private:
     std::atomic<bool> clearVoices_{false};
     std::array<Voice,maxVoices> voices_{};
     std::array<std::uint32_t,128*128> rrCounters_{};
+    std::array<std::uint64_t,128*128> rrEpochs_{};
+    std::uint64_t rrEpoch_=1;
     std::uint64_t timestamp_=0;
     float attack_=0.f,decay_=0.f,sustain_=1.f,release_=.15f;
     bool normalize_=false,gate_=false;

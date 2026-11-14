@@ -956,6 +956,117 @@ void testAuditSafeUnicodeStems() {
     require(invalid=="bad_name",
             "A15 malformed UTF-8 must be made into valid filename bytes");
 }
+void testAuditMalformedManifestUnicode() {
+    const auto manifest=a125::instrumentManifest("Valid",2,{});
+    std::string name;
+    std::array<double,7> playback{};
+    const auto substituted=[&](std::string bytes){
+        std::string changed=manifest;
+        const auto at=changed.find("Valid");
+        require(at!=std::string::npos,"R04 manifest fixture missing name");
+        changed.replace(at,5,bytes);
+        return changed;
+    };
+    // JSON text MUST be Unicode. The invalid lead 0xFF, broken sequence,
+    // overlong encoding, surrogate and >U+10FFFF must all fail closed.
+    const std::array<std::string,5> malformed{
+        std::string(1,static_cast<char>(0xFF)),
+        std::string{static_cast<char>(0xC3),'A'},
+        std::string{static_cast<char>(0xC0),static_cast<char>(0xAF)},
+        std::string{static_cast<char>(0xED),static_cast<char>(0xA0),
+                    static_cast<char>(0x80)},
+        std::string{static_cast<char>(0xF4),static_cast<char>(0x90),
+                    static_cast<char>(0x80),static_cast<char>(0x80)}
+    };
+    for(const auto& invalid:malformed)
+        require(!a125::parse125AManifest(substituted(invalid),2,name,playback),
+                "R04 invalid raw UTF-8 must be rejected in JSON strings");
+    const std::string correct=std::string("B")+
+         std::string{static_cast<char>(0xC3),static_cast<char>(0xA4)};
+    require(a125::parse125AManifest(substituted(correct),2,name,playback) &&
+            name==correct,
+            "R04 valid UTF-8 instrument name must survive roundtrip");
+}
+void testAuditWavOpenHandleBudget() {
+    namespace fs=std::filesystem;
+    const auto root=fs::temp_directory_path()/"125a_reaudit_pcm_budget";
+    fs::remove_all(root);
+    fs::create_directories(root);
+    try{
+        const std::vector<a125::StereoFrame> pcm(300,{.15f,-.1f});
+        const auto first=root/"N60_V100_RR01.wav";
+        const auto second=root/"N61_V100_RR01.wav";
+        a125::writeWav24(first.string(),44100,pcm);
+        a125::writeWav24(second.string(),44100,pcm);
+        const auto perWave=pcm.size()*sizeof(a125::StereoFrame);
+        a125::SampleZone zone;
+        require(!a125::readCapturedWav(first,zone,perWave-1) &&
+                zone.pcm.empty(),
+                "R02 decoder must refuse insufficient budget before allocation");
+        require(a125::readCapturedWav(first,zone,perWave) &&
+                zone.pcm.size()==pcm.size(),
+                "R02 decoder exact allocation budget should succeed");
+        require(!a125::loadCapturedBank(root,2*perWave-1),
+                "R02 complete loose WAV import must enforce aggregate budget");
+        const auto bank=a125::loadCapturedBank(root,2*perWave);
+        require(bank && bank->zones.size()==2,
+                "R02 exact aggregate decoded PCM budget should succeed");
+    }catch(...){fs::remove_all(root);throw;}
+    fs::remove_all(root);
+}
+void testAuditRecallTransientState() {
+    const auto createBank=[&](float a,float b){
+        auto bank=std::make_unique<a125::SampleBank>();
+        for(int rr=1;rr<=2;++rr){
+            a125::SampleZone zone;
+            zone.root=60;zone.velocity=100;zone.rr=rr;
+            zone.pcm.assign(1024,{rr==1?a:b,rr==1?-a:-b});
+            bank->zones.push_back(std::move(zone));
+        }
+        return bank;
+    };
+    a125::BuiltInSampler previous;
+    previous.setNormalize(true);
+    previous.setEnvelope(0.f,0.f,1.f,0.f);
+    require(previous.publish(createBank(.25f,.75f)),
+            "R03 test cannot publish first bank");
+    // 32 held voices deliberately drive normalize headroom to 1/32.
+    for(int id=1;id<=32;++id)
+        previous.noteOn(60,100,44100.,id,0);
+    const auto stacked=previous.renderOne();
+    require(std::abs(stacked[0]-.5f)<.00001f,
+            "R03 32-voice baseline normalization did not activate");
+    // Change the active bank without a single intervening silent render.
+    require(previous.publish(createBank(.25f,.75f)),
+            "R03 replacement bank publication rejected");
+    previous.requestVoiceReset();
+    previous.noteOn(60,100,44100.,101,0);
+    const auto recalled=previous.renderOne();
+    a125::BuiltInSampler fresh;
+    fresh.setNormalize(true);
+    fresh.setEnvelope(0.f,0.f,1.f,0.f);
+    require(fresh.publish(createBank(.25f,.75f)),
+            "R03 fresh reference bank publication rejected");
+    fresh.noteOn(60,100,44100.,101,0);
+    const auto reference=fresh.renderOne();
+    require(std::abs(recalled[0]-reference[0])<.00001f &&
+            std::abs(recalled[0]-.25f)<.00001f,
+            "R03 recalled first sample must equal fresh sampler despite old normalize");
+    // A recalled bank starts RR#1, never the previous project's RR#2.
+    a125::BuiltInSampler rr;
+    require(rr.publish(createBank(.25f,.75f)),
+            "R05 cannot publish RR policy fixture");
+    rr.noteOn(60,100,44100.,1,0);
+    require(std::abs(rr.renderOne()[0]-.25f)<.00001f,
+            "R05 first Round-Robin must be zone 01");
+    rr.noteOn(60,100,44100.,2,0);
+    require(std::abs(rr.renderOne()[0]-1.f)<.00001f,
+            "R05 second Round-Robin must be zone 02");
+    rr.requestVoiceReset();
+    rr.noteOn(60,100,44100.,3,0);
+    require(std::abs(rr.renderOne()[0]-.25f)<.00001f,
+            "R05 next project must restart RR at zone 01");
+}
 void testAuditStrictManifest() {
     const auto original=a125::instrumentManifest("Valid",2,{});
     std::string name;
@@ -1090,6 +1201,9 @@ int main() {
         testAuditSamplerNoteIdentityAndNames();
         testAuditBankLifetimeAndWavPersistence();
         testAuditStrictManifest();
+        testAuditMalformedManifestUnicode();
+        testAuditWavOpenHandleBudget();
+        testAuditRecallTransientState();
         testAuditSafeUnicodeStems();
         testAuditWindowsDeviceArchiveNames();
         testAuditCompletionSnapshotConsistency();

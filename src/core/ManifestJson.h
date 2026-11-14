@@ -26,7 +26,7 @@ public:
         out.clear();
         while(pos_<text_.size()){
             const unsigned char ch=static_cast<unsigned char>(text_[pos_++]);
-            if(ch=='"')return true;
+            if(ch=='"')return validUtf8(out);
             if(ch<0x20)return false;
             if(ch!='\\'){out+=static_cast<char>(ch);continue;}
             if(pos_==text_.size())return false;
@@ -114,6 +114,32 @@ public:
             result.ptr==text_.data()+pos_ && std::isfinite(value);
     }
 private:
+    // RFC 3629 UTF-8: reject continuation as lead, overlong encodings,
+    // UTF-16 surrogate codepoints and values beyond U+10FFFF. Escaped
+    // \uXXXX sequences are decoded separately and checked by this too.
+    static bool validUtf8(std::string_view value) noexcept {
+        for(std::size_t i=0;i<value.size();){
+            const auto first=static_cast<unsigned char>(value[i]);
+            if(first<0x80){++i;continue;}
+            std::size_t width=0;
+            if(first>=0xC2 && first<=0xDF)width=2;
+            else if(first>=0xE0 && first<=0xEF)width=3;
+            else if(first>=0xF0 && first<=0xF4)width=4;
+            else return false;
+            if(width>value.size()-i)return false;
+            for(std::size_t j=1;j<width;++j){
+                const auto continuation=static_cast<unsigned char>(value[i+j]);
+                if((continuation&0xC0)!=0x80)return false;
+            }
+            const auto second=static_cast<unsigned char>(value[i+1]);
+            if((first==0xE0 && second<0xA0) ||
+               (first==0xED && second>=0xA0) ||
+               (first==0xF0 && second<0x90) ||
+               (first==0xF4 && second>=0x90))return false;
+            i+=width;
+        }
+        return true;
+    }
     static bool digit(char ch) noexcept {return ch>='0' && ch<='9';}
     void ws() noexcept {
         while(pos_<text_.size() && (text_[pos_]==' ' || text_[pos_]=='\n' ||

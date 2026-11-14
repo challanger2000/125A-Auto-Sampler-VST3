@@ -208,6 +208,19 @@ Instance load(PluginFactory& factory,HostApplication& host,const std::string& ta
         require(plug.component->setActive(true)==kResultOk,
                 "VST3 setActive(true) failed");
         plug.active=true;
+        // R01: real DLL lifecycle, not a mocked processor. Both classes
+        // must support host transitions ON / OFF / ON without processing
+        // between calls, even when recording is not yet started.
+        require(plug.processor->setProcessing(true)==kResultOk &&
+                plug.processor->setProcessing(false)==kResultOk &&
+                plug.processor->setProcessing(true)==kResultOk,
+                "R01 VST3 setProcessing true/false/true must be supported");
+        if(target=="125A AutoSampler")
+            require(plug.processor->getTailSamples()==kInfiniteTail,
+                "R01 OneShot instrument must not advertise a zero tail");
+        else
+            require(plug.processor->getTailSamples()==kNoTail,
+                "R01 passive stereo recorder must not invent an audio tail");
         return plug;
     }
     throw std::runtime_error("expected 125A plugin class missing");

@@ -913,6 +913,19 @@ public:
         normalized=std::clamp(normalized,0.,1.);
         return Steinberg::kResultTrue;
     }
+    tresult PLUGIN_API setProcessing(TBool state) override {
+        // Every host may switch processing on/off independently of activation.
+        // This transition is RT-safe: no worker join, mutex, allocation,
+        // GUI interaction or file I/O. The next callback owns voice reset.
+        if(!state)player_.requestVoiceReset();
+        return Steinberg::kResultOk;
+    }
+    Steinberg::uint32 PLUGIN_API getTailSamples() override {
+        // One-shot samples can continue after NoteOff, and the loaded bank
+        // can be replaced asynchronously. A conservative indefinite tail
+        // prevents a host from truncating such samples prematurely.
+        return V::kInfiniteTail;
+    }
     tresult PLUGIN_API setupProcessing(V::ProcessSetup& setup) override {
         sampleRate_=setup.sampleRate;
         player_.requestVoiceReset(); // different output rate invalidates old increments
@@ -1601,6 +1614,14 @@ public:
     }
     tresult PLUGIN_API canProcessSampleSize(int32 size) override {
         return size==V::kSample32?Steinberg::kResultTrue:Steinberg::kResultFalse;
+    }
+    tresult PLUGIN_API setProcessing(TBool) override {
+        // Bypass recorder has no generated tail; actual worker lifetime
+        // belongs to setActive()/terminate(), not the host's RT callback.
+        return Steinberg::kResultOk;
+    }
+    Steinberg::uint32 PLUGIN_API getTailSamples() override {
+        return V::kNoTail;
     }
     tresult PLUGIN_API setupProcessing(V::ProcessSetup& setup) override {
         sampleRate_=static_cast<std::uint32_t>(setup.sampleRate);

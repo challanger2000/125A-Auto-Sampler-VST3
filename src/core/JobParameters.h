@@ -40,8 +40,17 @@ inline JobConfig makeJobFromParameters(
     c.roundRobins=stepped(p[RoundRobins],1,16);
     c.velocityLayers=stepped(p[VelocityLayers],1,3);
     c.velocities={midiValue(p[Velocity1]),midiValue(p[Velocity2]),midiValue(p[Velocity3])};
-    // Sort only enabled layers: musical layer order is consistently low-to-high.
-    std::sort(c.velocities.begin(),c.velocities.begin()+c.velocityLayers);
+    // Only three layers exist. Fixed comparison network avoids GCC 14 -O3
+    // std::sort's speculative insertion-sort array-bounds diagnostic and
+    // has deterministic constant-time behavior for 1, 2 or 3 layers.
+    if(c.velocityLayers>=2 && c.velocities[0]>c.velocities[1])
+        std::swap(c.velocities[0],c.velocities[1]);
+    if(c.velocityLayers>=3){
+        if(c.velocities[1]>c.velocities[2])
+            std::swap(c.velocities[1],c.velocities[2]);
+        if(c.velocities[0]>c.velocities[1])
+            std::swap(c.velocities[0],c.velocities[1]);
+    }
     c.holdFrames=static_cast<std::uint64_t>(std::llround(
         (.25+std::clamp(p[Hold],0.,1.)*7.75)*sr));
     c.tailFrames=static_cast<std::uint64_t>(std::llround(
