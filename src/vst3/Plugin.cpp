@@ -63,6 +63,8 @@ struct Session {
     std::atomic<int> sampleRate{44100};
     // Set after the generator's last release has reached the recorder.
     std::atomic<std::uint32_t> captureEndedGeneration{0};
+    // Explicit user/host stop before the last sample is an interrupted run.
+    std::atomic<std::uint32_t> interruptedGeneration{0};
     // Set by the file writer only after closing RUN-REPORT.csv.
     std::atomic<std::uint32_t> writerFinishedGeneration{0};
     // Observable per-run counts, updated atomically by the recorder.
@@ -170,7 +172,9 @@ public:
             session().writerFinishedGeneration.load(std::memory_order_acquire)==gen;
         const bool finishing=gen!=0 &&
             session().captureEndedGeneration.load(std::memory_order_acquire)==gen;
-        const char* state=done?"COMPLETE":finishing?"FINALIZING":
+        const bool aborted=gen!=0 &&
+            session().interruptedGeneration.load(std::memory_order_acquire)==gen;
+        const char* state=done?(aborted?"ABORTED":"COMPLETE"):finishing?"FINALIZING":
             session().anchor.load(std::memory_order_acquire)!=kDisarmed?"RECORDING":"READY/STOPPED";
         char line[180]{};
         std::snprintf(line,sizeof(line),
@@ -388,7 +392,7 @@ public:
             session().captureEndedGeneration.store(
                 session().generation.load(std::memory_order_acquire),
                 std::memory_order_release);
-            cancel();
+            cancel(false);
             runGate_.disarm();
             lastBlockEnd_=kDisarmed;
             return Steinberg::kResultOk;
@@ -415,8 +419,15 @@ private:
             values[i]=values_[i].load(std::memory_order_relaxed);
         return a125::makeJobFromParameters(values,sampleRate_);
     }
-    void cancel() noexcept {
-        if(activeRun_) session().anchor.store(kDisarmed,std::memory_order_release);
+    void cancel(bool interrupted=true) noexcept {
+        if(activeRun_) {
+            if(interrupted){
+                const auto gen=session().generation.load(std::memory_order_acquire);
+                session().interruptedGeneration.store(gen,std::memory_order_release);
+                session().captureEndedGeneration.store(gen,std::memory_order_release);
+            }
+            session().anchor.store(kDisarmed,std::memory_order_release);
+        }
         activeRun_=false;
         note_.reset();
     }
@@ -623,6 +634,7 @@ private:
         std::ofstream report;
         bool haveRun=false;
         bool attemptedRun=false;
+        std::uint32_t closedGeneration=0;
         std::uint64_t runWritten=0,runRejected=0,runSilent=0,runErrors=0;
         std::uint64_t droppedAtRunStart=0;
         const auto root=outputRoot();
@@ -695,17 +707,23 @@ private:
             CapturedFrame f;
             if(!queue_.pop(f)) {
                 if(exit_.load(std::memory_order_acquire) && queue_.empty()) break;
-                // If the final frame was dropped, we still close the run
-                // with an INCOMPLETE record once the generator confirms
-                // the last capture block was processed.
-                if(attemptedRun && report &&
+                // Explicit Stop is fail-closed: never turn a partial take
+                // into a WAV. Late frames from that generation are ignored.
+                if(attemptedRun && generation!=closedGeneration &&
+                   session().interruptedGeneration.load(std::memory_order_acquire)==generation){
+                    if(integrity.abandon()) reject("ABORTED");
+                    closeRun();
+                    closedGeneration=generation;
+                } else if(attemptedRun && generation!=closedGeneration &&
                    session().captureEndedGeneration.load(std::memory_order_acquire)==generation){
                     if(integrity.abandon()) reject("INCOMPLETE");
                     closeRun();
+                    closedGeneration=generation;
                 }
                 std::this_thread::sleep_for(std::chrono::milliseconds(2));
                 continue;
             }
+            if(f.generation==closedGeneration) continue;
             const auto decision=integrity.consume(
                 {f.generation,f.take,f.offset,f.expectedFrames,f.last});
             if(decision.abandonedPrevious) reject("INCOMPLETE");
@@ -762,6 +780,7 @@ private:
                 // immediately; no DAW Stop or plugin unload is required.
                 if(integrity.abandon()) reject("INCOMPLETE");
                 closeRun();
+                closedGeneration=generation;
             }
         }
         if(integrity.abandon()) reject("ABORTED");
@@ -778,10 +797,10 @@ private:
 BEGIN_FACTORY_DEF("125A","https://github.com/challanger2000","")
  DEF_CLASS2(INLINE_UID_FROM_FUID(kMidiID),
   Steinberg::PClassInfo::kManyInstances,kVstAudioEffectClass,
-  "125A AutoSampler MIDI",0,"Instrument","0.8.0",kVstVersionString,
+  "125A AutoSampler MIDI",0,"Instrument","0.9.0",kVstVersionString,
   MidiGenerator::createInstance)
  DEF_CLASS2(INLINE_UID_FROM_FUID(kRecorderID),
   Steinberg::PClassInfo::kManyInstances,kVstAudioEffectClass,
-  "125A AutoSampler Recorder",0,"Fx","0.8.0",kVstVersionString,
+  "125A AutoSampler Recorder",0,"Fx","0.9.0",kVstVersionString,
   Recorder::createInstance)
 END_FACTORY
