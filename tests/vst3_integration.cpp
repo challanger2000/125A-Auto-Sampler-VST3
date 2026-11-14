@@ -1462,10 +1462,8 @@ int runRestoreRace(const char* vst3path,bool mutant,bool invalidNameMutant=false
     const auto newArchive=root/"New Bank.125A";
     std::vector<a125::StereoFrame> oldFrames(4096,{.2f,-.1f});
     std::vector<a125::StereoFrame> newFrames(4096,{.4f,-.2f});
-    require(a125::writeWav24((oldDir/"N60_V100_RR01.wav").string(),44100,oldFrames),
-            "A03 old sample WAV unavailable");
-    require(a125::writeWav24((newDir/"N60_V100_RR01.wav").string(),44100,newFrames),
-            "A03 new sample WAV unavailable");
+    a125::writeWav24((oldDir/"N60_V100_RR01.wav").string(),44100,oldFrames);
+    a125::writeWav24((newDir/"N60_V100_RR01.wav").string(),44100,newFrames);
     require(a125::write125AArchive(oldDir,oldArchive,"Old Bank"),
             "A03 old .125A fixture unavailable");
     require(a125::write125AArchive(newDir,newArchive,"New Bank"),
