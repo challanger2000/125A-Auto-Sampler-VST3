@@ -141,6 +141,44 @@ void testJobSchedule() {
     cfg.firstNote=60; cfg.lastNote=60; cfg.velocityLayers=4;
     require(!cfg.valid(), "reject more than 3 velocity layers");
 }
+void testAutomaticJobEndBoundary() {
+    a125::JobConfig c;
+    c.firstNote=60;c.lastNote=61;
+    c.velocityLayers=3;c.roundRobins=8;
+    c.holdFrames=11;c.tailFrames=7;c.gapFrames=5;
+    require(c.takeCount()==48,"finish plan contains all 48 takes");
+    const auto last=a125::jobTake(c,c.takeCount()-1);
+    const auto captureEnd=a125::jobCaptureEnd(c);
+    require(captureEnd==last.captureEnd,
+            "job end is final release sample, not trailing pause");
+    const std::int64_t anchor=1000000;
+    for(const auto block:std::array<std::int64_t,4>{
+        anchor+static_cast<std::int64_t>(captureEnd)-4,
+        anchor+static_cast<std::int64_t>(captureEnd)-1,
+        anchor+static_cast<std::int64_t>(captureEnd)-64,
+        anchor-1}) {
+        require(!a125::jobCompleteAtBlockStart(c,anchor,block),
+                "generator must not disarm before last sample reaches the recorder");
+    }
+    require(a125::jobCompleteAtBlockStart(
+        c,anchor,anchor+static_cast<std::int64_t>(captureEnd)),
+        "at the next block boundary the release capture is complete");
+    require(a125::jobCompleteAtBlockStart(
+        c,anchor,anchor+static_cast<std::int64_t>(captureEnd)+512),
+        "late DAW callback still completes");
+    // Negative song positions are permitted by the VST3 process context.
+    const std::int64_t negativeAnchor=-10000;
+    require(!a125::jobCompleteAtBlockStart(
+        c,negativeAnchor,negativeAnchor+static_cast<std::int64_t>(captureEnd)-1),
+        "negative project position must not complete early");
+    require(a125::jobCompleteAtBlockStart(
+        c,negativeAnchor,negativeAnchor+static_cast<std::int64_t>(captureEnd)),
+        "negative DAW start supports sample-accurate completion");
+    c.firstNote=99;c.lastNote=98;
+    require(!a125::jobCompleteAtBlockStart(c,anchor,anchor+500000),
+            "invalid plan must not auto-complete");
+}
+
 void testJobBlockEdgeCases() {
     a125::JobConfig cfg; cfg.roundRobins=1;
     cfg.holdFrames=10;cfg.tailFrames=20;cfg.gapFrames=4;
@@ -328,6 +366,7 @@ int main() {
         testEditableVelocitiesAndRanges();
         testJobSchedule();
         testJobBlockEdgeCases();
+        testAutomaticJobEndBoundary();
         testRunNeedsExplicitRearm();
         testStopAndJumpNoteRecovery();
         testCaptureIntegrityFailClosed();
