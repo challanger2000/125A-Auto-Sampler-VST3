@@ -7,6 +7,7 @@
 #include "core/RunGate.h"
 #include "core/ExportTarget.h"
 #include "core/SampleProcessing.h"
+#include "core/SfzBank.h"
 #include "base/source/fstreamer.h"
 #include "pluginterfaces/base/ibstream.h"
 #include "pluginterfaces/base/ustring.h"
@@ -748,6 +749,8 @@ private:
         std::ofstream report;
         bool haveRun=false;
         bool attemptedRun=false;
+        a125::JobConfig recordedConfig{};
+        bool configWasVerified=false;
         std::uint32_t closedGeneration=0;
         std::uint64_t runWritten=0,runRejected=0,runSilent=0,runErrors=0;
         std::uint64_t droppedAtRunStart=0;
@@ -764,6 +767,27 @@ private:
             }
         };
         auto closeRun=[&] {
+            // A playable SFZ is published only for a completely successful
+            // job. Aborted, silent, missing or failed WAVs never get a bank.
+            if(report){
+                const bool complete=configWasVerified && haveRun &&
+                    runWritten==recordedConfig.takeCount() &&
+                    runRejected==0 && runSilent==0 && runErrors==0 &&
+                    queue_.dropped()==droppedAtRunStart &&
+                    session().interruptedGeneration.load(std::memory_order_acquire)!=generation;
+                if(complete) {
+                    if(a125::writeCompleteSfzBank(recordedConfig,dir)){
+                        report<<"BANK,SFZ_CREATED,125A AutoSampler.sfz\n";
+                    } else {
+                        ++runErrors;
+                        exportErrors_.fetch_add(1,std::memory_order_relaxed);
+                        session().errors.fetch_add(1,std::memory_order_relaxed);
+                        report<<"BANK,SFZ_ERROR\n";
+                    }
+                } else {
+                    report<<"BANK,SKIPPED_INCOMPLETE\n";
+                }
+            }
             finishReport();
             report.close();
             if(generation!=0)
@@ -787,8 +811,11 @@ private:
             current.clear();
         };
         auto openRun=[&](std::uint32_t gen) {
-            // Snapshot chosen folder only on writer thread at the beginning
-            // of this job. Audio callback never reads a mutex or filesystem.
+            // Snapshot the immutable MIDI plan and user-selected folder
+            // outside the audio thread, once per recorder generation.
+            recordedConfig=session().read();
+            configWasVerified=recordedConfig.valid() &&
+                session().generation.load(std::memory_order_acquire)==gen;
             root=a125::ExportTarget::resolve(
                 session().exportTarget.chosenFolder(),outputRoot());
             dir.clear();
@@ -915,10 +942,10 @@ private:
 BEGIN_FACTORY_DEF("125A","https://github.com/challanger2000","")
  DEF_CLASS2(INLINE_UID_FROM_FUID(kMidiID),
   Steinberg::PClassInfo::kManyInstances,kVstAudioEffectClass,
-  "125A AutoSampler MIDI",0,"Instrument","0.10.0",kVstVersionString,
+  "125A AutoSampler MIDI",0,"Instrument","0.11.0",kVstVersionString,
   MidiGenerator::createInstance)
  DEF_CLASS2(INLINE_UID_FROM_FUID(kRecorderID),
   Steinberg::PClassInfo::kManyInstances,kVstAudioEffectClass,
-  "125A AutoSampler Recorder",0,"Fx","0.10.0",kVstVersionString,
+  "125A AutoSampler Recorder",0,"Fx","0.11.0",kVstVersionString,
   Recorder::createInstance)
 END_FACTORY
