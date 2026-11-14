@@ -60,6 +60,21 @@ inline JobTake jobTake(const JobConfig& c, std::size_t index) noexcept {
             start+c.holdFrames+c.tailFrames};
 }
 
+// The last take's capture ends BEFORE its inter-take pause. Only after the
+// entire final capture block has been delivered may the generator disarm.
+// This lets the recorder, which may be processed after MIDI on a DAW block,
+// receive every sample of the final release.
+inline std::uint64_t jobCaptureEnd(const JobConfig& c) noexcept {
+    if(!c.valid() || c.takeCount()==0) return 0;
+    return jobTake(c,c.takeCount()-1).captureEnd;
+}
+inline bool jobCompleteAtBlockStart(
+        const JobConfig& c,std::int64_t anchor,std::int64_t blockStart) noexcept {
+    if(!c.valid() || blockStart<anchor) return false;
+    const auto elapsed=static_cast<std::uint64_t>(blockStart)-
+                       static_cast<std::uint64_t>(anchor);
+    return elapsed>=jobCaptureEnd(c);
+}
 struct JobCapture {
     JobTake take;
     std::uint64_t offset=0;
