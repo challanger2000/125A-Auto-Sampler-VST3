@@ -1,107 +1,62 @@
-# START HERE – 125A AutoSampler P012
+# START HERE – 125A AutoSampler P013
 
-## 1. Was bis P012 erfolgreich unter Windows getestet ist
+## Ziel: aufnehmen und mit 125A selbst spielen
 
-- Windows-x64-VST3 mit zwei echten Klassen: MIDI-Generator und Audio-Recorder
-- VSTGUI-Editor tatsächlich über Win32-HWND geöffnet, Status-Timer gestartet und sauber geschlossen
-- Steinberg-Validator, automatisierte GUI-Bundle-Prüfung und C++-Regressionstests bestanden
-- **Vollständige native Integrationsprüfung:** 64 echte VST3-Note-On, 64 Note-Off und 64 hörbare Stereo-24-Bit-WAVs in drei getrennten Szenarien: 44,1 kHz/64 Samples (8 Takes), 48 kHz/1024 Samples (8 Takes), 44,1 kHz/512 Samples (48 Takes aus 2 Noten × 3 Velocities × 8 RR). Kein Frameverlust
-- Realer Plugin-Stop mit springender Songposition sendet die passende Note-Off-ID
-- Getrennte RUN-REPORT.csv-Einträge; korrupte und abgebrochene Takes werden nicht exportiert
+**125A AutoSampler ist gleichzeitig Aufnahme-Automation und Sampler-Instrument.** Das Ziel-VST bleibt in Fender Studio Pro; unsere VST3 enthält zwei Klassen aus **einem Bundle**:
 
-[P012 Windows-Build samt VST3-Artefakt – PASS](https://github.com/challanger2000/125A-Auto-Sampler-VST3/actions/runs/43539953663) – ZIP-Name **125A-AutoSampler-P012-Win64**. Nur die VST3-Datei installieren; das Testprogramm ist nicht Bestandteil des Plugins.
+1. `125A AutoSampler MIDI` – Noten an Quell-VST senden und fertig gesampelte WAVs selbst über Stereo-Ausgang abspielen.
+2. `125A AutoSampler Recorder` – Audio des Quell-VST abgreifen und zuverlässige WAV-Dateien exportieren.
 
-## P011/P012 – SFZ-Instrument automatisch mit ausgeben
+Kein SFZ-Export oder fremder Sampler gehört zum notwendigen Workflow. Das interne Instrument lädt PCM24-Stereo-WAVs direkt.
 
-Bei einem **vollständig erfolgreichen** Durchlauf entstehen automatisch die PCM24-Stereo-WAVs und die Datei `125A AutoSampler.sfz` **im selben Run-Ordner**. Die SFZ-Datei lässt sich als gemapptes Instrument in einem SFZ-kompatiblen Sampler laden. WAV-Dateien immer zusammen mit der SFZ im Ordner lassen oder gemeinsam verschieben.
+## Windows-Installation
 
-SFZ ordnet gesampelte Noten inklusive Zwischentönen, Velocity-Layer und Round Robins zu. Stand P011 ist **One-Shot-Abspielung**, keine automatische Sustain-Loop-Erkennung. Bei fehlender, stummer oder beschädigter WAV sowie bei Abbruch entsteht bewusst **keine** SFZ-Bank; `RUN-REPORT.csv` enthält dann `BANK,SKIPPED_INCOMPLETE` beziehungsweise `BANK,SFZ_ERROR`. Bei Erfolg erscheint `BANK,SFZ_CREATED,125A AutoSampler.sfz`.
+- Auf der Seite der [Windows-VST3-Tests](https://github.com/challanger2000/125A-Auto-Sampler-VST3/actions/workflows/windows-vst3.yml) einen **erfolgreichen** P013-Lauf wählen; unter **Artifacts** das ZIP `125A-AutoSampler-P013-Win64` herunterladen.
+- Den entpackten **vollständigen** Ordner `AutosamplerVST3.vst3` nach `C:\Program Files\Common Files\VST3\` kopieren.
+- Fender Studio Pro neu starten und beide 125A-Klassen im Plugin-Browser suchen.
 
-Die mit Windows-P012-Tests geprüfte GUI-Statuslogik zeigt `COMPLETE` nur bei fehlerfreiem Export, sonst `PARTIAL / FAILED`, `FAILED` oder `ABORTED`; ohne aktiven Recorder nach Ende des Durchlaufs `NO AUDIO RECORDER`.
+Ein grüner Windows-CI-Lauf bestätigt nur automatisierte Tests, nicht die DAW-/ASIO-Praxisabnahme.
 
-Siehe [P011-SFZ-Dokumentation](docs/P011-SFZ-BANK.md) und [P012-Statusregeln](docs/P012-RUN-STATUS.md).
+## Aufnahme eines Fremd-VST
 
-## P010 – Ausgabeordner wählen
+1. Eine Instrumentenspur A mit `125A AutoSampler MIDI` anlegen.
+2. Auf einer separaten Instrumentenspur B das zu samplende Instrument laden.
+3. B so einrichten, dass die MIDI-Noten vom **MIDI-Ausgang von 125A AutoSampler MIDI** übernommen werden; Monitoring aktivieren.
+4. Den `125A AutoSampler Recorder` im Audio-Ausgang von B als **letzten Insert** laden.
+5. In A die gewünschten Noten, Schrittweite, Velocity-Layer, Round Robins, Noten- und Release-Dauern einstellen.
+6. DAW-Transport starten und erst dann den **RUN**-Schalter im 125A einschalten.
+7. Auf den Abschluss und den CSV-Bericht warten. Die DAW muss dafür nicht gestoppt werden.
+8. Nach Abschluss den **RUN**-Schalter auf Aus schalten.
 
-Im Fenster **125A AutoSampler MIDI** auf **CHOOSE FOLDER** klicken, um per Windows-Dialog einen Zielordner auszuwählen. **DEFAULT** setzt auf `%USERPROFILE%\\Documents\\125A AutoSampler` zurück. Hinter `OUTPUT:` wird die Auswahl angezeigt. Der Ordner wird mit dem Projekt gespeichert und beim nächsten Öffnen geladen; `RUN` bleibt dabei aus.
+Ein abgebrochener oder stummer Durchlauf darf nicht als erfolgreich gelten. Ein neuer Run setzt RUN-Aus→Ein voraus; ein DAW-Loop oder DAW-Play allein startet keine erneute Aufnahme.
 
-Die Auswahl gilt jeweils **ab dem nächsten Sampling-Durchlauf**. Eine bereits laufende Aufnahme schreibt weiterhin in ihren bisherigen Ordner. Pro Durchlauf entsteht wie zuvor ein `Run_...`-Unterordner samt WAVs und `RUN-REPORT.csv`.
+## Die aufgenommenen Klänge im 125A spielen
 
-Der native Windows-P010-Test hat die Pfad-Persistenz und den WAV-Export per VST3-Projektzustand mit **8 von 8 WAV-Dateien erfolgreich** geprüft. Das tatsächliche Anklicken des Windows-Dialoges in Fender Studio Pro steht noch als DAW-Praxistest aus. Siehe [P010-Dokumentation](docs/P010-EXPORT-FOLDER.md).
+1. Im AutoSampler-Fenster **LOAD SAMPLES** anklicken.
+2. Den konkreten Unterordner `Run_<Zeit>_G<Generation>_<Zähler>` mit seinen WAV-Dateien auswählen, etwa `N60_V100_RR01.wav`.
+3. Die Statuszeile `SAMPLER: ... WAVS READY TO PLAY` prüfen.
+4. RUN muss **Aus** sein. Nun MIDI-Noten an die 125A-Instrumentenspur senden: Das interne Instrument liefert Stereo-Audio.
 
-## P008/P009 – Abschluss und manueller Abbruch
+Die interne Engine ordnet Sample-Root-Noten, Velocity und Round Robins direkt zu, transponiert auf nicht gesampelte Zwischentöne und spielt mit bis zu **32 Stimmen**. Der aufgenommene Release wird One-Shot bis zum Sampleende wiedergegeben; echte Sustain-Loops existieren noch nicht.
 
-Nach der letzten gesampelten Note schließt der Recorder automatisch seinen WAV-Lauf einschließlich `RUN-REPORT.csv`. Der Transport der DAW darf dabei weiterhin laufen.
+**Die geladene Bank bleibt nur erhalten, solange die WAV-Dateien am gespeicherten Speicherort vorhanden sind.** Das Projekt speichert den Bank-Ordnerpfad, nicht sämtliche PCM-Audiodaten. Derzeit ist **LOAD SAMPLES** nach Abschluss noch manuell erforderlich.
 
-Wenn du **START/STOP vorzeitig ausschaltest**, beendet das Plugin die aktive MIDI-Note, verwirft den unvollständigen Take und meldet `ABORTED` im CSV-Bericht sowie in der GUI. Der Bericht wird geschlossen, ohne dass die Plugin-Instanzen entfernt werden müssen. Der Abbruch wurde mit den tatsächlichen Windows-VST3-Klassen und einer synthetischen Klangquelle erfolgreich getestet: 0 unvollständige WAVs.
+## Exportformat und Kontrolle
 
-Ein neuer Start setzt RUN **Aus → Ein** voraus. Siehe [P008](docs/P008-COMPLETION.md) und [P009](docs/P009-MANUAL-STOP.md).
+Standard: `%USERPROFILE%\Documents\125A AutoSampler\Run_<...>\`.
 
-## Bedienhinweis für P007
+- Pro Take eine `N<Note>_V<Velocity>_RR<01-16>.wav`, Stereo, PCM24.
+- `RUN-REPORT.csv` dokumentiert alle Take-Ergebnisse und die Summen.
+- Bei vollständigem Run mit acht Round Robins sind acht hörbare WAVs und `SUMMARY,exported,8` zu erwarten.
+- Der interne Sampler lädt die WAV-Dateien direkt, **ohne** externe `.sfz`-Bank.
+- **CHOOSE FOLDER** und **DEFAULT** setzen den Aufnahme-Ausgabeordner; **LOAD SAMPLES** wählt dagegen den Ordner des abzuspielenden Instruments.
 
-Die DAW muss bereits auf **Play** stehen, bevor RUN eingeschaltet wird. Wenn die DAW gestoppt oder das Plugin deaktiviert wird, bleibt ein eingeschalteter RUN-Schalter eventuell optisch aktiv, **löst aber keinen neuen Sampling-Job aus**. Ein neuer Job erfordert immer RUN **Aus → Ein**. Das verhindert ungewollte Mehrfachaufnahmen beim erneuten Start der DAW-Wiedergabe oder Song-Loop.
+Die VST3-Regression arbeitet mit einem synthetischen Testinstrument, lädt anschließend den tatsächlich aufgenommenen WAV-Run **in die 125A-VST3 selbst** und prüft den generierten Audioausgang. Das ist nicht mit einem musikalischen Test in Fender Studio Pro gleichzusetzen.
 
-## 2. Installation für spätere Fender-Studio-Pro-Abnahme
+## Offene Grenzen
 
-1. Unter der genannten GitHub-Action bei **Artifacts** das Windows-ZIP herunterladen.
-2. Den vollständigen VST3-Bundle-Ordner nach `C:\Program Files\Common Files\VST3\` kopieren.
-3. Fender Studio Pro neu starten und beide Plugin-Klassen im Plugin-Browser suchen.
-
-## 3. Vorgesehener Routing-Aufbau in Fender Studio Pro
-
-1. **Spur A:** Instrument `125A AutoSampler MIDI` laden.
-2. **Spur B:** das zu samplende VST-Instrument laden (zum Beispiel EVM Isotope).
-3. Bei **Spur B** im **MIDI-Eingang** `125A AutoSampler MIDI` als Quelle auswählen; falls angeboten **MIDI Output 1 / Kanal 1** wählen. Die Spur überwachen/Monitor aktivieren.
-4. Auf dem Audio-Ausgang von **Spur B** `125A AutoSampler Recorder` als **letzten Insert-Effekt** laden. Den Recorder nicht auf Spur A einfügen: dort ist das Audio des Quellinstruments nicht vorhanden.
-5. **DAW-Transport auf Play** und im AutoSampler den großen **START / STOP**-Schalter aktivieren.
-6. Nach den Aufnahmen die individuellen WAV-Dateien und die Datei **RUN-REPORT.csv** im Zielordner prüfen.
-
-Eine vergleichbare MIDI-Ausgangsweiterleitung ist für Scaler 2 in Studio One dokumentiert: https://help.pluginboutique.com/hc/en-us/articles/6232575716372-External-Instrument-Routing-Guide-Studio-One . **Dass Fender Studio Pro genau unsere 125A-VST3 als Eingangsquelle anbietet, muss noch praktisch bestätigt werden.**
-
-## 4. Standard-Testlauf
-
-Voreinstellung:
-- Erste/letzte **MIDI-Note 60** (Oktavname kann je nach DAW C3 oder C4 sein)
-- Velocity 100
-- 8 Round-Robin-Wiederholungen
-- 1 s Note-On, 2 s Ausklang, 0,1 s Pause
-- 44,1 kHz oder 48 kHz, Stereo 24 Bit bei der Ausgabe
-
-Erwartetes Ausgabeverzeichnis:
-
-`%USERPROFILE%\Documents\125A AutoSampler\Run_<Zeit>_G<Generation>_<Zähler>\`
-
-Bei erfolgreichem Test befinden sich acht Dateien `N60_V100_RR01.wav` bis `N60_V100_RR08.wav` und die gemappte Datei `125A AutoSampler.sfz` im Verzeichnis. **RUN-REPORT.csv** muss acht `OK`-Zeilen sowie `SUMMARY,exported,8`, `SUMMARY,rejected,0` und `SUMMARY,droppedFrames,0` enthalten.
-
-**Bei fehlendem MIDI-Routing oder Stille ist das kein PASS.** Der Recorder meldet `SILENCE`, `INCOMPLETE`, `ABORTED`, `INVALID` oder `EXPORT_ERROR`, statt fehlerhafte Takes als funktionierende WAV-Dateien auszugeben. Diese Resultate erscheinen im Bericht; die GUI zeigt dazu Zähler.
-
-## 5. Bedienbereiche
-
-| Bedienelement | Bereich | Standard |
-|---|---|---|
-| Start / Stop | Aus / Ein | Aus |
-| First / Last MIDI Note | 0–127 | 60 / 60 |
-| Note Step | 1–12 Halbtöne | 1 |
-| Round Robins | 1–16 | 8 |
-| Velocity Layers | 1–3 | 1 |
-| Velocity 1, 2, 3 | jeweils 1–127 | 100, 60, 120 |
-| Note Hold | 0,25–8 s | 1 s |
-| Release Capture | 0,25–10 s | 2 s |
-| Gap | 0,05–0,5 s | 0,1 s |
-
-Bei mehreren aktiven Velocity-Layern werden ihre Werte aufsteigend angeordnet. **Ein statischer Synthesizer liefert nicht automatisch unterschiedliche Round-Robin-Klangvarianten:** die acht WAVs können hörbar identisch sein.
-
-## 6. Bekannte Grenzen
-
-- Bisher nur **ein** Generator-/Recorder-Paar je Host-Prozess
-- Benutzerauswahl per GUI-Ordnerdialog implementiert, aber in Fender Studio Pro noch nicht praktisch getestet
-- Eigener DAW-Transportstart aus dem Plugin ist nicht garantiert; Play muss in Fender Studio Pro laufen
-- Die neue SFZ-Bank wurde noch nicht mit einem tatsächlichen externen Sampler musikalisch abgespielt
-- Keine bestätigte Fender-Studio-Pro-End-to-End-Abnahme mit EVM Isotope
-- Kein physischer ASIO-Hardwaretest; dieser folgt erst bei der abschließenden DAW-Praxisabnahme
-- 125A Plugin Test Lab P68/P74 behandelt Mehrklassen-VST3 noch nicht automatisch; der P006-Windows-Integrationstest ist eine separate, produktbezogene echte VST3-Prüfung, **keine Behauptung über einen Lab-P74-PASS**
-- PR #2 bleibt bis zur Produkt-Abnahme ein **Draft**, kein Release
-
-Diese Einschränkungen gelten trotz bestandener Steinberg- und P006-Windows-Tests.
-
-Ausführliche Prüfmatrix: [docs/P006-TEST-MATRIX.md](docs/P006-TEST-MATRIX.md).
+- Ein echtes Fremd-VST in Fender Studio Pro, dessen MIDI-Routing und die vollständige GUI-Interaktion sind noch nicht praktisch abgenommen.
+- Physischer ASIO-Test steht aus.
+- Pro DAW-Prozess nur ein Sampling-Generator/Recorder-Paar.
+- Kein automatisches Laden des letzten Runs nach Aufnahmeende; keine Sustain-Loops.
+- [PR #2](https://github.com/challanger2000/125A-Auto-Sampler-VST3/pull/2) bleibt bis zur Endabnahme Draft.
