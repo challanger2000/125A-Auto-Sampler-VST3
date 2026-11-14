@@ -82,6 +82,8 @@ struct Session {
     std::atomic<std::uint32_t> observed{0},written{0},rejected{0},silent{0},errors{0};
     std::atomic<std::uint64_t> dropped{0};
     a125::ExportTarget exportTarget;
+    a125::ExportTarget latestCompletedRun;
+    std::atomic<std::uint32_t> readyBankGeneration{0};
     std::atomic<int> firstNote{60},lastNote{60},step{1},roundRobins{8},layers{1};
     std::atomic<int> velocity0{100},velocity1{80},velocity2{120};
     std::atomic<std::uint64_t> hold{44100},tail{88200},gap{4410};
@@ -282,6 +284,15 @@ public:
     }
     void updateStatus() {
         if(!statusLabel_)return;
+        // A successful run immediately becomes playable by THIS VST3 when
+        // its UI is open. Loading WAVs is on the UI timer, never in ASIO.
+        const auto latest=session().readyBankGeneration.load(std::memory_order_acquire);
+        const auto current=session().generation.load(std::memory_order_acquire);
+        if(latest && latest==current && autoLoadedGeneration_!=latest){
+            autoLoadedGeneration_=latest;
+            const auto folder=session().latestCompletedRun.chosenFolder();
+            if(!folder.empty())loadSamples(folder);
+        }
         const auto config=makeConfig();
         const auto seen=session().observed.load(std::memory_order_relaxed);
         const auto written=session().written.load(std::memory_order_relaxed);
@@ -419,7 +430,14 @@ public:
             if(state->write(folder.data(),length,&written)!=Steinberg::kResultOk ||
                written!=length)return Steinberg::kResultFalse;
         }
-        auto bankPath=bankFolder_.u8string();
+        auto savedBankPath=bankFolder_;
+        if(savedBankPath.empty() &&
+           session().generation.load(std::memory_order_acquire)!=0 &&
+           session().readyBankGeneration.load(std::memory_order_acquire)==
+           session().generation.load(std::memory_order_acquire)){
+            savedBankPath=session().latestCompletedRun.chosenFolder();
+        }
+        auto bankPath=savedBankPath.u8string();
         if(bankPath.size()>8192)return Steinberg::kResultFalse;
         const auto bankLength=static_cast<Steinberg::int32>(bankPath.size());
         if(!io.writeInt32(bankLength))return Steinberg::kResultFalse;
@@ -695,6 +713,7 @@ private:
     a125::JobConfig config_{};
     a125::BuiltInSampler player_{};
     std::filesystem::path bankFolder_{};
+    std::uint32_t autoLoadedGeneration_=0; // only touched by VSTGUI UI timer
     bool loadFailed_=false;
     a125::ActiveNote note_{};
     a125::RunGate runGate_{};
@@ -881,8 +900,11 @@ private:
                     queue_.dropped()==droppedAtRunStart &&
                     session().interruptedGeneration.load(std::memory_order_acquire)!=generation;
                 if(complete) {
-                    // The 125A VST3 is itself the sampler. WAVs are its
-                    // native bank; no external SFZ player is necessary.
+                    // Advertise only a fully captured bank, and only after
+                    // the disk writer has closed all WAV handles.
+                    session().latestCompletedRun.choose(dir);
+                    session().readyBankGeneration.store(
+                        generation,std::memory_order_release);
                     report<<"BANK,125A_WAVS_READY\n";
                 } else {
                     report<<"BANK,SKIPPED_INCOMPLETE\n";
