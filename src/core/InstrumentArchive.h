@@ -10,6 +10,7 @@
 #include <filesystem>
 #include <fstream>
 #include <map>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -282,6 +283,55 @@ inline std::vector<ArchiveEntry> inspect125A(
         throw std::runtime_error("125A ZIP missing manifest or unexpected data");
     return entries;
 }
+// Read only the ZIP central directory (no WAV allocations) for stable
+// project-state identification. CRC32 is a relocation consistency check,
+// not a cryptographic signature. The full archive is still verified on load.
+inline std::optional<std::uint32_t> archive125AFingerprint(
+        const std::filesystem::path& path) {
+    try {
+        if(path.extension()!=".125A")return std::nullopt;
+        std::ifstream in(path,std::ios::binary|std::ios::ate);
+        if(!in)return std::nullopt;
+        const auto length=in.tellg();
+        if(length<22)return std::nullopt;
+        const auto entries=inspect125A(in,static_cast<std::uint64_t>(length));
+        const auto found=std::find_if(entries.begin(),entries.end(),
+            [](const ArchiveEntry& e){return e.name=="instrument.json";});
+        if(found==entries.end())return std::nullopt;
+        // Mix manifest CRC and WAV count, so identically named instruments
+        // in different directories cannot be selected merely by basename.
+        return found->crc ^ (static_cast<std::uint32_t>(entries.size()-1)*0x9E3779B9u);
+    }catch(const std::exception&){return std::nullopt;}
+}
+
+// Locate only known, user-owned 125A folders. Never recursively crawl a
+// computer, load arbitrary names, or substitute an unrelated bank.
+inline std::filesystem::path resolve125APath(
+        const std::filesystem::path& saved,
+        const std::filesystem::path& selectedExportFolder,
+        const std::filesystem::path& userDocumentsFolder,
+        std::optional<std::uint32_t> fingerprint=std::nullopt){
+    if(saved.empty())return {};
+    if(saved.extension()!=".125A")return saved;
+    const auto acceptable=[&](const std::filesystem::path& p){
+        if(!std::filesystem::is_regular_file(p))return false;
+        const auto fp=archive125AFingerprint(p);
+        return fp && (!fingerprint || *fingerprint==*fp);
+    };
+    if(acceptable(saved))return saved;
+    const auto basename=saved.filename();
+    const std::array<std::filesystem::path,3> roots{
+        selectedExportFolder, userDocumentsFolder/"125A AutoSampler",
+        userDocumentsFolder
+    };
+    for(const auto& root:roots){
+        if(root.empty() || !root.is_absolute())continue;
+        const auto candidate=root/basename;
+        if(candidate!=saved && acceptable(candidate))return candidate;
+    }
+    return saved; // retains an honest missing-file warning in the GUI
+}
+
 inline std::vector<unsigned char> read125AEntry(
         std::ifstream& in,const ArchiveEntry& e,std::uint64_t centralOff){
     std::array<unsigned char,30> header{};
