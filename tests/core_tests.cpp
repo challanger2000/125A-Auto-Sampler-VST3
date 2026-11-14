@@ -1018,7 +1018,7 @@ void testAuditBankPublicationRoundRobin() {
     // Codex R05: the first note after a successful bank publication must be
     // RR01 even if the previous bank had an odd number of triggers.
     // Crucially, NO requestVoiceReset() is permitted between publications.
-    for(const auto [variants,hits]:
+    for(const auto& [variants,hits]:
             std::array<std::pair<int,int>,3>{
                 std::pair{2,1},std::pair{3,5},std::pair{16,17}}){
         a125::BuiltInSampler player;
