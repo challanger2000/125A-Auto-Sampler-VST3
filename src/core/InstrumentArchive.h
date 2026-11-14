@@ -16,6 +16,12 @@
 
 namespace a125 {
 
+// Stored together with the WAVs so a .125A file is a standalone
+// playable instrument even when imported into a new DAW session.
+struct ArchivePlayback {
+    // Normalize, Gate (One Shot is 0), Attack, Decay, Sustain, Release, Gain.
+    std::array<double,7> params{0.,0.,0.,0.,1.,.05,.5};
+};
 struct ArchiveEntry {
     std::string name;
     std::uint32_t crc=0, size=0, offset=0;
@@ -79,19 +85,29 @@ inline bool valid125AName(const std::string& name){
     int root=0,vel=0,rr=0;
     return name=="instrument.json" || parseSampleName(name,root,vel,rr);
 }
-inline std::string instrumentManifest(const std::string& name,std::size_t count){
+inline std::string instrumentManifest(const std::string& name,std::size_t count,
+                                      const ArchivePlayback& playback){
     if(name.empty() || name.size()>192)
         throw std::invalid_argument("125A instrument name is empty or too long");
-    return std::string("{\n  \"format\":\"125A\",\n  \"version\":1,\n  \"name\":\"")+
+    std::string text=std::string("{\n  \"format\":\"125A\",\n  \"version\":1,\n  \"name\":\"")+
         json125Escape(name)+"\",\n  \"sampleCount\":"+std::to_string(count)+
-        ",\n  \"sampleFormat\":\"PCM24 stereo WAV\",\n  \"mapping\":\"root-note-velocity-round-robin filenames\"\n}\n";
+        ",\n  \"sampleFormat\":\"PCM24 stereo WAV\",\n  \"mapping\":\"root-note-velocity-round-robin filenames\",\n  \"playbackNormalized\":[";
+    for(std::size_t i=0;i<playback.params.size();++i){
+        const double value=playback.params[i];
+        if(!std::isfinite(value) || value<0. || value>1.)
+            throw std::invalid_argument("125A playback value invalid");
+        if(i)text+=",";
+        text+=std::to_string(value);
+    }
+    return text+"]\n}\n";
 }
 
 // Only called after a fully successful capture; no overwriting a pre-existing
 // instrument archive. An interrupted archive is removed, never published.
 inline void write125AArchive(const std::filesystem::path& source,
                              const std::filesystem::path& destination,
-                             const std::string& instrumentName){
+                             const std::string& instrumentName,
+                             const ArchivePlayback& playback={}){
     namespace fs=std::filesystem;
     if(destination.extension()!=".125A")
         throw std::invalid_argument("expected .125A extension");
@@ -111,7 +127,7 @@ inline void write125AArchive(const std::filesystem::path& source,
     if(files.empty() || files.size()>6144)
         throw std::runtime_error("invalid 125A sample count");
     std::sort(files.begin(),files.end());
-    const auto manifest=instrumentManifest(instrumentName,files.size());
+    const auto manifest=instrumentManifest(instrumentName,files.size(),playback);
     const fs::path partial=destination.string()+".partial";
     if(fs::exists(partial))throw std::runtime_error("stale partial archive");
     try {
@@ -197,7 +213,7 @@ inline void zipSeek(std::ifstream& in,std::uint64_t offset,
     if(!in)throw std::runtime_error("125A truncated ZIP entry");
 }
 inline std::vector<ArchiveEntry> inspect125A(
-        std::ifstream& in,std::uint64_t length){
+        std::ifstream& in,std::uint64_t length,std::uint32_t* centralOffset=nullptr){
     if(length<22 || length>=0xFFFFFFFFull)
         throw std::runtime_error("125A invalid archive length");
     const auto tailLen=static_cast<std::size_t>(std::min<std::uint64_t>(length,65557));
@@ -222,6 +238,7 @@ inline std::vector<ArchiveEntry> inspect125A(
        count!=zipRd16(end+8) || count<2 || count>6145 ||
        centralOff>=length || static_cast<std::uint64_t>(centralOff)+centralSize!=eocdOff)
         throw std::runtime_error("125A invalid ZIP directory metadata");
+    if(centralOffset)*centralOffset=centralOff;
     std::vector<unsigned char> central(centralSize);
     zipSeek(in,centralOff,central.data(),central.size());
     std::size_t pos=0;
@@ -318,25 +335,72 @@ inline bool readCapturedWavBytes(const std::vector<unsigned char>& bytes,
     return true;
 }
 
+inline bool read125APlayback(const std::string& manifest,ArchivePlayback& playback){
+    constexpr std::string_view label="\"playbackNormalized\":[";
+    const auto loc=manifest.find(label);
+    if(loc==std::string::npos)return false;
+    const char* first=manifest.data()+loc+label.size();
+    const char* const end=manifest.data()+manifest.size();
+    for(std::size_t i=0;i<playback.params.size();++i){
+        double value=0.;
+        const auto result=std::from_chars(first,end,value);
+        if(result.ec!=std::errc{} || result.ptr==first ||
+           !std::isfinite(value) || value<0. || value>1.)return false;
+        playback.params[i]=value;
+        first=result.ptr;
+        const char expected=i+1<playback.params.size()?',':']';
+        if(first==end || *first!=expected)return false;
+        ++first;
+    }
+    return true;
+}
+inline bool read125AInstrumentName(const std::string& manifest,std::string& name){
+    constexpr std::string_view label="\"name\":\"";
+    auto pos=manifest.find(label);
+    if(pos==std::string::npos)return false;
+    pos+=label.size();
+    name.clear();
+    for(;pos<manifest.size();++pos){
+        char c=manifest[pos];
+        if(c=='"')return !name.empty() && name.size()<=192;
+        if(c!='\\'){name+=c;continue;}
+        if(++pos>=manifest.size())return false;
+        switch(manifest[pos]){
+        case '"':name+='"';break;
+        case '\\':name+='\\';break;
+        case 'n':name+='\n';break;
+        case 'r':name+='\r';break;
+        case 't':name+='\t';break;
+        default:return false;
+        }
+    }
+    return false;
+}
 inline std::unique_ptr<SampleBank> load125AArchive(
-       const std::filesystem::path& archive,std::string* instrumentName=nullptr){
+       const std::filesystem::path& archive,std::string* instrumentName=nullptr,
+       ArchivePlayback* playbackOut=nullptr){
     try {
         std::ifstream in(archive,std::ios::binary|std::ios::ate);
         if(!in)return {};
         const auto end=in.tellg();
         if(end<22)return {};
         const auto length=static_cast<std::uint64_t>(end);
-        auto entries=inspect125A(in,length);
+        std::uint32_t centralOff=0;
+        auto entries=inspect125A(in,length,&centralOff);
         const auto manifestIt=std::find_if(entries.begin(),entries.end(),
             [](const ArchiveEntry& e){return e.name=="instrument.json";});
         if(manifestIt==entries.end())return {};
-        const auto manifestBytes=read125AEntry(in,*manifestIt,length);
+        const auto manifestBytes=read125AEntry(in,*manifestIt,centralOff);
         const std::string manifest(manifestBytes.begin(),manifestBytes.end());
         // Readers accept only our manifest schema, never arbitrary ZIP files.
         if(manifest.find("\"format\":\"125A\"")==std::string::npos ||
            manifest.find("\"version\":1")==std::string::npos ||
            manifest.find("\"sampleCount\":"+std::to_string(entries.size()-1))==
                std::string::npos)return {};
+        ArchivePlayback playback;
+        if(!read125APlayback(manifest,playback))return {};
+        std::string decodedName;
+        if(!read125AInstrumentName(manifest,decodedName))return {};
         auto bank=std::make_unique<SampleBank>();
         std::map<std::pair<int,int>,std::set<int>> groups;
         std::uint32_t sampleRate=0;
@@ -345,7 +409,7 @@ inline std::unique_ptr<SampleBank> load125AArchive(
             SampleZone zone;
             if(!parseSampleName(entry.name,zone.root,zone.velocity,zone.rr))
                 return {};
-            auto pcm=read125AEntry(in,entry,length);
+            auto pcm=read125AEntry(in,entry,centralOff);
             if(!readCapturedWavBytes(pcm,zone) ||
                (sampleRate!=0 && sampleRate!=zone.sampleRate))return {};
             sampleRate=zone.sampleRate;
@@ -367,14 +431,8 @@ inline std::unique_ptr<SampleBank> load125AArchive(
                 for(float x:frame)peak=std::max(peak,std::abs(x));
         if(peak>=.001f && std::isfinite(peak))
             bank->normalizeGain=std::pow(10.f,-1.f/20.f)/peak;
-        if(instrumentName){
-            const auto nameStart=manifest.find("\"name\":\"");
-            if(nameStart!=std::string::npos){
-                const auto first=nameStart+8;
-                const auto last=manifest.find('"',first);
-                if(last!=std::string::npos)*instrumentName=manifest.substr(first,last-first);
-            }
-        }
+        if(instrumentName)*instrumentName=std::move(decodedName);
+        if(playbackOut)*playbackOut=playback;
         return bank;
     }catch(const std::exception&){return {};}
 }
