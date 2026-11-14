@@ -1,4 +1,4 @@
-name: P018 Windows VST3 Archive Keyboard Recorder QA
+name: P021 Windows VST3 AutoSampler Hardware GUI and Archive QA
 on:
   push:
     branches: ['develop/**']
@@ -51,7 +51,7 @@ jobs:
           if (@($gui.'vstgui-ui-description'.template.view | Where-Object { $_.class -eq "KeyboardView" }).Count -ne 1) {
             throw "125A GUI must contain native Steinberg KeyboardView"
           }
-          Write-Host "P018 VSTGUI: 19 parameters, native keyboard, branded recorder status, valid packaged XML: PASS"
+          Write-Host "P021 VSTGUI: 19 parameters, hardware keyboard, branded recorder status, valid packaged XML: PASS"
       - name: Official VST3 validator
         shell: pwsh
         run: |
@@ -94,6 +94,6 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: 125A-AutoSampler-P018-Win64
+          name: 125A-AutoSampler-P021-Win64
           path: build-vst3/VST3/Release/*.vst3
           if-no-files-found: error
