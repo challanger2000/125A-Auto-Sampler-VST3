@@ -66,6 +66,7 @@ if(BUILD_VST3)
         target_link_libraries(AutosamplerQAWinModule PRIVATE sdk_hosting sdk_common base pluginterfaces)
 
         add_executable(AutosamplerIntegration tests/vst3_integration.cpp)
+        target_include_directories(AutosamplerIntegration PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
         target_compile_features(AutosamplerIntegration PRIVATE cxx_std_23)
         target_compile_definitions(AutosamplerIntegration PRIVATE NOMINMAX _CRT_SECURE_NO_WARNINGS)
         target_link_libraries(AutosamplerIntegration PRIVATE
