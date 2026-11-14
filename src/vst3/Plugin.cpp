@@ -464,7 +464,8 @@ public:
         }
     }
     bool loadSamples(const std::filesystem::path& path,
-                     bool applyInstrumentSettings=false){
+                     bool applyInstrumentSettings=false,
+                     std::uint32_t captureGeneration=0){
         // Worker/UI/state threads can all request a bank, but never ASIO.
         // Loaded PCM stays alive so a voice can safely finish during a swap.
         bool loaded=false;
@@ -480,6 +481,10 @@ public:
                 if(player_.publish(std::move(bank))){
                     bankFolder_=path;
                     bankFingerprint_=archive?a125::archive125AFingerprint(path):std::nullopt;
+                    // Explicit user selection and DAW project recall take
+                    // precedence over previously completed auto captures.
+                    bankCaptureGeneration_=captureGeneration?captureGeneration:
+                        session().readyBankGeneration.load(std::memory_order_acquire);
                     loadFailed_=false;
                     loaded=true;
                 }
@@ -536,7 +541,7 @@ public:
                 if(failures<200){
                     const auto path=session().latestCompletedRun.chosenFolder();
                     if(!path.empty()){
-                        if(loadSamples(path)){
+                        if(loadSamples(path,false,ready)){
                             publishedGeneration=ready;
                             failures=0;
                         }else ++failures;
@@ -772,16 +777,21 @@ public:
         }
         std::filesystem::path savedBankPath;
         std::optional<std::uint64_t> savedFingerprint;
+        const auto ready=session().readyBankGeneration.load(std::memory_order_acquire);
         {
             std::lock_guard<std::mutex> guard(bankMutex_);
             savedBankPath=bankFolder_;
             savedFingerprint=bankFingerprint_;
-        }
-        if(savedBankPath.empty() &&
-           session().generation.load(std::memory_order_acquire)!=0 &&
-           session().readyBankGeneration.load(std::memory_order_acquire)==
-           session().generation.load(std::memory_order_acquire)){
-            savedBankPath=session().latestCompletedRun.chosenFolder();
+            // Save the just-completed archive even if the background bank
+            // worker has not yet published it. A previous bank must never
+            // silently become the new recorded instrument in DAW state.
+            if(ready!=0 && ready!=bankCaptureGeneration_){
+                const auto newest=session().latestCompletedRun.chosenFolder();
+                if(newest.extension()==".125A"){
+                    savedBankPath=newest;
+                    savedFingerprint.reset();
+                }
+            }
         }
         auto bankPath=savedBankPath.u8string();
         if(bankPath.size()>8192)return Steinberg::kResultFalse;
@@ -917,6 +927,8 @@ public:
                 player_.clearCurrent();
                 bankFolder_=restoredBank;
                 bankFingerprint_.reset();
+                bankCaptureGeneration_=session().readyBankGeneration.load(
+                    std::memory_order_acquire);
                 loadFailed_=true;
             }
         }else{
@@ -924,6 +936,8 @@ public:
             player_.clearCurrent();
             bankFolder_.clear();
             bankFingerprint_.reset();
+            bankCaptureGeneration_=session().readyBankGeneration.load(
+                std::memory_order_acquire);
             loadFailed_=false;
         }
         // Project load may occur concurrently with audio. Never modify
@@ -1183,6 +1197,7 @@ private:
     std::mutex bankMutex_;
     std::filesystem::path bankFolder_{};
     std::optional<std::uint64_t> bankFingerprint_{};
+    std::uint32_t bankCaptureGeneration_=0; // guarded by bankMutex_
     std::atomic<bool> stopBankWorker_{false};
     std::thread bankWorker_;
     bool loadFailed_=false;
