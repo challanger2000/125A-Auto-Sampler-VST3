@@ -88,11 +88,16 @@ inline bool readCapturedWav(const std::filesystem::path& path,SampleZone& zone) 
        samplerLE32(header.data()+4)!=size+36 ||
        samplerLE32(header.data()+28)!=rate*6u) return false;
     zone.sampleRate=rate;
+    // Read large banks with ONE buffered I/O operation per WAV, not millions
+    // of 6-byte ifstream calls. This keeps automatic post-capture import fast.
+    std::vector<unsigned char> pcmBytes(size);
+    in.read(reinterpret_cast<char*>(pcmBytes.data()),
+            static_cast<std::streamsize>(pcmBytes.size()));
+    if(!in)return false;
     zone.pcm.resize(size/6);
-    for(auto& frame:zone.pcm) {
-        unsigned char bytes[6]{};
-        in.read(reinterpret_cast<char*>(bytes),6);
-        if(!in) return false;
+    for(std::size_t i=0;i<zone.pcm.size();++i) {
+        auto& frame=zone.pcm[i];
+        const auto* bytes=pcmBytes.data()+i*6;
         for(int ch=0;ch<2;++ch) {
             const auto b=bytes+ch*3;
             auto raw=static_cast<std::int32_t>(
