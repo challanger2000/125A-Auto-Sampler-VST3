@@ -57,6 +57,9 @@ std::atomic<bool> a125AuditEnteredImport{false};
 std::atomic<std::uint32_t> a125AuditImportReturned{0};
 std::atomic<bool> a125AuditDropImportReplay{false};
 std::atomic<bool> a125AuditNegatePendingSave{false};
+std::atomic<bool> a125AuditHoldRestore{false};
+std::atomic<bool> a125AuditRestoreEntered{false};
+std::atomic<bool> a125AuditIgnoreStaleRestore{false};
 }
 extern "C" __declspec(dllexport) void __cdecl A125_AuditHoldImport(int enabled) noexcept {
     if(enabled){
@@ -76,6 +79,16 @@ extern "C" __declspec(dllexport) void __cdecl A125_AuditDropImportReplay(int ena
 }
 extern "C" __declspec(dllexport) void __cdecl A125_AuditNegatePendingSave(int enabled) noexcept {
     a125AuditNegatePendingSave.store(enabled!=0,std::memory_order_release);
+}
+extern "C" __declspec(dllexport) void __cdecl A125_AuditHoldRestore(int enabled) noexcept {
+    if(enabled)a125AuditRestoreEntered.store(false,std::memory_order_release);
+    a125AuditHoldRestore.store(enabled!=0,std::memory_order_release);
+}
+extern "C" __declspec(dllexport) int __cdecl A125_AuditRestoreEntered() noexcept {
+    return a125AuditRestoreEntered.load(std::memory_order_acquire)?1:0;
+}
+extern "C" __declspec(dllexport) void __cdecl A125_AuditIgnoreStaleRestore(int enabled) noexcept {
+    a125AuditIgnoreStaleRestore.store(enabled!=0,std::memory_order_release);
 }
 #endif
 
@@ -572,7 +585,8 @@ public:
                      bool applyInstrumentSettings=false,
                      std::uint32_t captureGeneration=0,
                      std::optional<std::uint64_t> requiredFingerprint=std::nullopt,
-                     bool legacyIdentity=false){
+                     bool legacyIdentity=false,
+                     std::uint64_t restoreSelection=0){
         // Worker/UI/state threads can all request a bank, but never ASIO.
         // Loaded PCM stays alive so a voice can safely finish during a swap.
         bool loaded=false;
@@ -586,12 +600,28 @@ public:
                     captureGeneration))
                 return true; // already completed or superseded by user
             if(!captureGeneration){
-                ++selectionEpoch_; // explicit user/recall intent
-                lastExplicitGeneration_=session().generation.load(
-                    std::memory_order_acquire);
+                if(restoreSelection){
+                    // setState reserved priority before decoding its stream.
+                    if(restoreSelection!=selectionEpoch_)return false;
+                }else{
+                    ++selectionEpoch_; // GUI explicit user intent
+                    lastExplicitGeneration_=session().generation.load(
+                        std::memory_order_acquire);
+                }
             }
             expectedSelection=selectionEpoch_;
         }
+#ifdef A125_ENABLE_AUDIT_HOOKS
+        if(restoreSelection &&
+           a125AuditHoldRestore.load(std::memory_order_acquire)){
+            bool first=false;
+            if(a125AuditRestoreEntered.compare_exchange_strong(
+                    first,true,std::memory_order_acq_rel)){
+                while(a125AuditHoldRestore.load(std::memory_order_acquire))
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+        }
+#endif
         try {
             a125::ArchivePlayback archivePlayback;
             std::string archiveName;
@@ -1040,6 +1070,15 @@ public:
     }
     tresult PLUGIN_API setState(Steinberg::IBStream* state) override {
         if(!state) return Steinberg::kResultFalse;
+        // Reserve intent BEFORE parsing a potentially slow DAW stream.
+        // A newer GUI selection or host Restore must win the bank/parameters.
+        std::uint64_t restoreEpoch=0;
+        {
+            std::lock_guard<std::mutex> guard(bankMutex_);
+            restoreEpoch=++selectionEpoch_;
+            lastExplicitGeneration_=session().generation.load(
+                std::memory_order_acquire);
+        }
         Steinberg::IBStreamer io(state,kLittleEndian);
         Steinberg::int32 version=0;
         if(!io.readInt32(version) ||
@@ -1123,68 +1162,55 @@ public:
             if(!io.readInt64(stored))return Steinberg::kResultFalse;
             if(stored!=0)fingerprint=static_cast<std::uint64_t>(stored);
         }
-        if(!session().setCaptureName(restoredName))
-            return Steinberg::kResultFalse;
-        {
-            std::lock_guard<std::mutex> guard(bankMutex_);
-            ++selectionEpoch_; // invalidate in-flight older autoimports
-            lastExplicitGeneration_=session().generation.load(
-                std::memory_order_acquire);
-        }
-        // A recalled DAW project must not inherit a queued GUI audition
-        // click or stuck keyboard light from the previous song/session.
-        previewOn_.store(-1,std::memory_order_release);
-        previewOff_.store(-1,std::memory_order_release);
-        mouseHeld_.store(-1,std::memory_order_release);
-        for(auto& held:midiHeld_)
-            held.store(false,std::memory_order_relaxed);
-        session().exportTarget.choose(restoredFolder);
+        // Decode/relink outside bankMutex_. Stale failures must never
+        // clear a more recent bank or apply old project metadata.
+        bool restored=false;
         if(!restoredBank.empty()) {
             std::filesystem::path documents;
 #ifdef _WIN32
             if(const char* home=std::getenv("USERPROFILE");home && *home)
                 documents=std::filesystem::path(home)/"Documents";
 #endif
-            // Since v2201, an archive path without a verified PCM
-            // fingerprint is not a trustworthy identity. This can happen
-            // if the ZIP disappeared while the DAW saved the project.
-            // Fail closed instead of playing a replacement with the same name.
             const bool unverifiedArchive=version==0x125A2201 &&
                 restoredBank.extension()==".125A" && !fingerprint;
             const auto relocated=unverifiedArchive?std::filesystem::path{}:
                 a125::resolve125APath(
                     restoredBank,restoredFolder,documents,fingerprint,legacyIdentity);
-            if(unverifiedArchive || !loadSamples(
-                relocated,false,0,fingerprint,legacyIdentity)){
-                // Retain the *requested* filename for a future relink, but
-                // never keep an unrelated old project's samples sounding.
-                std::lock_guard<std::mutex> guard(bankMutex_);
+            if(!unverifiedArchive)
+                restored=loadSamples(
+                    relocated,false,0,fingerprint,legacyIdentity,restoreEpoch);
+        }
+        {
+            std::lock_guard<std::mutex> guard(bankMutex_);
+            bool stillCurrent=selectionEpoch_==restoreEpoch;
+#ifdef A125_ENABLE_AUDIT_HOOKS
+            if(a125AuditIgnoreStaleRestore.load(std::memory_order_acquire))
+                stillCurrent=true; // nonshipping negative-control mutation
+#endif
+            if(!stillCurrent)
+                return Steinberg::kResultOk; // superseded, not a failed restore
+            if(!restored) {
                 player_.clearCurrent();
                 bankFolder_=restoredBank;
                 bankFingerprint_=legacyIdentity?std::nullopt:fingerprint;
                 bankCaptureGeneration_=session().readyBankGeneration.load(
                     std::memory_order_acquire);
-                loadFailed_=true;
+                loadFailed_=!restoredBank.empty();
             }
-        }else{
-            std::lock_guard<std::mutex> guard(bankMutex_);
-            player_.clearCurrent();
-            bankFolder_.clear();
-            bankFingerprint_.reset();
-            bankCaptureGeneration_=session().readyBankGeneration.load(
-                std::memory_order_acquire);
-            loadFailed_=false;
-        }
-        // A restored project is a new musical context, even after a
-        // *successful* bank load: retire voices from the previous project.
-        player_.requestVoiceReset();
-        // Project load may occur concurrently with audio. Never modify
-        // activeRun_ or run_ from the state thread; process() observes
-        // Run=Off and stops at its next callback.
-        for(std::size_t i=0;i<values_.size();++i){
-            values_[i].store(loaded[i],std::memory_order_release);
-            SingleComponentEffect::setParamNormalized(
-                kRunParam+static_cast<V::ParamID>(i),loaded[i]);
+            if(!session().setCaptureName(restoredName))
+                return Steinberg::kResultFalse;
+            session().exportTarget.choose(restoredFolder);
+            previewOn_.store(-1,std::memory_order_release);
+            previewOff_.store(-1,std::memory_order_release);
+            mouseHeld_.store(-1,std::memory_order_release);
+            for(auto& held:midiHeld_)
+                held.store(false,std::memory_order_relaxed);
+            player_.requestVoiceReset();
+            for(std::size_t i=0;i<values_.size();++i){
+                values_[i].store(loaded[i],std::memory_order_release);
+                SingleComponentEffect::setParamNormalized(
+                    kRunParam+static_cast<V::ParamID>(i),loaded[i]);
+            }
         }
         return Steinberg::kResultOk;
     }
