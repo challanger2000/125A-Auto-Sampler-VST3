@@ -5,6 +5,7 @@
 #include "vstgui/lib/controls/cknob.h"
 #include "vstgui/lib/cdrawcontext.h"
 #include "vstgui/lib/cview.h"
+#include "vstgui/contrib/keyboardview.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -73,6 +74,48 @@ public:
         ctx->drawLine(from,to);
         setDirty(false);
     }
+};
+
+// Keep Steinberg's MIDI/key-hit mechanics intact. A narrow gold index strip
+// marks the recorded root samples; the built-in keys remain fully clickable.
+class ZoneKeyboardView final : public VSTGUI::KeyboardView {
+public:
+    explicit ZoneKeyboardView(const VSTGUI::KeyboardView& original) {
+        setViewSize(original.getViewSize());
+        setKeyRange(original.getKeyRangeStart(),original.getNumKeys());
+        setWhiteKeyWidth(original.getWhiteKeyWidth());
+        setBlackKeyWidth(original.getBlackKeyWidth());
+        setBlackKeyHeight(original.getBlackKeyHeight());
+        setLineWidth(original.getLineWidth());
+        setFrameColor(original.getFrameColor());
+        setFontColor(original.getFontColor());
+        setWhiteKeyColor(original.getWhiteKeyColor());
+        setBlackKeyColor(original.getBlackKeyColor());
+        setWhiteKeyPressedColor(original.getWhiteKeyPressedColor());
+        setBlackKeyPressedColor(original.getBlackKeyPressedColor());
+        setDrawNoteText(original.getDrawNoteText());
+        setMouseEnabled(original.getMouseEnabled());
+    }
+    void setRoots(const std::array<bool,128>& mask) {
+        if(roots_==mask)return;
+        roots_=mask;
+        invalid();
+    }
+    void drawRect(VSTGUI::CDrawContext* dc,
+                  const VSTGUI::CRect& dirty) override {
+        VSTGUI::KeyboardView::drawRect(dc,dirty);
+        dc->setFillColor({206,170,105,255});
+        for(int note=getKeyRangeStart();
+            note<=getKeyRangeStart()+getNumKeys() && note<128;++note) {
+            if(!roots_[static_cast<std::size_t>(note)])continue;
+            auto rect=getNoteRect(static_cast<NoteIndex>(note));
+            if(rect.isEmpty() || !dirty.rectOverlap(rect))continue;
+            rect.top+=1.;rect.bottom=rect.top+4.;
+            dc->drawRect(rect,VSTGUI::kDrawFilled);
+        }
+    }
+private:
+    std::array<bool,128> roots_{};
 };
 
 class WaveformView final : public VSTGUI::CView {
