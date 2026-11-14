@@ -438,7 +438,8 @@ public:
         case kGapParam:
             std::snprintf(buf,sizeof(buf),"%.2f",.05+value*.45);break;
         case kNormalizeParam: case kGateParam:
-            std::snprintf(buf,sizeof(buf),"%s",value>=.5?"ON":"OFF");break;
+            // Numeric format guarantees the host's value-to-string roundtrip.
+            std::snprintf(buf,sizeof(buf),"%d",value>=.5?1:0);break;
         case kAttackParam: std::snprintf(buf,sizeof(buf),"%.3f",value*2.);break;
         case kDecayParam: case kAmpReleaseParam:
             std::snprintf(buf,sizeof(buf),"%.3f",value*3.);break;
