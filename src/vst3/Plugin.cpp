@@ -9,6 +9,7 @@
 #include "core/SampleProcessing.h"
 #include "core/SfzBank.h"
 #include "core/RunStatus.h"
+#include "core/BuiltInSampler.h"
 #include "base/source/fstreamer.h"
 #include "pluginterfaces/base/ibstream.h"
 #include "pluginterfaces/base/ustring.h"
@@ -195,6 +196,7 @@ public:
         if(auto* label=dynamic_cast<VSTGUI::CTextLabel*>(view)){
             if(label->getText()=="STATUS: READY")statusLabel_=label;
             if(label->getText()=="OUTPUT: DEFAULT")folderLabel_=label;
+            if(label->getText()=="SAMPLER: EMPTY")samplerLabel_=label;
         }
         if(auto* button=dynamic_cast<VSTGUI::CTextButton*>(view)){
             if(button->getTitle()=="CHOOSE FOLDER"){
@@ -203,11 +205,19 @@ public:
             }else if(button->getTitle()=="DEFAULT"){
                 defaultButton_=button;
                 defaultButton_->registerControlListener(this);
+            }else if(button->getTitle()=="LOAD SAMPLES"){
+                loadButton_=button;
+                loadButton_->registerControlListener(this);
             }
         }
         return view;
     }
     void valueChanged(VSTGUI::CControl* control) override {
+        if(control==loadButton_){
+            const auto chosen=pickOutputDirectory();
+            if(chosen)loadSamples(*chosen);
+            return;
+        }
         if(control==defaultButton_){
             session().exportTarget.choose({});
             updateFolderLabel();
@@ -232,8 +242,29 @@ public:
             folderLabel_->setText(caption.c_str());
         }
     }
+    void loadSamples(const std::filesystem::path& path){
+        // Disk access and memory allocation happen on the GUI/state thread.
+        auto bank=a125::loadCapturedBank(path);
+        if(!bank || !player_.publish(std::move(bank))){
+            loadFailed_=true;
+        }else{
+            loadFailed_=false;
+            bankFolder_=path;
+        }
+        updateSamplerLabel();
+    }
+    void updateSamplerLabel(){
+        if(!samplerLabel_)return;
+        char line[104]{};
+        const auto count=player_.loadedZones();
+        if(loadFailed_)std::snprintf(line,sizeof(line),"SAMPLER: BANK LOAD FAILED");
+        else if(!count)std::snprintf(line,sizeof(line),"SAMPLER: EMPTY");
+        else std::snprintf(line,sizeof(line),"SAMPLER: %zu WAVS READY TO PLAY",count);
+        samplerLabel_->setText(line);
+    }
     void didOpen(VSTGUI::VST3Editor*) override {
         updateFolderLabel();
+        updateSamplerLabel();
         updateStatus();
         timer_=VSTGUI::makeOwned<VSTGUI::CVSTGUITimer>(
             [this](VSTGUI::CVSTGUITimer*){updateStatus();},250);
@@ -242,9 +273,12 @@ public:
         timer_=nullptr;
         if(folderButton_)folderButton_->unregisterControlListener(this);
         if(defaultButton_)defaultButton_->unregisterControlListener(this);
+        if(loadButton_)loadButton_->unregisterControlListener(this);
         folderButton_=nullptr;
         defaultButton_=nullptr;
+        loadButton_=nullptr;
         folderLabel_=nullptr;
+        samplerLabel_=nullptr;
         statusLabel_=nullptr;
     }
     void updateStatus() {
@@ -277,7 +311,8 @@ public:
     tresult PLUGIN_API initialize(FUnknown* context) override {
         if(SingleComponentEffect::initialize(context)!=Steinberg::kResultOk)
             return Steinberg::kResultFalse;
-        addAudioOutput(STR16("Silent Stereo Out"),V::SpeakerArr::kStereo);
+        addAudioOutput(STR16("Sampler Stereo Out"),V::SpeakerArr::kStereo);
+        addEventInput(STR16("Play Notes Into 125A"),1);
         addEventOutput(STR16("Generated MIDI"),1);
         parameters.addParameter(STR16("Run (Play in DAW)"),nullptr,1,0.,
            V::ParameterInfo::kCanAutomate,kRunParam);
@@ -370,7 +405,7 @@ public:
     tresult PLUGIN_API getState(Steinberg::IBStream* state) override {
         if(!state) return Steinberg::kResultFalse;
         Steinberg::IBStreamer io(state,kLittleEndian);
-        if(!io.writeInt32(0x125A1001)) return Steinberg::kResultFalse;
+        if(!io.writeInt32(0x125A1301)) return Steinberg::kResultFalse;
         // The Run switch is deliberately not persisted: project reopen
         // must never create WAV files before the user explicitly starts.
         for(std::size_t i=1;i<values_.size();++i)
@@ -385,6 +420,15 @@ public:
             if(state->write(folder.data(),length,&written)!=Steinberg::kResultOk ||
                written!=length)return Steinberg::kResultFalse;
         }
+        auto bankPath=bankFolder_.u8string();
+        if(bankPath.size()>8192)return Steinberg::kResultFalse;
+        const auto bankLength=static_cast<Steinberg::int32>(bankPath.size());
+        if(!io.writeInt32(bankLength))return Steinberg::kResultFalse;
+        if(bankLength){
+            Steinberg::int32 written=0;
+            if(state->write(bankPath.data(),bankLength,&written)!=Steinberg::kResultOk ||
+               written!=bankLength)return Steinberg::kResultFalse;
+        }
         return Steinberg::kResultOk;
     }
     tresult PLUGIN_API setState(Steinberg::IBStream* state) override {
@@ -392,7 +436,8 @@ public:
         Steinberg::IBStreamer io(state,kLittleEndian);
         Steinberg::int32 version=0;
         if(!io.readInt32(version) ||
-           (version!=0x125A0301 && version!=0x125A0401 && version!=0x125A1001))
+           (version!=0x125A0301 && version!=0x125A0401 &&
+            version!=0x125A1001 && version!=0x125A1301))
             return Steinberg::kResultFalse;
         // Older P003 files had 9 parameters. Upgrade without breaking
         // existing test projects; 3 editable velocity values get defaults.
@@ -404,7 +449,7 @@ public:
                loaded[i]<0. || loaded[i]>1.) return Steinberg::kResultFalse;
         }
         std::filesystem::path restoredFolder;
-        if(version==0x125A1001){
+        if(version==0x125A1001 || version==0x125A1301){
             Steinberg::int32 length=0;
             if(!io.readInt32(length) || length<0 || length>8192)
                 return Steinberg::kResultFalse;
@@ -417,7 +462,22 @@ public:
                 if(!restoredFolder.is_absolute())return Steinberg::kResultFalse;
             }
         }
+        std::filesystem::path restoredBank;
+        if(version==0x125A1301){
+            Steinberg::int32 length=0;
+            if(!io.readInt32(length) || length<0 || length>8192)
+                return Steinberg::kResultFalse;
+            if(length){
+                std::u8string bytes(static_cast<std::size_t>(length),u8' ');
+                Steinberg::int32 read=0;
+                if(state->read(bytes.data(),length,&read)!=Steinberg::kResultOk ||
+                   read!=length)return Steinberg::kResultFalse;
+                restoredBank=std::filesystem::path(bytes);
+                if(!restoredBank.is_absolute())return Steinberg::kResultFalse;
+            }
+        }
         session().exportTarget.choose(restoredFolder);
+        if(!restoredBank.empty())loadSamples(restoredBank);
         // Project load may occur concurrently with audio. Never modify
         // activeRun_ or run_ from the state thread; process() observes
         // Run=Off and stops at its next callback.
@@ -458,6 +518,7 @@ public:
             }
         }
         run_=values_[0]>=0.5;
+        if(!run_)renderSampler(data);
         const bool playing=data.processContext &&
             (data.processContext->state & V::ProcessContext::kPlaying);
         const bool ready=playing && data.outputEvents && data.numSamples>0;
@@ -528,6 +589,43 @@ public:
         return Steinberg::kResultOk;
     }
 private:
+    void renderSampler(V::ProcessData& data) noexcept {
+        if(!player_.loadedZones() || data.numSamples<=0 ||
+           data.numOutputs<1 || !data.outputs ||
+           data.symbolicSampleSize!=V::kSample32 ||
+           !data.outputs[0].channelBuffers32 ||
+           data.outputs[0].numChannels<2)return;
+        auto* left=data.outputs[0].channelBuffers32[0];
+        auto* right=data.outputs[0].channelBuffers32[1];
+        if(!left || !right)return;
+        auto* events=data.inputEvents;
+        const int32 total=events?events->getEventCount():0;
+        int32 eventIndex=0;
+        bool sounded=false;
+        for(int32 sample=0;sample<data.numSamples;++sample){
+            while(eventIndex<total){
+                V::Event e{};
+                if(events->getEvent(eventIndex,e)!=Steinberg::kResultOk){
+                    ++eventIndex;continue;
+                }
+                if(e.sampleOffset>sample)break;
+                if(e.type==V::Event::kNoteOnEvent){
+                    const int velocity=static_cast<int>(
+                        std::lround(std::clamp(e.noteOn.velocity,0.f,1.f)*127.f));
+                    if(velocity>0)
+                        player_.noteOn(e.noteOn.pitch,velocity,sampleRate_);
+                    else player_.noteOff(e.noteOn.pitch);
+                }else if(e.type==V::Event::kNoteOffEvent){
+                    player_.noteOff(e.noteOff.pitch);
+                }
+                ++eventIndex;
+            }
+            const auto pcm=player_.renderOne();
+            left[sample]=pcm[0];right[sample]=pcm[1];
+            sounded=sounded || pcm[0]!=0.f || pcm[1]!=0.f;
+        }
+        if(sounded)data.outputs[0].silenceFlags=0;
+    }
     a125::JobConfig makeConfig() const noexcept {
         a125::ParameterValues values{};
         for(std::size_t i=0;i<values.size();++i)
@@ -596,10 +694,15 @@ private:
         0.,60./127.,60./127.,0.,7./15.,0.,kDefaultHold,kDefaultTail,kDefaultGap,
         99./126.,59./126.,119./126.};
     a125::JobConfig config_{};
+    a125::BuiltInSampler player_{};
+    std::filesystem::path bankFolder_{};
+    bool loadFailed_=false;
     a125::ActiveNote note_{};
     a125::RunGate runGate_{};
     VSTGUI::CTextLabel* statusLabel_{nullptr};  // owned by active editor
     VSTGUI::CTextLabel* folderLabel_{nullptr};
+    VSTGUI::CTextLabel* samplerLabel_{nullptr};
+    VSTGUI::CTextButton* loadButton_{nullptr};
     VSTGUI::CTextButton* folderButton_{nullptr};
     VSTGUI::CTextButton* defaultButton_{nullptr};
     VSTGUI::SharedPointer<VSTGUI::CVSTGUITimer> timer_{};
@@ -945,10 +1048,10 @@ private:
 BEGIN_FACTORY_DEF("125A","https://github.com/challanger2000","")
  DEF_CLASS2(INLINE_UID_FROM_FUID(kMidiID),
   Steinberg::PClassInfo::kManyInstances,kVstAudioEffectClass,
-  "125A AutoSampler MIDI",0,"Instrument","0.12.0",kVstVersionString,
+  "125A AutoSampler MIDI",0,"Instrument","0.13.0",kVstVersionString,
   MidiGenerator::createInstance)
  DEF_CLASS2(INLINE_UID_FROM_FUID(kRecorderID),
   Steinberg::PClassInfo::kManyInstances,kVstAudioEffectClass,
-  "125A AutoSampler Recorder",0,"Fx","0.12.0",kVstVersionString,
+  "125A AutoSampler Recorder",0,"Fx","0.13.0",kVstVersionString,
   Recorder::createInstance)
 END_FACTORY
