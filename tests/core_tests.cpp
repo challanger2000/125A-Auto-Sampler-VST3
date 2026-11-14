@@ -76,10 +76,15 @@ void testAllMidiVelocityRoundTrips() {
 }
 void testEditableVelocitiesAndRanges() {
     a125::ParameterValues p=a125::defaultParameters;
-    require(a125::makeJobFromParameters(p,44100.).takeCount()==8,
-        "default is one note, eight RR and one velocity");
+    require(a125::makeJobFromParameters(p,44100.).takeCount()==1,
+        "quick default is one note, one RR and one velocity");
     auto single=a125::makeJobFromParameters(p,44100.);
     require(single.velocities[0]==100,"one velocity defaults to 100");
+    // Explicitly opt into the long 8-RR and dense test matrix.
+    p[a125::RoundRobins]=7./15.;
+    p[a125::NoteStep]=0.;
+    p[a125::Hold]=(1.-.25)/7.75;
+    p[a125::Release]=(2.-.25)/9.75;
     p[a125::FirstNote]=60./127.;
     p[a125::LastNote]=62./127.;
     p[a125::VelocityLayers]=1.;
