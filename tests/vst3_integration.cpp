@@ -528,6 +528,76 @@ int run(const char* vst3path,bool matrix,bool customFolder){
         require(!std::filesystem::exists(base/"Documents"/"125A AutoSampler"),
                 "P010 leaked custom WAVs into default Documents directory");
     }
+    // P013: the SAME 125A instrument must directly play the just-recorded
+    // WAV bank. No SFZ file, second sampler, or external playback VST.
+    {
+        ResizableMemoryIBStream bankState;
+        IBStreamer io(&bankState,kLittleEndian);
+        require(io.writeInt32(0x125A1301),"native player state version");
+        const std::array<double,11> params{
+            60./127.,60./127.,0.,7./15.,0.,
+            (1.-.25)/7.75,(2.-.25)/9.75,(.1-.05)/.45,
+            99./126.,59./126.,119./126.
+        };
+        for(double value:params)require(io.writeDouble(value),
+            "cannot serialize native sampler parameters");
+        require(io.writeInt32(0),"native bank requires no external export path");
+        const auto folder=capturedRunDirectory.u8string();
+        require(io.writeInt32(static_cast<int32>(folder.size())),
+            "cannot serialize captured WAV bank folder length");
+        int32 actual=0;
+        require(bankState.write(folder.data(),static_cast<int32>(folder.size()),
+                   &actual)==kResultOk && actual==static_cast<int32>(folder.size()),
+            "cannot serialize captured WAV bank");
+        bankState.rewind();
+        require(generator.component->setState(&bankState)==kResultOk,
+            "125A plugin failed to load its own recorded WAV bank");
+        ResizableMemoryIBStream saved;
+        require(generator.component->getState(&saved)==kResultOk,
+            "125A cannot save playable bank in project");
+        saved.rewind();
+        require(generator.component->setState(&saved)==kResultOk,
+            "125A cannot recall recorded bank after project save/load");
+        require(generator.component->getBusCount(kEvent,kInput)==1,
+            "125A must accept live MIDI for native sample playback");
+        (void)generator.component->activateBus(kEvent,kInput,0,true);
+        require(generator.component->setActive(true)==kResultOk,
+            "cannot activate internal 125A player");
+        generator.active=true;
+        EventList incoming(8);
+        Event keyOn{};
+        keyOn.type=Event::kNoteOnEvent;
+        keyOn.sampleOffset=0;keyOn.busIndex=0;
+        keyOn.noteOn.channel=0;
+        keyOn.noteOn.pitch=static_cast<int16>(matrix?61:60);
+        keyOn.noteOn.velocity=static_cast<float>(matrix?80:100)/127.f;
+        keyOn.noteOn.noteId=99;
+        require(incoming.addEvent(keyOn)==kResultOk,
+            "could not send playable MIDI Note-On into 125A");
+        EventList outputMidi(8);
+        ProcessData render{};
+        render.processMode=kRealtime;
+        render.symbolicSampleSize=kSample32;
+        render.numSamples=kBlock;
+        render.numOutputs=1;render.outputs=&genOut;
+        render.inputEvents=&incoming;render.outputEvents=&outputMidi;
+        require(generator.processor->process(render)==kResultOk,
+            "125A native VST3 player process failed");
+        std::size_t audible=0;
+        for(int32 i=0;i<kBlock;++i)
+            if(std::abs(genL[static_cast<std::size_t>(i)])>0.002f &&
+               std::abs(genR[static_cast<std::size_t>(i)])>0.001f)++audible;
+        require(audible>static_cast<std::size_t>(kBlock/4),
+            "native 125A player rendered silence instead of recorded instrument");
+        require(outputMidi.getEventCount()==0,
+            "native playback mode should not emit a new sampling sequence");
+        require(generator.component->setActive(false)==kResultOk,
+            "native player could not deactivate after audio output");
+        generator.active=false;
+        std::cout<<"[PASS] P013 BUILT-IN 125A VST3 PLAYER: "
+                 <<audible<<" audible PCM frames from real captured WAV bank; "
+                 <<"MIDI note / velocity / project restore\n";
+    }
     std::cout<<"[PASS] REAL VST3 MIDI->synthetic synth->REAL VST3 Recorder: "
              <<noteOns<<" NoteOns, "<<noteOffs<<" NoteOffs, "<<wavs
              <<" 24-bit stereo WAVs at "<<kRate<<" Hz, block "<<kBlock
