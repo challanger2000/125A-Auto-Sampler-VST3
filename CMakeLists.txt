@@ -47,7 +47,7 @@ if(BUILD_VST3)
         src/core/Timeline.h
     )
     target_include_directories(AutosamplerVST3 PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
-    target_link_libraries(AutosamplerVST3 PRIVATE sdk vstgui_support)
+    target_link_libraries(AutosamplerVST3 PRIVATE sdk vstgui_support ole32 shell32 uuid)
     smtg_target_add_plugin_resources(AutosamplerVST3 RESOURCES resource/autosampler.uidesc)
     target_compile_features(AutosamplerVST3 PRIVATE cxx_std_23)
     if(MSVC)
