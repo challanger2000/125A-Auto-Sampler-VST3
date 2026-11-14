@@ -74,8 +74,8 @@ void smokeNativeGui(IComponent* component,bool recorder=false){
     require(view,"MIDI VST3 supplies no real editor");
     ViewRect rect{};
     require(view->getSize(&rect)==kResultTrue &&
-            rect.getWidth()>=(recorder?450:600) &&
-            rect.getHeight()>=(recorder?140:400),
+            rect.getWidth()>=(recorder?450:1000) &&
+            rect.getHeight()>=(recorder?140:680),
             "native GUI has invalid editor geometry");
     require(view->isPlatformTypeSupported(kPlatformTypeHWND)==kResultTrue,
             "native GUI does not support HWND");
@@ -107,6 +107,24 @@ void smokeNativeGui(IComponent* component,bool recorder=false){
     }while(GetTickCount64()<end);
     require(GetWindow(hwnd,GW_CHILD)!=nullptr,
             "VSTGUI failed to create its own editor child window");
+    if(!recorder){
+        // An actual Windows mouse event must reach Steinberg KeyboardView,
+        // change FROM/TO in the real plugin and allow preview/NoteOff.
+        HWND guiChild=GetWindow(hwnd,GW_CHILD);
+        const auto before=controller->getParamNormalized(1001);
+        const LPARAM where=MAKELPARAM(48,644); // lower part of left C2 white key
+        SendMessageW(guiChild,WM_MOUSEMOVE,0,where);
+        SendMessageW(guiChild,WM_LBUTTONDOWN,MK_LBUTTON,where);
+        SendMessageW(guiChild,WM_LBUTTONUP,0,where);
+        MSG message{};
+        while(PeekMessageW(&message,nullptr,0,0,PM_REMOVE)){
+            TranslateMessage(&message);DispatchMessageW(&message);
+        }
+        const auto first=controller->getParamNormalized(1001);
+        const auto last=controller->getParamNormalized(1002);
+        require(std::abs(first-last)<1.e-6 && std::abs(first-before)>.01,
+                "P021 native keyboard mouse click did not select FROM=TO note");
+    }
     require(view->removed()==kResultTrue,"VSTGUI could not detach cleanly");
     require(view->setFrame(nullptr)==kResultTrue,"VSTGUI host frame release failed");
     frame->release();
