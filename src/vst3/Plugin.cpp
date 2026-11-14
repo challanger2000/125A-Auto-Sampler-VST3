@@ -184,7 +184,15 @@ class MidiGenerator final : public V::SingleComponentEffect,
                             public VSTGUI::IControlListener {
 public:
     static FUnknown* createInstance(void*) {return (V::IAudioProcessor*)new MidiGenerator();}
-    ~MidiGenerator() override {
+    ~MidiGenerator() override {stopBankMonitor();}
+    tresult PLUGIN_API terminate() override {
+        // The Steinberg validator calls terminate()/initialize() on the SAME
+        // object. A joinable std::thread cannot be overwritten: join it
+        // before reinitialization or MSVC fail-fasts during VST3 validation.
+        stopBankMonitor();
+        return SingleComponentEffect::terminate();
+    }
+    void stopBankMonitor() noexcept {
         stopBankWorker_.store(true,std::memory_order_release);
         if(bankWorker_.joinable())bankWorker_.join();
     }
@@ -380,6 +388,7 @@ public:
            V::ParameterInfo::kCanAutomate,kVelocity3Param);
         // Independent of any GUI opening: register a non-realtime bank
         // import worker for successful captures from our recorder class.
+        stopBankWorker_.store(false,std::memory_order_release);
         bankWorker_=std::thread([this]{monitorBanks();});
         return Steinberg::kResultOk;
     }
