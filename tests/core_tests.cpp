@@ -6,6 +6,7 @@
 #include "core/ActiveNote.h"
 #include "core/RunGate.h"
 #include "core/ExportTarget.h"
+#include "core/SfzBank.h"
 #include <array>
 #include <filesystem>
 #include <fstream>
@@ -301,6 +302,88 @@ void testCaptureIntegrityFailClosed() {
     }
 }
 
+void testSfzKeyboardBank() {
+    a125::JobConfig config;
+    config.firstNote=60;
+    config.lastNote=61;
+    config.velocityLayers=3;
+    config.velocities={40,80,120};
+    config.roundRobins=8;
+    config.holdFrames=128;
+    config.tailFrames=64;
+    config.gapFrames=16;
+    const auto text=a125::sfzBankText(config);
+    require(text.has_value(),"valid multi-layer RR plan must create SFZ mapping");
+    require(std::count(text->begin(),text->end(),'<')==54,
+            "two notes x three velocity groups plus 48 SFZ regions");
+    require(text->find("<group> lokey=60 hikey=60 pitch_keycenter=60 lovel=1 hivel=60 seq_length=8")!=std::string::npos,
+            "velocity layer 40 covers 1-60");
+    require(text->find("<group> lokey=60 hikey=60 pitch_keycenter=60 lovel=61 hivel=100 seq_length=8")!=std::string::npos,
+            "velocity layer 80 covers 61-100");
+    require(text->find("<group> lokey=61 hikey=61 pitch_keycenter=61 lovel=101 hivel=127 seq_length=8")!=std::string::npos,
+            "velocity layer 120 covers 101-127");
+    require(text->find("<region> seq_position=8 sample=N61_V120_RR08.wav")!=std::string::npos,
+            "last SFZ RR sample name does not match recorder");
+    for(std::size_t i=0;i<config.takeCount();++i)
+        require(text->find("sample="+a125::sampleFileName(a125::jobTake(config,i)))!=
+                std::string::npos,"every generated WAV must be in SFZ");
+    {
+        a125::JobConfig spaced=config;
+        spaced.firstNote=60;
+        spaced.lastNote=69;
+        spaced.semitoneStep=4;
+        spaced.velocityLayers=1;
+        spaced.roundRobins=1;
+        auto mapping=a125::sfzBankText(spaced);
+        require(mapping.has_value() &&
+                mapping->find("lokey=60 hikey=62 pitch_keycenter=60")!=std::string::npos &&
+                mapping->find("lokey=63 hikey=66 pitch_keycenter=64")!=std::string::npos &&
+                mapping->find("lokey=67 hikey=69 pitch_keycenter=68")!=std::string::npos,
+                "non-chromatic note spacing must split playable ranges at midpoints");
+    }
+    {
+        a125::JobConfig duplicate=config;
+        duplicate.velocities={40,40,120};
+        require(!a125::sfzBankText(duplicate),
+                "duplicate velocities must not create overlapping SFZ regions");
+        duplicate.firstNote=127;
+        duplicate.lastNote=126;
+        require(!a125::sfzBankText(duplicate),"invalid MIDI mapping must fail closed");
+    }
+    const auto root=std::filesystem::temp_directory_path()/"125a_p011_sfz_export";
+    std::filesystem::remove_all(root);
+    std::filesystem::create_directory(root);
+    try {
+        require(!a125::writeCompleteSfzBank(config,root),
+                "missing WAV files must not publish a playable SFZ bank");
+        require(!std::filesystem::exists(root/"125A AutoSampler.sfz"),
+                "incomplete capture must not create SFZ");
+        const std::vector<a125::StereoFrame> samples(100,{.25f,-.15f});
+        for(std::size_t i=0;i<config.takeCount();++i){
+            const auto path=root/a125::sampleFileName(a125::jobTake(config,i));
+            a125::writeWav24(path.string(),44100,samples);
+        }
+        require(a125::writeCompleteSfzBank(config,root),
+                "48 complete physical WAVs must produce a full playable SFZ");
+        const auto sfzPath=root/"125A AutoSampler.sfz";
+        std::ifstream file(sfzPath,std::ios::binary);
+        const std::string generated((std::istreambuf_iterator<char>(file)),{});
+        file.close();
+        require(generated==*text,"on-disk SFZ mapping differs from offline model");
+        require(!std::filesystem::exists(root/"125A AutoSampler.sfz.tmp"),
+                "atomic SFZ publication must not leave a temporary file");
+        std::filesystem::remove(sfzPath);
+        std::filesystem::remove(root/a125::sampleFileName(a125::jobTake(config,47)));
+        require(!a125::writeCompleteSfzBank(config,root) &&
+                !std::filesystem::exists(sfzPath),
+                "removing just one RR take must prevent SFZ bank creation");
+    }catch(...){
+        std::filesystem::remove_all(root);
+        throw;
+    }
+    std::filesystem::remove_all(root);
+}
+
 void testAutomaticBatch48Wavs() {
     a125::JobConfig cfg;
     cfg.firstNote=60;cfg.lastNote=61;cfg.semitoneStep=1;
@@ -388,6 +471,7 @@ int main() {
         testRunNeedsExplicitRearm();
         testStopAndJumpNoteRecovery();
         testCaptureIntegrityFailClosed();
+        testSfzKeyboardBank();
         testAutomaticBatch48Wavs();
         testWavAndTrim();
         std::cout << "P001 core tests PASSED\n";
