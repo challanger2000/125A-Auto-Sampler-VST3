@@ -490,15 +490,33 @@ int run(const char* vst3path,bool matrix,bool customFolder){
 
     const auto output=customFolder?chosenRoot:base/"Documents"/"125A AutoSampler";
     require(std::filesystem::exists(output),"recorder created no run folder");
-    std::size_t wavs=0,reports=0;
+    std::size_t wavs=0,reports=0,sfzBanks=0;
     std::set<std::string> expectedNames;
     for(int note=60;note<=(matrix?61:60);++note)
         for(const int vel:matrix?std::vector<int>{40,80,120}:std::vector<int>{100})
             for(int rr=1;rr<=8;++rr)
                 expectedNames.insert("N"+std::to_string(note)+"_V"+std::to_string(vel)+
                     "_RR"+(rr<10?"0":"")+std::to_string(rr)+".wav");
+    const auto allExpectedNames=expectedNames;
     for(const auto& entry:std::filesystem::recursive_directory_iterator(output)){
         if(!entry.is_regular_file())continue;
+        if(entry.path().filename()=="125A AutoSampler.sfz"){
+            std::ifstream in(entry.path(),std::ios::binary);
+            const std::string sfz((std::istreambuf_iterator<char>(in)),{});
+            require(sfz.find("<group>")!=std::string::npos,
+                    "P011 SFZ lacks MIDI note/velocity groups");
+            require(static_cast<int>(std::count(sfz.begin(),sfz.end(),'<'))==
+                    expectedTakes+expectedTakes/8,
+                    "P011 SFZ lacks expected velocity groups or RR regions");
+            for(const auto& filename:allExpectedNames)
+                require(sfz.find("sample="+filename)!=std::string::npos,
+                        "P011 SFZ omits an existing WAV region");
+            require(sfz.find("seq_length=8")!=std::string::npos &&
+                    sfz.find("seq_position=8")!=std::string::npos &&
+                    sfz.find("pitch_keycenter=60")!=std::string::npos,
+                    "P011 RR or pitch root is not mapped");
+            ++sfzBanks;
+        }
         if(entry.path().extension()==".wav"){
             (void)nonzeroWav(entry.path());
             require(expectedNames.erase(entry.path().filename().string())==1,
@@ -514,11 +532,14 @@ int run(const char* vst3path,bool matrix,bool customFolder){
                     "run report indicates rejected takes");
             require(contents.find("SUMMARY,droppedFrames,0")!=std::string::npos,
                     "audio frames were dropped");
+            require(contents.find("BANK,SFZ_CREATED,125A AutoSampler.sfz")!=std::string::npos,
+                    "P011 report missing successful playable SFZ bank");
             ++reports;
         }
     }
     require(static_cast<int>(wavs)==expectedTakes && expectedNames.empty() &&
-            reports==1,"real recorder failed full note/velocity/RR WAV matrix");
+            reports==1 && sfzBanks==1,
+            "P011 recorder must export all WAVs plus exactly one playable SFZ bank");
     if(customFolder){
         require(!std::filesystem::exists(base/"Documents"/"125A AutoSampler"),
                 "P010 leaked custom WAVs into default Documents directory");
@@ -620,11 +641,14 @@ int runAbort(const char* vst3path){
             for(const auto& entry:std::filesystem::recursive_directory_iterator(root)){
                 if(!entry.is_regular_file())continue;
                 if(entry.path().extension()==".wav")wavFound=true;
+                require(entry.path().extension()!=".sfz",
+                        "P011 must not publish a playable bank after STOP");
                 if(entry.path().filename()=="RUN-REPORT.csv"){
                     std::ifstream reader(entry.path(),std::ios::binary);
                     const std::string report((std::istreambuf_iterator<char>(reader)),{});
                     if(report.find("SUMMARY,exported,0")!=std::string::npos &&
                        report.find("SUMMARY,rejected,1")!=std::string::npos &&
+                       report.find("BANK,SKIPPED_INCOMPLETE")!=std::string::npos &&
                        report.find("ABORTED")!=std::string::npos)
                         closed=true;
                 }
