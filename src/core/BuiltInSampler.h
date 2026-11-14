@@ -30,6 +30,9 @@ struct SampleZone {
 };
 struct SampleBank {
     std::vector<SampleZone> zones;
+    // One shared gain for all zones preserves the original velocity-layer
+    // and Round-Robin dynamics. The WAVs themselves remain unchanged.
+    float normalizeGain=1.f;
 };
 
 inline std::uint16_t samplerLE16(const unsigned char* b) noexcept {
@@ -138,12 +141,31 @@ inline std::unique_ptr<SampleBank> loadCapturedBank(
         if(a.velocity!=b.velocity)return a.velocity<b.velocity;
         return a.rr<b.rr;
     });
+    // Analyze the entire bank once, on the loading thread. Quiet layers
+    // must NOT be independently boosted to the same level as loud ones.
+    float peak=0.f;
+    for(const auto& zone:bank->zones)
+        for(const auto& frame:zone.pcm)
+            for(float sample:frame)
+                peak=std::max(peak,std::abs(sample));
+    if(peak>=.001f && std::isfinite(peak))
+        bank->normalizeGain=std::pow(10.f,-1.f/20.f)/peak;
     return bank;
 }
 
 class BuiltInSampler {
 public:
     static constexpr std::size_t maxVoices=32;
+    // User-facing playback settings are applied from the audio callback.
+    // None of these setters allocates or touches the filesystem.
+    void setNormalize(bool on) noexcept {normalize_=on;}
+    void setGate(bool on) noexcept {gate_=on;}
+    void setEnvelope(float attack,float decay,float sustain,float release) noexcept {
+        attack_=std::clamp(attack,0.f,2.f);
+        decay_=std::clamp(decay,0.f,3.f);
+        sustain_=std::clamp(sustain,0.f,1.f);
+        release_=std::clamp(release,0.f,3.f);
+    }
     // Loading a replacement does not deallocate a bank while an ASIO
     // callback might still be playing it. The old bank lives until teardown.
     bool publish(std::unique_ptr<SampleBank> bank) {
@@ -206,10 +228,29 @@ public:
             std::pow(2.,static_cast<double>(key-chosen->root)/12.);
         voice->stamp=++timestamp_;
         voice->key=key;
+        voice->normalizeGain=bank->normalizeGain;
+        voice->outputRate=outputRate;
+        voice->sustain=sustain_;
+        voice->decayStep=decay_>0.f && sustain_<1.f ?
+            (1.f-sustain_)/static_cast<float>(std::max(1.,decay_*outputRate)):0.f;
+        voice->attackStep=attack_>0.f ?
+            1.f/static_cast<float>(std::max(1.,attack_*outputRate)):0.f;
+        voice->level=attack_>0.f?0.f:1.f;
+        voice->stage=attack_>0.f?Stage::Attack:
+            (voice->decayStep>0.f?Stage::Decay:Stage::Sustain);
+        if(voice->stage==Stage::Sustain)voice->level=voice->sustain;
+        voice->releaseStep=0.f;
     }
-    void noteOff(int) noexcept {
-        // These WAVs contain the entire captured release. In this first
-        // iteration they are played one-shot, not prematurely truncated.
+    void noteOff(int key) noexcept {
+        // One-Shot intentionally ignores Note-Off. Gate applies a proper
+        // release to each currently playing voice for that MIDI pitch.
+        if(!gate_)return;
+        for(auto& v:voices_)if(v.zone && v.key==key && v.stage!=Stage::Release){
+            if(release_<=0.f){v.zone=nullptr;continue;}
+            v.releaseStep=v.level/static_cast<float>(
+                std::max(1.,release_*v.outputRate));
+            v.stage=Stage::Release;
+        }
     }
     StereoFrame renderOne() noexcept {
         StereoFrame mix{};
@@ -220,10 +261,12 @@ public:
             if(index>=wave.size()) {voice.zone=nullptr;continue;}
             const auto next=std::min(index+1,wave.size()-1);
             const auto frac=static_cast<float>(voice.position-index);
+            const float gain=advanceEnvelope(voice)*
+                (normalize_?voice.normalizeGain:1.f);
             for(int ch=0;ch<2;++ch)
                 mix[static_cast<std::size_t>(ch)]+=
-                    wave[index][static_cast<std::size_t>(ch)]*(1.f-frac)+
-                    wave[next][static_cast<std::size_t>(ch)]*frac;
+                    (wave[index][static_cast<std::size_t>(ch)]*(1.f-frac)+
+                    wave[next][static_cast<std::size_t>(ch)]*frac)*gain;
             voice.position+=voice.increment;
             if(voice.position>=static_cast<double>(wave.size()))voice.zone=nullptr;
         }
@@ -231,16 +274,44 @@ public:
         return mix;
     }
 private:
+    enum class Stage:std::uint8_t {Attack,Decay,Sustain,Release};
     struct Voice {
         const SampleZone* zone=nullptr;
-        double position=0.,increment=1.;
+        double position=0.,increment=1.,outputRate=44100.;
         std::uint64_t stamp=0;
         int key=0;
+        float normalizeGain=1.f;
+        float level=1.f,attackStep=0.f,decayStep=0.f,releaseStep=0.f;
+        float sustain=1.f;
+        Stage stage=Stage::Sustain;
     };
+    static float advanceEnvelope(Voice& v) noexcept {
+        switch(v.stage){
+        case Stage::Attack:
+            v.level=std::min(1.f,v.level+v.attackStep);
+            if(v.level>=1.f) {
+                v.stage=v.decayStep>0.f?Stage::Decay:Stage::Sustain;
+                if(v.stage==Stage::Sustain)v.level=v.sustain;
+            }
+            break;
+        case Stage::Decay:
+            v.level=std::max(v.sustain,v.level-v.decayStep);
+            if(v.level<=v.sustain)v.stage=Stage::Sustain;
+            break;
+        case Stage::Sustain:break;
+        case Stage::Release:
+            v.level=std::max(0.f,v.level-v.releaseStep);
+            if(v.level<=0.f)v.zone=nullptr;
+            break;
+        }
+        return v.level;
+    }
     std::vector<std::unique_ptr<SampleBank>> owned_;
     std::atomic<const SampleBank*> current_{nullptr};
     std::array<Voice,maxVoices> voices_{};
     std::array<std::uint32_t,128*128> rrCounters_{};
     std::uint64_t timestamp_=0;
+    float attack_=0.f,decay_=0.f,sustain_=1.f,release_=.15f;
+    bool normalize_=false,gate_=false;
 };
 } // namespace a125
