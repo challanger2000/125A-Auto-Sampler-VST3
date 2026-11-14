@@ -241,7 +241,7 @@ int run(const char* vst3path,bool matrix,bool customFolder){
     passthrough.numChannels=2;passthrough.channelBuffers32=passPtrs.data();
 
     EventList midiOut(32);
-    ParameterChanges params(9);
+    ParameterChanges params(11);
     auto param=[&](ParamID id,double value){
         int32 queueIndex=0,pointIndex=0;
         auto* q=params.addParameterData(id,queueIndex);
@@ -250,6 +250,8 @@ int run(const char* vst3path,bool matrix,bool customFolder){
     };
     param(1000,1.); // RUN
     param(1004,7./15.); // Explicitly stress 8 RRs; user default is 1.
+    param(1006,(.5-.25)/7.75); // Short capture, including restored P010 projects.
+    param(1007,(.5-.25)/9.75); // Short tail, not the historical 2 seconds.
     if(matrix){
         param(1003,0.); // Matrix needs adjacent semitone roots, not octave skips.
         param(1001,60./127.);
