@@ -1,4 +1,4 @@
-name: P008 Windows VST3 Completion QA
+name: P009 Windows VST3 Stop/Completion QA
 on:
   push:
     branches: ['develop/**']
@@ -71,10 +71,13 @@ jobs:
           Write-Host "Integration: 44.1kHz, block 512, 48-take velocity/RR matrix"
           & $runner $plugin.FullName 44100 512 matrix
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Write-Host "P009: native mid-take STOP, no partial WAV, ABORTED report while active"
+          & $runner $plugin.FullName 44100 256 abort
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Upload VST3 test binary
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: 125A-AutoSampler-P008-Win64
+          name: 125A-AutoSampler-P009-Win64
           path: build-vst3/VST3/Release/*.vst3
           if-no-files-found: error
