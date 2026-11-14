@@ -1,4 +1,4 @@
-name: P015 Windows VST3 One Shot and ADSR QA
+name: P016 Windows VST3 Normalize Headroom QA
 on:
   push:
     branches: ['develop/**']
@@ -81,6 +81,6 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: 125A-AutoSampler-P015-Win64
+          name: 125A-AutoSampler-P016-Win64
           path: build-vst3/VST3/Release/*.vst3
           if-no-files-found: error
