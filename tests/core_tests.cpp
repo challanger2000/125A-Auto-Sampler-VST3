@@ -1014,6 +1014,93 @@ void testAuditWavOpenHandleBudget() {
     }catch(...){fs::remove_all(root);throw;}
     fs::remove_all(root);
 }
+void testAuditBankPublicationRoundRobin() {
+    // Codex R05: the first note after a successful bank publication must be
+    // RR01 even if the previous bank had an odd number of triggers.
+    // Crucially, NO requestVoiceReset() is permitted between publications.
+    for(const auto [variants,hits]:
+            std::array<std::pair<int,int>,3>{
+                std::pair{2,1},std::pair{3,5},std::pair{16,17}}){
+        a125::BuiltInSampler player;
+        const auto make=[&](float base){
+            auto bank=std::make_unique<a125::SampleBank>();
+            for(int rr=1;rr<=variants;++rr){
+                a125::SampleZone z;
+                z.root=60;z.velocity=100;z.rr=rr;
+                const float level=base+.01f*static_cast<float>(rr-1);
+                z.pcm.assign(1,{level,-level});
+                bank->zones.push_back(std::move(z));
+            }
+            return bank;
+        };
+        require(player.publish(make(.10f)),"R05 old bank publish");
+        for(int index=0;index<hits;++index){
+            player.noteOn(60,100,44100.,index+1,0);
+            (void)player.renderOne();
+        }
+        require(player.publish(make(.30f)),"R05 new bank publish");
+        player.noteOn(60,100,44100.,901,0);
+        const auto first=player.renderOne();
+        require(std::abs(first[0]-.30f)<.00001f,
+            "R05 new bank MUST begin at RR01 without an explicit voice reset");
+        player.noteOn(60,100,44100.,902,0);
+        const auto second=player.renderOne();
+        require(std::abs(second[0]-.31f)<.00001f,
+            "R05 new bank second note MUST advance to RR02");
+        // A subsequent failed publish must NOT reset the current RR
+        // sequence, nor make the active bank inaccessible.
+        require(!player.publish({}),"R05 invalid bank must be rejected");
+        player.noteOn(60,100,44100.,903,0);
+        const auto third=player.renderOne();
+        const float expected=variants==2?.30f:.32f;
+        require(std::abs(third[0]-expected)<.00001f,
+            "R05 rejected bank cannot advance RR context");
+    }
+    // Also kill the old 'disable voice-reset epoch' mutant: odd number of
+    // notes in the SAME bank before an explicit project reset.
+    {
+        a125::BuiltInSampler player;
+        auto bank=std::make_unique<a125::SampleBank>();
+        for(int rr=1;rr<=2;++rr){
+            a125::SampleZone z;
+            z.root=60;z.velocity=100;z.rr=rr;
+            z.pcm.assign(1,{rr==1?.25f:.75f,0.f});
+            bank->zones.push_back(std::move(z));
+        }
+        require(player.publish(std::move(bank)),"R05 reset test bank");
+        player.noteOn(60,100,44100.,1,0);
+        require(std::abs(player.renderOne()[0]-.25f)<.00001f,
+            "R05 reset test first hit");
+        player.requestVoiceReset();
+        player.noteOn(60,100,44100.,2,0);
+        require(std::abs(player.renderOne()[0]-.25f)<.00001f,
+            "R05 explicit reset after ODD note count must begin RR01");
+    }
+    // Active voices may finish their old immutable bank after publication:
+    // resetting RR must NOT equal an implicit voice clear.
+    {
+        a125::BuiltInSampler player;
+        const auto make=[](float level){
+            auto bank=std::make_unique<a125::SampleBank>();
+            a125::SampleZone z;
+            z.root=60;z.velocity=100;z.rr=1;
+            z.pcm.assign(16,{level,0.f});
+            bank->zones.push_back(std::move(z));
+            return bank;
+        };
+        require(player.publish(make(.2f)),"R05 tail old bank");
+        player.noteOn(60,100,44100.,1,0);
+        require(std::abs(player.renderOne()[0]-.2f)<.00001f,
+            "R05 tail initial PCM");
+        require(player.publish(make(.4f)),"R05 tail new bank");
+        require(std::abs(player.renderOne()[0]-.2f)<.00001f,
+            "R05 bank publication must preserve old OneShot voice");
+        for(int i=0;i<16;++i)(void)player.renderOne();
+        player.noteOn(60,100,44100.,2,0);
+        require(std::abs(player.renderOne()[0]-.4f)<.00001f,
+            "R05 new bank PCM after old voice tail");
+    }
+}
 void testAuditRecallTransientState() {
     const auto createBank=[&](float a,float b){
         auto bank=std::make_unique<a125::SampleBank>();
@@ -1204,6 +1291,7 @@ int main() {
         testAuditMalformedManifestUnicode();
         testAuditWavOpenHandleBudget();
         testAuditRecallTransientState();
+        testAuditBankPublicationRoundRobin();
         testAuditSafeUnicodeStems();
         testAuditWindowsDeviceArchiveNames();
         testAuditCompletionSnapshotConsistency();

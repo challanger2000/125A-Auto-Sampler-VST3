@@ -33,6 +33,9 @@ struct SampleZone {
 inline constexpr std::uint64_t kMaxBankDecodedBytes=512ull*1024*1024;
 struct SampleBank {
     std::vector<SampleZone> zones;
+    // Assigned by the off-audio publisher, immutable after publication.
+    // A monotonic identity avoids ABA when a retired bank address is reused.
+    std::uint64_t publicationId=0;
     // One shared gain for all zones preserves the original velocity-layer
     // and Round-Robin dynamics. The WAVs themselves remain unchanged.
     float normalizeGain=1.f;
@@ -214,6 +217,10 @@ public:
                 retained+=bytes;
             }
         if(owned_.size()>=maxVoices+2)return false;
+        // Only assign the identity at the final successful publication.
+        // Audio-thread RR counters remain untouched: the next NoteOn sees
+        // the new bank identity and restarts RR01 for its new context.
+        bank->publicationId=++nextPublicationId_;
         const auto* ptr=bank.get();
         owned_.push_back(std::move(bank));
         current_.store(ptr,std::memory_order_release);
@@ -295,6 +302,13 @@ public:
            outputRate<8000 || outputRate>384000)return;
         const auto* bank=current_.load(std::memory_order_acquire);
         if(!bank || bank->zones.empty())return;
+        // Manual LOAD, automatic import and DAW recall ALL use publish().
+        // Advancing the RR epoch is audio-thread-only. Merely replacing a
+        // bank must never cut off already playing voices.
+        if(rrPlayedPublicationId_!=bank->publicationId){
+            rrPlayedPublicationId_=bank->publicationId;
+            advanceRREpoch();
+        }
         int nearestNote=1000;
         for(const auto& zone:bank->zones)
             nearestNote=std::min(nearestNote,std::abs(key-zone.root));
@@ -450,10 +464,13 @@ private:
             // position belongs to the new project. This executes on ASIO,
             // without allocating, locking, or touching any retired sample.
             polyMixGain_=1.f;
-            if(++rrEpoch_==0){
-                rrEpochs_.fill(0); // 2^64 resets; defensive wraparound only
-                rrEpoch_=1;
-            }
+            advanceRREpoch();
+        }
+    }
+    void advanceRREpoch() noexcept {
+        if(++rrEpoch_==0){
+            rrEpochs_.fill(0); // 2^64 resets; defensive wraparound only
+            rrEpoch_=1;
         }
     }
     struct ReaderScope {
@@ -503,6 +520,10 @@ private:
     std::array<std::uint32_t,128*128> rrCounters_{};
     std::array<std::uint64_t,128*128> rrEpochs_{};
     std::uint64_t rrEpoch_=1;
+    // The control thread assigns publication IDs; the audio thread only
+    // compares the immutable bank ID with its last played ID.
+    std::uint64_t nextPublicationId_=0;
+    std::uint64_t rrPlayedPublicationId_=0;
     std::uint64_t timestamp_=0;
     float attack_=0.f,decay_=0.f,sustain_=1.f,release_=.15f;
     bool normalize_=false,gate_=false;
