@@ -228,7 +228,16 @@ std::size_t nonzeroWav(const std::filesystem::path& path) {
     require(count>12000,"WAV must contain genuinely audible synthetic signal");
     return bytes.size();
 }
-int run(const char* vst3path,bool matrix,bool customFolder){
+int run(const char* vst3path,bool matrix,bool customFolder,
+        const std::string& auditMode=""){
+    const bool auditPending=(auditMode=="pending" ||
+                              auditMode=="priority" ||
+                              auditMode=="pending-mutant");
+    const bool auditPriority=auditMode=="priority";
+    using AuditHold=void (__cdecl*)(int);
+    using AuditEntered=int (__cdecl*)();
+    AuditHold auditHold=nullptr;
+    AuditEntered auditEntered=nullptr;
     const auto base=std::filesystem::absolute("p005-real-vst3-output");
     std::filesystem::remove_all(base);
     std::filesystem::create_directories(base/"Documents");
@@ -237,6 +246,27 @@ int run(const char* vst3path,bool matrix,bool customFolder){
     std::string error;
     auto module=Module::create(vst3path,error);
     require(bool(module),"cannot load actual 125A VST3 bundle");
+    if(auditPending){
+        std::filesystem::path dll;
+        for(const auto& item:std::filesystem::recursive_directory_iterator(vst3path))
+            if(item.is_regular_file() && item.path().extension()==".vst3"){
+                require(dll.empty(),"audit fixture found multiple VST3 binaries");
+                dll=item.path();
+            }
+        require(!dll.empty(),"audit fixture VST3 binary absent");
+        const auto loaded=GetModuleHandleW(dll.c_str());
+        require(loaded!=nullptr,"QA VST3 bundle not loaded by actual module host");
+        auditHold=reinterpret_cast<AuditHold>(
+            GetProcAddress(loaded,"A125_AuditHoldImport"));
+        auditEntered=reinterpret_cast<AuditEntered>(
+            GetProcAddress(loaded,"A125_AuditImportEntered"));
+        const auto mutate=reinterpret_cast<AuditHold>(
+            GetProcAddress(loaded,"A125_AuditNegatePendingSave"));
+        require(auditHold && auditEntered && mutate,
+                "nonshipping audit barrier exports missing");
+        auditHold(1);
+        mutate(auditMode=="pending-mutant"?1:0);
+    }
     HostApplication host;
     auto factory=module->getFactory();
     factory.setHostContext(&host);
@@ -603,10 +633,20 @@ int run(const char* vst3path,bool matrix,bool customFolder){
             "cannot deactivate generator after STOP test");
     generator.active=false;
 
+    // In the adversarial fixture the actual worker is held at the exact
+    // publication/decoder boundary. The early DAW save occurs BEFORE import.
+    if(auditPending){
+        bool entered=false;
+        for(int n=0;n<1000 && !entered;++n){
+            entered=auditEntered()!=0;
+            if(!entered)std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+        require(entered,"P023 actual worker never reached blocked pre-import state");
+    }
     // P014: this test never calls setState() or opens an editor after
     // recording. The sample bank MUST load in the real VST3 on its own
     // background thread. GUI-timer-only import would fail this test.
-    {
+    if(!auditPending){
         require(generator.component->getBusCount(kEvent,kInput)==1,
                 "125A internal sampler needs a MIDI input");
         (void)generator.component->activateBus(kEvent,kInput,0,true);
@@ -817,6 +857,128 @@ int run(const char* vst3path,bool matrix,bool customFolder){
         require(static_cast<std::uint64_t>(fingerprint)==
                 a125::archive125AFingerprint(capturedArchive).value_or(0),
             "P023 saved audio fingerprint differs from freshly recorded bank");
+        if(auditPending){
+            // The worker is stopped immediately before loadSamples(), so
+            // this path exercises the real "save-before-auto-import" contract.
+            // We also require the sampler to be silent before releasing it.
+            (void)generator.component->activateBus(kEvent,kInput,0,true);
+            require(generator.component->setActive(true)==kResultOk,
+                    "P023 could not activate blocked sampler");
+            generator.active=true;
+            const auto probeAudio=[&](int id){
+                EventList notes(2);
+                Event note{};
+                note.busIndex=0;note.sampleOffset=0;
+                note.type=Event::kNoteOnEvent;
+                note.noteOn.channel=0;note.noteOn.pitch=60;
+                note.noteOn.velocity=100.f/127.f;
+                note.noteOn.noteId=id;
+                require(notes.addEvent(note)==kResultOk,
+                        "P023 cannot inject native VST3 note on");
+                ProcessData process{};
+                process.processMode=kRealtime;
+                process.symbolicSampleSize=kSample32;
+                process.numSamples=kBlock;
+                process.numOutputs=1;process.outputs=&genOut;
+                process.inputEvents=&notes;
+                require(generator.processor->process(process)==kResultOk,
+                        "P023 blocked native sampler process rejected");
+                float peak=0.f;
+                for(int32 sample=0;sample<kBlock;++sample)
+                    peak=std::max(peak,std::abs(genL[static_cast<std::size_t>(sample)]));
+                return peak;
+            };
+            require(probeAudio(9111)<1.e-7f,
+                    "P023 test invalid: bank was already imported before save");
+            require(generator.component->setActive(false)==kResultOk,
+                    "P023 cannot deactivate blocked instrument");
+            generator.active=false;
+            std::filesystem::path expected=capturedArchive;
+            if(auditPriority){
+                // Deliberately different manually/DAW-selected bank. The
+                // sleeping old completion worker must not overwrite it.
+                const auto takes=base/"Manual Selection"/"WAV";
+                std::filesystem::create_directories(takes);
+                const std::vector<a125::StereoFrame> testPCM(2048,{.25f,-.125f});
+                a125::writeWav24((takes/"N60_V100_RR01.wav").string(),44100,testPCM);
+                expected=base/"Explicit Choice.125A";
+                a125::write125AArchive(takes,expected,"Manual Choice");
+                ResizableMemoryIBStream selected;
+                IBStreamer write(&selected,kLittleEndian);
+                require(write.writeInt32(0x125A1301),
+                        "A03 legacy explicit bank state marker");
+                const std::array<double,11> params{
+                    60./127.,60./127.,0.,7./15.,0.,
+                    (1.-.25)/7.75,(2.-.25)/9.75,(.1-.05)/.45,
+                    99./126.,59./126.,119./126.
+                };
+                for(double value:params)
+                    require(write.writeDouble(value),"A03 explicit bank params");
+                require(write.writeInt32(0),"A03 selected output folder");
+                auto utf=expected.u8string();
+                require(write.writeInt32(static_cast<int32>(utf.size())),
+                        "A03 explicit archive path size");
+                int32 written=0;
+                require(selected.write(utf.data(),static_cast<int32>(utf.size()),
+                            &written)==kResultOk &&
+                        written==static_cast<int32>(utf.size()),
+                        "A03 selected archive path bytes");
+                selected.rewind();
+                require(generator.component->setState(&selected)==kResultOk,
+                        "A03 explicit DAW bank selection failed");
+            }else{
+                // Project reload must work from the STATE SAVED WHILE EMPTY,
+                // not from a later successful editor/automatic import.
+                savedImmediately.rewind();
+                require(generator.component->setState(&savedImmediately)==kResultOk,
+                        "P023 early DAW save cannot restore the pending bank");
+            }
+            auditHold(0);
+            std::this_thread::sleep_for(std::chrono::milliseconds(350));
+            ResizableMemoryIBStream persisted;
+            require(generator.component->getState(&persisted)==kResultOk,
+                    "A03/P023 final project state save failed");
+            persisted.rewind();
+            IBStreamer check(&persisted,kLittleEndian);
+            int32 marker=0,bytes=0;
+            require(check.readInt32(marker) && marker==0x125A2201,
+                    "A03/P023 final project state marker");
+            for(int i=0;i<18;++i){
+                double value=0.;
+                require(check.readDouble(value),"A03/P023 final params truncated");
+            }
+            require(check.readInt32(bytes) && bytes>=0 && bytes<=8192,
+                    "A03/P023 folder length corrupt");
+            if(bytes){
+                std::vector<char> skipped(static_cast<std::size_t>(bytes));
+                int32 read=0;
+                require(persisted.read(skipped.data(),bytes,&read)==kResultOk &&
+                        read==bytes,"A03/P023 folder bytes truncated");
+            }
+            require(check.readInt32(bytes) && bytes>0 && bytes<=8192,
+                    "A03/P023 chosen archive path missing");
+            std::u8string utf(static_cast<std::size_t>(bytes),u8' ');
+            int32 read=0;
+            require(persisted.read(utf.data(),bytes,&read)==kResultOk &&
+                    read==bytes && std::filesystem::path(utf)==expected,
+                    "A03/P023 stale worker replaced explicit/early-saved bank");
+            require(generator.component->setActive(true)==kResultOk,
+                    "A03/P023 cannot reactivate restored instrument");
+            generator.active=true;
+            const float peak=probeAudio(9222);
+            require(peak>.02f,
+                    "A03/P023 restored bank silent or loaded wrong instrument");
+            if(auditPriority)
+                require(peak>.23f && peak<.27f,
+                    "A03 selected manual constant PCM replaced by stale capture");
+            require(generator.component->setActive(false)==kResultOk,
+                    "A03/P023 cannot close test instrument");
+            generator.active=false;
+            std::cout<<(auditPriority?
+                "[PASS] A03 real Windows VST3: paused old import cannot override explicit project bank\\n":
+                "[PASS] P023 real Windows VST3: save BEFORE import, restore verified .125A, audible PCM\\n");
+            return 0;
+        }
     }
     // P024: A current-format DAW state with an .125A path but no PCM
     // fingerprint must NOT silently import an archive with that filename.
@@ -1461,9 +1623,10 @@ int main(int argc,char** argv){
         if(mode=="abort") return runAbort(argv[1]);
         if(mode=="automation") return runAutomation(argv[1]);
         if(mode=="sequential") return runSequential(argv[1]);
-        require(mode.empty() || mode=="matrix" || mode=="custom",
+        require(mode.empty() || mode=="matrix" || mode=="custom" ||
+                mode=="pending" || mode=="priority" || mode=="pending-mutant",
                 "invalid integration test mode");
-        return run(argv[1],mode=="matrix",mode=="custom");
+        return run(argv[1],mode=="matrix",mode=="custom",mode);
     }catch(const std::exception& e){
         std::cerr<<"[FAIL] P005 REAL VST3 integration: "<<e.what()<<"\n";
         return 1;

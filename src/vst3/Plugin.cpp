@@ -50,6 +50,24 @@
 #include <thread>
 #include <vector>
 
+#ifdef A125_ENABLE_AUDIT_HOOKS
+namespace {
+std::atomic<bool> a125AuditHoldImport{false};
+std::atomic<bool> a125AuditEnteredImport{false};
+std::atomic<bool> a125AuditNegatePendingSave{false};
+}
+extern "C" __declspec(dllexport) void __cdecl A125_AuditHoldImport(int enabled) noexcept {
+    if(enabled)a125AuditEnteredImport.store(false,std::memory_order_release);
+    a125AuditHoldImport.store(enabled!=0,std::memory_order_release);
+}
+extern "C" __declspec(dllexport) int __cdecl A125_AuditImportEntered() noexcept {
+    return a125AuditEnteredImport.load(std::memory_order_acquire)?1:0;
+}
+extern "C" __declspec(dllexport) void __cdecl A125_AuditNegatePendingSave(int enabled) noexcept {
+    a125AuditNegatePendingSave.store(enabled!=0,std::memory_order_release);
+}
+#endif
+
 namespace {
 namespace V = Steinberg::Vst;
 using Steinberg::FUnknown;
@@ -671,6 +689,16 @@ public:
                 }
                 if(failures<200){
                     if(!completed.path.empty()){
+#ifdef A125_ENABLE_AUDIT_HOOKS
+                        // QA-bundle only. Freeze the ACTUAL background import
+                        // after recorder publication but before ZIP decoding.
+                        if(a125AuditHoldImport.load(std::memory_order_acquire)){
+                            a125AuditEnteredImport.store(true,std::memory_order_release);
+                            while(a125AuditHoldImport.load(std::memory_order_acquire) &&
+                                  !stopBankWorker_.load(std::memory_order_acquire))
+                                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                        }
+#endif
                         if(loadSamples(completed.path,false,ready)){
                             publishedGeneration=ready;
                             failures=0;
@@ -927,7 +955,13 @@ public:
             // silently become the new recorded instrument in DAW state.
             // An explicit user/DAW selection must never be replaced by a
             // completed worker from its own or an older capture generation.
-            if(ready!=0 && ready!=bankCaptureGeneration_ &&
+            bool auditNegatePendingSave=false;
+#ifdef A125_ENABLE_AUDIT_HOOKS
+            auditNegatePendingSave=a125AuditNegatePendingSave.load(
+                std::memory_order_acquire);
+#endif
+            if(!auditNegatePendingSave && ready!=0 &&
+               ready!=bankCaptureGeneration_ &&
                ready>lastExplicitGeneration_){
                 const auto& newest=completed.path;
                 if(newest.extension()==".125A"){

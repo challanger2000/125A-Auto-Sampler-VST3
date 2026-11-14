@@ -23,9 +23,9 @@ jobs:
           fetch-depth: 1
       - name: Configure
         shell: pwsh
-        run: cmake -S . -B build-vst3 -G "Visual Studio 17 2022" -A x64 -DBUILD_VST3=ON -DBUILD_VST3_VALIDATOR=ON -DBUILD_TESTING=ON -DVST3_SDK_ROOT="$PWD/_sdk" -DSMTG_CREATE_PLUGIN_LINK=OFF
+        run: cmake -S . -B build-vst3 -G "Visual Studio 17 2022" -A x64 -DBUILD_VST3=ON -DBUILD_VST3_VALIDATOR=ON -DBUILD_TESTING=ON -DBUILD_AUDIT_VST3=ON -DVST3_SDK_ROOT="$PWD/_sdk" -DSMTG_CREATE_PLUGIN_LINK=OFF
       - name: Build
-        run: cmake --build build-vst3 --config Release --target AutosamplerVST3 validator AutosamplerIntegration --parallel
+        run: cmake --build build-vst3 --config Release --target AutosamplerVST3 AutosamplerAuditVST3 validator AutosamplerIntegration --parallel
       - name: Validate packaged VSTGUI
         shell: pwsh
         run: |
@@ -93,6 +93,26 @@ jobs:
           Write-Host "P010: project-restored custom folder, eight real VST3 WAVs"
           & $runner $plugin.FullName 44100 256 custom
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: P023/A03 deterministic real VST3 worker-barrier regressions
+        shell: pwsh
+        run: |
+          $bundle = @(Get-ChildItem build-vst3/VST3/Release -Directory -Filter 'AutosamplerAuditVST3.vst3')
+          if ($bundle.Count -ne 1) { throw 'Test-only audit VST3 not built' }
+          $runner = 'build-vst3/Release/AutosamplerIntegration.exe'
+          & $runner $bundle[0].FullName 44100 256 pending
+          if ($LASTEXITCODE -ne 0) { throw 'P023 actual pre-import save/recall failed' }
+          & $runner $bundle[0].FullName 44100 256 priority
+          if ($LASTEXITCODE -ne 0) { throw 'A03 paused worker override test failed' }
+          # A deliberate test-only mutation suppresses getState's pending
+          # completion fallback. Same real VST3 fixture must KILL this mutant.
+          $negative = & $runner $bundle[0].FullName 44100 256 pending-mutant 2>&1
+          $negativeCode = $LASTEXITCODE
+          if ($negativeCode -eq 0 -or
+              (($negative | Out-String) -notmatch 'P023 archive path absent from immediate DAW save')) {
+            $negative | Out-Host
+            throw 'P023 negative control did not detect the real missing bank'
+          }
+          Write-Host '[PASS] P023 negative mutant killed by missing archive in pre-import getState'
       - name: Independent .125A ZIP/PCM24 compatibility
         shell: pwsh
         run: ./.github/scripts/verify125a.ps1

@@ -56,6 +56,31 @@ if(BUILD_VST3)
     if(MSVC)
         target_compile_options(AutosamplerVST3 PRIVATE /W4 /permissive-)
     endif()
+    option(BUILD_AUDIT_VST3 "Build nonshipping fault-injection VST3" OFF)
+    if(BUILD_TESTING AND WIN32 AND BUILD_AUDIT_VST3)
+        # Recompile identical production code with an explicit TEST-ONLY
+        # worker barrier and a test mutant; the shipping DLL is unaffected.
+        smtg_add_vst3plugin(AutosamplerAuditVST3
+            ${_125A_SCE_SOURCE}
+            ${_125A_DLLMAIN_SOURCE}
+            src/vst3/Plugin.cpp
+            ${_125A_KEYBOARD_SOURCE}
+            src/core/SamplingPlan.h
+            src/core/SampleProcessing.h
+            src/core/Timeline.h)
+        target_include_directories(AutosamplerAuditVST3 PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/src")
+        target_link_libraries(AutosamplerAuditVST3 PRIVATE
+            sdk vstgui_support ole32 shell32 uuid)
+        smtg_target_add_plugin_resources(AutosamplerAuditVST3 RESOURCES
+            resource/autosampler.uidesc resource/recorder.uidesc)
+        target_compile_features(AutosamplerAuditVST3 PRIVATE cxx_std_23)
+        target_compile_definitions(AutosamplerAuditVST3 PRIVATE
+            A125_ENABLE_AUDIT_HOOKS=1)
+        if(MSVC)
+            target_compile_options(AutosamplerAuditVST3 PRIVATE /W4 /permissive-)
+        endif()
+    endif()
     if(BUILD_TESTING AND WIN32)
         # The QA host is a private test executable. It never ships inside
         # the VST3 bundle and never hosts any customer VST instruments.
