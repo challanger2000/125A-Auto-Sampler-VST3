@@ -7,6 +7,7 @@
 #include "core/RunGate.h"
 #include "core/ExportTarget.h"
 #include "core/SfzBank.h"
+#include "core/BuiltInSampler.h"
 #include "core/RunStatus.h"
 #include <array>
 #include <filesystem>
@@ -339,6 +340,53 @@ void testRunDisplayTruthfulness() {
             "previous run must not contaminate next run's status");
 }
 
+void testNativeSamplerPlayback() {
+    namespace fs=std::filesystem;
+    const auto dir=fs::temp_directory_path()/"125a_p013_native_sampler";
+    fs::remove_all(dir);
+    fs::create_directories(dir);
+    try {
+        const std::vector<a125::StereoFrame> low(128,{.10f,.05f});
+        const std::vector<a125::StereoFrame> high(128,{.40f,.20f});
+        const std::vector<a125::StereoFrame> brighter(128,{.70f,.35f});
+        a125::writeWav24((dir/"N60_V40_RR01.wav").string(),44100,low);
+        a125::writeWav24((dir/"N60_V40_RR02.wav").string(),44100,high);
+        a125::writeWav24((dir/"N60_V120_RR01.wav").string(),44100,brighter);
+        require(([&]{int n=0,v=0,rr=0;return a125::parseSampleName("N127_V100_RR16.wav",n,v,rr)&&n==127&&v==100&&rr==16;}()),
+                "capture file name 127/100/16");
+        auto bank=a125::loadCapturedBank(dir);
+        require(bank && bank->zones.size()==3,"load all three recorded WAV zones");
+        a125::BuiltInSampler player;
+        require(player.publish(std::move(bank)) && player.loadedZones()==3,
+                "native sampler must own the captured PCM without a SFZ player");
+        player.noteOn(60,40,44100.);
+        auto a=player.renderOne();
+        require(std::abs(a[0]-.10f)<.002f && std::abs(a[1]-.05f)<.002f,
+                "first RR voice plays recorded stereo PCM");
+        for(int i=0;i<200;++i)player.renderOne();
+        player.noteOn(60,40,44100.);
+        a=player.renderOne();
+        require(std::abs(a[0]-.40f)<.002f,
+                "second hit must advance the built-in RR selector");
+        for(int i=0;i<200;++i)player.renderOne();
+        player.noteOn(60,120,44100.);
+        a=player.renderOne();
+        require(std::abs(a[0]-.70f)<.002f,
+                "higher velocity must select its OWN WAV layer");
+        for(int i=0;i<200;++i)player.renderOne();
+        player.noteOn(72,40,44100.);
+        a=player.renderOne();
+        require(std::abs(a[0]-.10f)<.002f,
+                "nearest root key is pitched up and still audible");
+        for(int i=0;i<200;++i)player.renderOne();
+        // Deliberately break one RR WAV: incomplete banks are rejected.
+        fs::resize_file(dir/"N60_V40_RR02.wav",30);
+        require(!a125::loadCapturedBank(dir),
+                "damaged WAV must NEVER be loaded as playable instrument");
+    }catch(...){fs::remove_all(dir);throw;}
+    fs::remove_all(dir);
+}
+
 void testSfzKeyboardBank() {
     a125::JobConfig config;
     config.firstNote=60;
@@ -509,6 +557,7 @@ int main() {
         testStopAndJumpNoteRecovery();
         testCaptureIntegrityFailClosed();
         testRunDisplayTruthfulness();
+        testNativeSamplerPlayback();
         testSfzKeyboardBank();
         testAutomaticBatch48Wavs();
         testWavAndTrim();
