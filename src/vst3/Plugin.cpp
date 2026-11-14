@@ -5,6 +5,7 @@
 #include "core/CaptureIntegrity.h"
 #include "core/ActiveNote.h"
 #include "core/RunGate.h"
+#include "core/ExportTarget.h"
 #include "core/SampleProcessing.h"
 #include "base/source/fstreamer.h"
 #include "pluginterfaces/base/ibstream.h"
@@ -17,6 +18,8 @@
 #include "vstgui/plugin-bindings/vst3editor.h"
 #include "vstgui/lib/cvstguitimer.h"
 #include "vstgui/lib/controls/ctextlabel.h"
+#include "vstgui/lib/controls/cbuttons.h"
+#include "vstgui/lib/controls/icontrollistener.h"
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -29,6 +32,12 @@
 #include <filesystem>
 #include <fstream>
 #include <limits>
+#include <optional>
+#ifdef _WIN32
+#include <windows.h>
+#include <shobjidl.h>
+#include <objbase.h>
+#endif
 #include <string>
 #include <thread>
 #include <vector>
@@ -70,6 +79,7 @@ struct Session {
     // Observable per-run counts, updated atomically by the recorder.
     std::atomic<std::uint32_t> observed{0},written{0},rejected{0},silent{0},errors{0};
     std::atomic<std::uint64_t> dropped{0};
+    a125::ExportTarget exportTarget;
     std::atomic<int> firstNote{60},lastNote{60},step{1},roundRobins{8},layers{1};
     std::atomic<int> velocity0{100},velocity1{80},velocity2{120};
     std::atomic<std::uint64_t> hold{44100},tail{88200},gap{4410};
@@ -130,8 +140,43 @@ void copyAudio(const V::ProcessData& data) noexcept {
     }
 }
 
+// Windows native folder picker runs only in the GUI callback, never in process().
+std::optional<std::filesystem::path> pickOutputDirectory() {
+#ifdef _WIN32
+    const HRESULT init=CoInitializeEx(nullptr,COINIT_APARTMENTTHREADED);
+    const bool uninitialize=SUCCEEDED(init);
+    IFileOpenDialog* dialog=nullptr;
+    std::optional<std::filesystem::path> chosen;
+    if(SUCCEEDED(CoCreateInstance(CLSID_FileOpenDialog,nullptr,CLSCTX_INPROC_SERVER,
+                                 IID_PPV_ARGS(&dialog))) && dialog){
+        DWORD flags=0;
+        if(SUCCEEDED(dialog->GetOptions(&flags))) {
+            dialog->SetOptions(flags|FOS_PICKFOLDERS|FOS_FORCEFILESYSTEM|FOS_PATHMUSTEXIST);
+            dialog->SetTitle(L"125A AutoSampler - Export Folder");
+            if(dialog->Show(nullptr)==S_OK){
+                IShellItem* item=nullptr;
+                if(SUCCEEDED(dialog->GetResult(&item)) && item){
+                    PWSTR name=nullptr;
+                    if(SUCCEEDED(item->GetDisplayName(SIGDN_FILESYSPATH,&name)) && name){
+                        chosen=std::filesystem::path(name);
+                        CoTaskMemFree(name);
+                    }
+                    item->Release();
+                }
+            }
+        }
+        dialog->Release();
+    }
+    if(uninitialize)CoUninitialize();
+    return chosen;
+#else
+    return std::nullopt;
+#endif
+}
+
 class MidiGenerator final : public V::SingleComponentEffect,
-                            public VSTGUI::VST3EditorDelegate {
+                            public VSTGUI::VST3EditorDelegate,
+                            public VSTGUI::IControlListener {
 public:
     static FUnknown* createInstance(void*) {return (V::IAudioProcessor*)new MidiGenerator();}
     Steinberg::IPlugView* PLUGIN_API createView(Steinberg::FIDString name) override {
@@ -145,17 +190,48 @@ public:
     VSTGUI::CView* verifyView(VSTGUI::CView* view,
             const VSTGUI::UIAttributes&,const VSTGUI::IUIDescription*,
             VSTGUI::VST3Editor*) override {
-        if(auto* label=dynamic_cast<VSTGUI::CTextLabel*>(view);
-            label && label->getText()=="STATUS: READY")statusLabel_=label;
+        if(auto* label=dynamic_cast<VSTGUI::CTextLabel*>(view)){
+            if(label->getText()=="STATUS: READY")statusLabel_=label;
+            if(label->getText()=="OUTPUT: DEFAULT")folderLabel_=label;
+        }
+        if(auto* button=dynamic_cast<VSTGUI::CTextButton*>(view);
+           button && button->getTitle()=="CHOOSE FOLDER"){
+            folderButton_=button;
+            folderButton_->registerControlListener(this);
+        }
         return view;
     }
+    void valueChanged(VSTGUI::CControl* control) override {
+        if(control!=folderButton_)return;
+        const auto chosen=pickOutputDirectory();
+        if(chosen && chosen->is_absolute()){
+            session().exportTarget.choose(*chosen);
+            updateFolderLabel();
+        }
+    }
+    void updateFolderLabel(){
+        if(!folderLabel_)return;
+        const auto folder=session().exportTarget.chosenFolder();
+        if(folder.empty()){
+            folderLabel_->setText("OUTPUT: DEFAULT");
+        }else{
+            const auto utf8=folder.u8string();
+            std::string caption("OUTPUT: ");
+            caption.append(reinterpret_cast<const char*>(utf8.data()),utf8.size());
+            folderLabel_->setText(caption.c_str());
+        }
+    }
     void didOpen(VSTGUI::VST3Editor*) override {
+        updateFolderLabel();
         updateStatus();
         timer_=VSTGUI::makeOwned<VSTGUI::CVSTGUITimer>(
             [this](VSTGUI::CVSTGUITimer*){updateStatus();},250);
     }
     void willClose(VSTGUI::VST3Editor*) override {
         timer_=nullptr;
+        if(folderButton_)folderButton_->unregisterControlListener(this);
+        folderButton_=nullptr;
+        folderLabel_=nullptr;
         statusLabel_=nullptr;
     }
     void updateStatus() {
@@ -279,12 +355,21 @@ public:
     tresult PLUGIN_API getState(Steinberg::IBStream* state) override {
         if(!state) return Steinberg::kResultFalse;
         Steinberg::IBStreamer io(state,kLittleEndian);
-        if(!io.writeInt32(0x125A0401)) return Steinberg::kResultFalse;
+        if(!io.writeInt32(0x125A1001)) return Steinberg::kResultFalse;
         // The Run switch is deliberately not persisted: project reopen
         // must never create WAV files before the user explicitly starts.
         for(std::size_t i=1;i<values_.size();++i)
             if(!io.writeDouble(values_[i].load(std::memory_order_relaxed)))
                 return Steinberg::kResultFalse;
+        const auto folder=session().exportTarget.chosenFolder().u8string();
+        if(folder.size()>8192)return Steinberg::kResultFalse;
+        const auto length=static_cast<Steinberg::int32>(folder.size());
+        if(!io.writeInt32(length))return Steinberg::kResultFalse;
+        if(length){
+            Steinberg::int32 written=0;
+            if(state->write(folder.data(),length,&written)!=Steinberg::kResultOk ||
+               written!=length)return Steinberg::kResultFalse;
+        }
         return Steinberg::kResultOk;
     }
     tresult PLUGIN_API setState(Steinberg::IBStream* state) override {
@@ -292,7 +377,7 @@ public:
         Steinberg::IBStreamer io(state,kLittleEndian);
         Steinberg::int32 version=0;
         if(!io.readInt32(version) ||
-           (version!=0x125A0301 && version!=0x125A0401))
+           (version!=0x125A0301 && version!=0x125A0401 && version!=0x125A1001))
             return Steinberg::kResultFalse;
         // Older P003 files had 9 parameters. Upgrade without breaking
         // existing test projects; 3 editable velocity values get defaults.
@@ -303,6 +388,21 @@ public:
             if(!io.readDouble(loaded[i]) || !std::isfinite(loaded[i]) ||
                loaded[i]<0. || loaded[i]>1.) return Steinberg::kResultFalse;
         }
+        std::filesystem::path restoredFolder;
+        if(version==0x125A1001){
+            Steinberg::int32 length=0;
+            if(!io.readInt32(length) || length<0 || length>8192)
+                return Steinberg::kResultFalse;
+            if(length){
+                std::u8string bytes(static_cast<std::size_t>(length),u8' ');
+                Steinberg::int32 read=0;
+                if(state->read(bytes.data(),length,&read)!=Steinberg::kResultOk ||
+                   read!=length)return Steinberg::kResultFalse;
+                restoredFolder=std::filesystem::path(bytes);
+                if(!restoredFolder.is_absolute())return Steinberg::kResultFalse;
+            }
+        }
+        session().exportTarget.choose(restoredFolder);
         // Project load may occur concurrently with audio. Never modify
         // activeRun_ or run_ from the state thread; process() observes
         // Run=Off and stops at its next callback.
@@ -484,6 +584,8 @@ private:
     a125::ActiveNote note_{};
     a125::RunGate runGate_{};
     VSTGUI::CTextLabel* statusLabel_{nullptr};  // owned by active editor
+    VSTGUI::CTextLabel* folderLabel_{nullptr};
+    VSTGUI::CTextButton* folderButton_{nullptr};
     VSTGUI::SharedPointer<VSTGUI::CVSTGUITimer> timer_{};
     double sampleRate_=44100.;
     bool run_=false,activeRun_=false;
@@ -637,7 +739,7 @@ private:
         std::uint32_t closedGeneration=0;
         std::uint64_t runWritten=0,runRejected=0,runSilent=0,runErrors=0;
         std::uint64_t droppedAtRunStart=0;
-        const auto root=outputRoot();
+        auto root=outputRoot();
         auto finishReport=[&] {
             if(report){
                 report << "SUMMARY,exported," << runWritten << "\n"
@@ -673,6 +775,10 @@ private:
             current.clear();
         };
         auto openRun=[&](std::uint32_t gen) {
+            // Snapshot chosen folder only on writer thread at the beginning
+            // of this job. Audio callback never reads a mutex or filesystem.
+            root=a125::ExportTarget::resolve(
+                session().exportTarget.chosenFolder(),outputRoot());
             dir.clear();
             haveRun=false;
             attemptedRun=true;
@@ -797,10 +903,10 @@ private:
 BEGIN_FACTORY_DEF("125A","https://github.com/challanger2000","")
  DEF_CLASS2(INLINE_UID_FROM_FUID(kMidiID),
   Steinberg::PClassInfo::kManyInstances,kVstAudioEffectClass,
-  "125A AutoSampler MIDI",0,"Instrument","0.9.0",kVstVersionString,
+  "125A AutoSampler MIDI",0,"Instrument","0.10.0",kVstVersionString,
   MidiGenerator::createInstance)
  DEF_CLASS2(INLINE_UID_FROM_FUID(kRecorderID),
   Steinberg::PClassInfo::kManyInstances,kVstAudioEffectClass,
-  "125A AutoSampler Recorder",0,"Fx","0.9.0",kVstVersionString,
+  "125A AutoSampler Recorder",0,"Fx","0.10.0",kVstVersionString,
   Recorder::createInstance)
 END_FACTORY
