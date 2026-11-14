@@ -1,4 +1,4 @@
-# 125A AutoSampler VST3 – P018: Portable Instrumente und funktionale VSTGUI
+# 125A AutoSampler VST3 – P021: 125A-Hardware-GUI, PCM-Display und portable Instrumente
 
 Windows-x64-VST3 für **automatisches Sampeln eines bereits in Fender Studio Pro geladenen VST-Instruments und direktes Spielen der aufgenommenen Samples im 125A selbst**.
 
@@ -35,7 +35,7 @@ Nach dem Laden einer Bank stehen direkt im 125A-Editor zur Verfügung:
 
 Ein einfacher dunkel gehaltener VSTGUI-Testbereich ist angefügt. Die 19 Parameter sind DAW-automatisierbar. Die komplette Aufnahme-WAV wird ohne Sustain-Loop gespielt. Für Vintage-One-Shots bewusst kein Loop-Editor, keine Effektkette und keine komplexe Modulationsmatrix.
 
-**Noch ausstehend:** DAW-unabhängige automatische Wiederverknüpfung bei verschobenen Archiven, vollständig gestaltete Hardware-GUI und erneute Fender-Studio-Pro-/ASIO-Praxisabnahme.
+**Noch ausstehend:** uneingeschränkte projekt-relative Dateisuche (momentan begrenzte Pfad-Reparatur nach Manifest-Kennung) sowie erneute Fender-Studio-Pro-/ASIO-Praxisabnahme mit der vollständigen Hardware-GUI.
 
 ## P016 – Normalize ohne harte Übersteuerung
 
@@ -50,12 +50,20 @@ Bei der DAW-Wiedergabe muss die **Quell-VST-Spur** nach der Aufnahme stummgescha
 - **Eigenständige `*.125A`-Datei:** Der Recorder erstellt nach vollständig erfolgreichem Run im gewählten Ausgabeordner automatisch `<Instrumentenname>.125A`. Bei gleichem Namen werden bestehende Archive nicht überschrieben, sondern `<Instrumentenname> (2).125A`, `(3)` usw. angelegt.
 - **Offen verwendbares ZIP:** Eine `.125A` ist ein unverschlüsseltes, ZIP32-kompatibles Archiv mit STORE-Einträgen (`instrument.json` und unveränderten einzelnen 24-Bit-Stereo-WAVs). Unter Windows `.125A` in `.zip` umbenennen und die gewünschte WAV für einen anderen Sampler extrahieren. CRC und Eintragsnamen werden beim Laden geprüft.
 - **Keine Sample-Map-Editor-Seite:** Root-Noten, Velocity-Stufen und Round Robins werden aus eindeutigen Dateinamen automatisch erkannt. Der interne Player lädt die Samples direkt aus dem Archiv, ohne Drittanbieter.
-- **Instrumentenname und Archivimport:** Name in der Test-VSTGUI eingeben. **LOAD INSTRUMENT** öffnet einen Windows-Dateidialog; **LOAD SAMPLES** lädt nur ältere lose WAV-Run-Ordner. Die DaW speichert derzeit den absoluten Archivpfad; bei Umzug kann das Archiv über **LOAD INSTRUMENT** neu zugeordnet werden.
-- **Wiedergabe:** Gain −12 bis +12 dB, Standard 0 dB; Normalize standardmäßig **aus**. Dauerhaft sichtbare ADSR-Parameter.
-- **Tastatur:** Die vorhandene Steinberg-`VSTGUI::KeyboardView` (kein JUCE) zeigt gehaltene MIDI-Noten, ermöglicht Vorschau und Auswahl einer einzelnen Aufnahmenote. Gegenwärtig 49 Tasten als einfache Testgrafik; endgültige Hardware-Optik folgt separat.
+- **Instrumentenname und Archivimport:** Name vor der Aufnahme eingeben. **LOAD INSTRUMENT** öffnet einen Windows-Dateidialog; **LOAD SAMPLES** lädt ältere lose WAV-Run-Ordner. Projektstate P020/P021 speichert zusätzlich eine CRC-Prüfkennung des ZIP-Manifests und probiert bei fehlendem Originalpfad gezielt vorhandene 125A-Ordner; bei abweichendem Speicherort kann man das Archiv manuell neu zuordnen.
+- **Wiedergabe:** Gain −12 bis +12 dB, Standard 0 dB; Normalize standardmäßig **aus**. Vier ständig sichtbare silberne ADSR-Drehregler. Der **ONE SHOT**-Schalter ist standardmäßig **AN**; bei AUS wirkt MIDI Note-Off auf Amp Release. Alte Gate-Projektzustände und .125A-v1-Metadaten werden passend migriert.
+- **Tastatur:** Steinbergs `VSTGUI::KeyboardView` (kein JUCE) als spielbare 49-Tasten-Klaviatur, mit goldenen Sample-Root-Markierungen und Oktav-Paging; eingehende MIDI-Noten leuchten auf. Der Maus-Klick stellt FROM = TO und spielt die Vorschau.
 - **Recorder:** Eigenes statisches 125A-Branding plus lebende IDLE/READY/RECORDING-Anzeige, ohne Regler und ohne Leere im DAW-Fenster.
 
 **Prüfstand:** [P017 vollständiger Windows PASS](https://github.com/challanger2000/125A-Auto-Sampler-VST3/actions/runs/43576534622): 94/94 Steinberg-Validatorprüfungen, 72/72 WAVs, vier native PCM-Wiedergabetests, automatischer .125A-Export und Import, zwei VSTGUI-Win32-Fensterprüfungen. [Geprüftes Test-ZIP](https://github.com/challanger2000/125A-Auto-Sampler-VST3/actions/runs/43576534622/artifacts/14106249655). **P018/P019 Windows PASS:** [vollständiger VST3-Lauf #43577443699](https://github.com/challanger2000/125A-Auto-Sampler-VST3/actions/runs/43577443699) einschließlich 94/94 Steinberg-Tests, aller MIDI-/WAV-/ZIP-Integrationsszenarien, beiden VSTGUI-Fenstern, exakt einem Archiv je Aufnahme und unabhängiger Entnahme einer PCM24-WAV mit .NET ZIP. [Getestetes P018-Windows-x64-Paket](https://github.com/challanger2000/125A-Auto-Sampler-VST3/actions/runs/43577443699/artifacts/14107007285). Die Dateinamenhärtung und die Korrektur des doppelten Recorder-Abschlusses sind enthalten. **Kein vollständiger Praxistest in Fender Studio Pro/ASIO.**
+
+## P020/P021 – Hardware-Oberfläche und robuste Instrumentenwiederherstellung
+
+Die lange Entwickler-GUI wurde durch eine **1024 × 692 große VSTGUI-Hardware-Oberfläche** ersetzt: Sampling links, echtes PCM-Wellenformdisplay mittig und silberne ADSR-Drehregler rechts. Aufnahme- und Archivschaltflächen, Statusanzeigen und die vieroktavige Klaviatur bleiben ohne Menüs erreichbar. Alle Knöpfe behalten die native VSTGUI-Bedienlogik; die silberne Front wird als Vektorgrafik gezeichnet, ohne zusätzliche GUI-Frameworks oder bitmap-basierte Ersatzknöpfe. Die Recorder-GUI bleibt ein kleines Marken-/Statusfenster.
+
+Der Projektzustand wurde um eine Kennung für das gespeicherte Archiv erweitert; beim erneuten Laden werden nur bekannte 125A-Speicherorte durchsucht und nur passende Instrumente automatisch verknüpft. Bei anderem Speicherort bleibt **LOAD INSTRUMENT** verfügbar. One Shot ist nun der explizit positive Schalter (1=AN); P015–P020-Gate-States werden beim Projektladen konvertiert, um den Klang älterer Sessions zu behalten. Die ZIP-v1-Metadaten speichern weiterhin den alten Gate-Bitwert und werden bei manueller Archivübernahme entsprechend übersetzt.
+
+**Grenze der automatisierten Prüfung:** Win32-GUI-Anhängen und MIDI-/Audio-/ZIP-Integration sind nachgewiesen. Der tatsächliche optische Eindruck und Fender-Studio-Pro-/ASIO-Ablauf müssen vor einem endgültigen Release noch an der DAW abgenommen werden.
 
 ## Routing in Fender Studio Pro
 
