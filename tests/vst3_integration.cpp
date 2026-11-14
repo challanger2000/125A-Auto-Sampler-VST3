@@ -68,8 +68,8 @@ void smokeNativeGui(IComponent* component){
     require(component->queryInterface(IEditController::iid,
               reinterpret_cast<void**>(&controller))==kResultOk && controller,
             "MIDI VST3 combined edit controller not available");
-    require(controller->getParameterCount()==18,
-            "native MIDI editor must expose 12 VST3 parameters");
+    require(controller->getParameterCount()==19,
+            "native MIDI editor must expose 19 VST3 parameters");
     IPlugView* view=controller->createView(ViewType::kEditor);
     require(view,"MIDI VST3 supplies no real editor");
     ViewRect rect{};
@@ -113,7 +113,7 @@ void smokeNativeGui(IComponent* component){
     controller->release();
     DestroyWindow(hwnd);
     CoUninitialize();
-    std::cout<<"[PASS] REAL VSTGUI editor: 18 parameters, Win32 HWND attach, "
+    std::cout<<"[PASS] REAL VSTGUI editor: 19 parameters, Win32 HWND attach, "
                 "live timer and clean detach\\n";
 }
 struct Instance {
@@ -503,6 +503,12 @@ int run(const char* vst3path,bool matrix,bool customFolder){
         require(generator.component->setActive(true)==kResultOk,
                 "cannot reactivate 125A for headless auto-bank playback");
         generator.active=true;
+        // Explicitly enable Normalize: the agreed user default is now OFF.
+        ParameterChanges normalizedPlayback(1);
+        int32 nQueue=0,nPoint=0;
+        auto* norm=normalizedPlayback.addParameterData(1012,nQueue);
+        require(norm && norm->addPoint(0,1.,nPoint)==kResultOk,
+                "P016 cannot enable Normalize in real VST3 host");
         bool headlessAudible=false;
         for(int attempt=0;attempt<80 && !headlessAudible;++attempt){
             EventList liveMidi(2);
@@ -521,6 +527,7 @@ int run(const char* vst3path,bool matrix,bool customFolder){
             render.numSamples=kBlock;
             render.numOutputs=1;render.outputs=&genOut;
             render.inputEvents=&liveMidi;
+            render.inputParameterChanges=attempt==0?&normalizedPlayback:nullptr;
             require(generator.processor->process(render)==kResultOk,
                     "headless 125A render failed");
             int audible=0;
