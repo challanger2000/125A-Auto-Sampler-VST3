@@ -519,14 +519,23 @@ void testP017PortableArchive() {
         a125::writeWav24((root/"takes"/"N60_V100_RR01.wav").string(),44100,wave);
         a125::writeWav24((root/"takes"/"N72_V100_RR01.wav").string(),44100,wave);
         const auto archive=root/"Vintage Bass.125A";
-        a125::write125AArchive(root/"takes",archive,"Vintage Bass");
+        a125::ArchivePlayback settings;
+        settings.params={1.,0.,.25,.5,.75,.1,.8};
+        a125::write125AArchive(root/"takes",archive,"Vintage \"Bass\"",settings);
         require(fs::exists(archive),"P017 archive file is missing");
         require(throws([&]{a125::write125AArchive(root/"takes",archive,"Duplicate");}),
             "P017 must not overwrite a portable instrument archive");
         std::string name;
-        auto bank=a125::load125AArchive(archive,&name);
-        require(bank && bank->zones.size()==2 && name=="Vintage Bass",
-            "P017 ZIP must round-trip instrument identity and sample count");
+        a125::ArchivePlayback restoredSettings;
+        auto bank=a125::load125AArchive(archive,&name,&restoredSettings);
+        require(bank && bank->zones.size()==2 && name=="Vintage \"Bass\"",
+            "P017 ZIP must round-trip escaped instrument name and sample count");
+        require(std::abs(restoredSettings.params[2]-.25)<.00001 &&
+                std::abs(restoredSettings.params[4]-.75)<.00001 &&
+                std::abs(restoredSettings.params[6]-.8)<.00001,
+            "P017 self-contained archive must preserve playback settings");
+        require(a125::safe125AStem("Vintage/Bad:*?Name")=="Vintage_Bad___Name",
+            "P017 archive filenames must sanitize Windows reserved characters");
         require(bank->zones[0].root==60 && bank->zones[1].root==72 &&
                 bank->zones[0].pcm.size()==wave.size(),
             "P017 source WAVs must retain root mapping and frame count");
