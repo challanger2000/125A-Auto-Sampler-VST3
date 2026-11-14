@@ -576,7 +576,7 @@ int run(const char* vst3path,bool matrix,bool customFolder){
         require(norm && norm->addPoint(0,1.,nPoint)==kResultOk,
                 "P016 cannot enable Normalize in real VST3 host");
         bool headlessAudible=false;
-        for(int attempt=0;attempt<80 && !headlessAudible;++attempt){
+        for(int attempt=0;attempt<150 && !headlessAudible;++attempt){
             EventList liveMidi(2);
             Event note{};
             note.type=Event::kNoteOnEvent;
@@ -605,6 +605,19 @@ int run(const char* vst3path,bool matrix,bool customFolder){
             headlessAudible=audible>kBlock/4;
             if(!headlessAudible)
                 std::this_thread::sleep_for(std::chrono::milliseconds(40));
+        }
+        if(!headlessAudible){
+            const auto probeRoot=customFolder?chosenRoot:
+                base/"Documents"/"125A AutoSampler";
+            std::cerr<<"[DIAG] P014 bank worker did not publish audible PCM; "
+                      <<"rate="<<kRate<<" block="<<kBlock
+                      <<" mode="<<(matrix?"matrix":customFolder?"custom":"single")
+                      <<", files=";
+            if(std::filesystem::exists(probeRoot))
+                for(const auto& item:std::filesystem::recursive_directory_iterator(probeRoot))
+                    if(item.is_regular_file())
+                        std::cerr<<item.path().filename().string()<<";";
+            std::cerr<<"\\n";
         }
         require(headlessAudible,
                 "P014: recorded WAV bank not playable without GUI or project setState");
