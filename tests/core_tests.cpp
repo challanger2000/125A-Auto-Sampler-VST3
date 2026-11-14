@@ -9,6 +9,7 @@
 #include "core/SfzBank.h"
 #include "core/BuiltInSampler.h"
 #include "core/InstrumentArchive.h"
+#include "core/CompletedBank.h"
 #include "core/RunStatus.h"
 #include <array>
 #include <filesystem>
@@ -801,6 +802,22 @@ void testAuditWindowsDeviceArchiveNames() {
     std::filesystem::remove(root);
 #endif
 }
+void testAuditCompletionSnapshotConsistency() {
+    a125::CompletedBankPublication completed;
+    require(completed.read().generation==0 && completed.read().path.empty(),
+            "A03 completed bank starts with no active instrument");
+    for(std::uint32_t generation=1;generation<=500;++generation){
+        const auto path=std::filesystem::path(std::to_string(generation)+".125A");
+        completed.publish(path,generation,42);
+        const auto snapshot=completed.read();
+        require(snapshot.generation==generation && snapshot.ownerEpoch==42 &&
+                snapshot.path==path,
+                "A03 capture path and generation must remain bound");
+    }
+    completed.reset();
+    require(completed.read().generation==0 && completed.read().path.empty(),
+            "A02 new project must not inherit previous completion event");
+}
 void testAuditSafeUnicodeStems() {
     const std::string many(95,'a');
     const auto stem=a125::safe125AStem(many+"\xC3\xBC");
@@ -952,6 +969,7 @@ int main() {
         testAuditStrictManifest();
         testAuditSafeUnicodeStems();
         testAuditWindowsDeviceArchiveNames();
+        testAuditCompletionSnapshotConsistency();
         std::cout << "P001 core tests PASSED\n";
         return 0;
     } catch(const std::exception& e) {

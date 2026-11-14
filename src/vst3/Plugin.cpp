@@ -10,6 +10,7 @@
 #include "core/RunStatus.h"
 #include "core/BuiltInSampler.h"
 #include "core/InstrumentArchive.h"
+#include "core/CompletedBank.h"
 #include "base/source/fstreamer.h"
 #include "pluginterfaces/base/ibstream.h"
 #include "pluginterfaces/base/ustring.h"
@@ -94,7 +95,7 @@ struct Session {
     std::atomic<std::uint32_t> observed{0},written{0},rejected{0},silent{0},errors{0};
     std::atomic<std::uint64_t> dropped{0};
     a125::ExportTarget exportTarget;
-    a125::ExportTarget latestCompletedRun;
+    a125::CompletedBankPublication completedBank;
     std::atomic<std::uint32_t> readyBankGeneration{0};
     // P024 supports exactly one capture pair. Make that a *technical* lease,
     // not a promise in README: a second VST3 may not consume another song's
@@ -116,7 +117,7 @@ struct Session {
         observed.store(0);written.store(0);rejected.store(0);
         silent.store(0);errors.store(0);dropped.store(0);
         exportTarget.choose({});
-        latestCompletedRun.choose({});
+        completedBank.reset();
         (void)setCaptureName("Untitled Instrument");
         ownerEpoch.fetch_add(1,std::memory_order_acq_rel);
         generatorOwner.store(owner,std::memory_order_release);
@@ -127,9 +128,20 @@ struct Session {
         if(generatorOwner.load(std::memory_order_acquire)!=owner)return;
         anchor.store(kDisarmed,std::memory_order_release);
         readyBankGeneration.store(0,std::memory_order_release);
-        latestCompletedRun.choose({});
+        completedBank.reset();
         generatorOwner.store(nullptr,std::memory_order_release);
         ownerEpoch.fetch_add(1,std::memory_order_acq_rel);
+    }
+    bool publishCompletedBank(const std::filesystem::path& archive,
+                              std::uint32_t generation,
+                              std::uint64_t boundEpoch){
+        std::lock_guard<std::mutex> lock(ownerMutex);
+        if(boundEpoch==0 || !generatorOwner.load(std::memory_order_acquire) ||
+           ownerEpoch.load(std::memory_order_acquire)!=boundEpoch)
+            return false;
+        completedBank.publish(archive,generation,boundEpoch);
+        readyBankGeneration.store(generation,std::memory_order_release);
+        return true;
     }
     bool acquireRecorder(void* owner){
         std::lock_guard<std::mutex> lock(ownerMutex);
@@ -536,7 +548,9 @@ public:
             std::lock_guard<std::mutex> guard(bankMutex_);
             if(captureGeneration &&
                (captureGeneration<=bankCaptureGeneration_ ||
-                captureGeneration<=lastExplicitGeneration_))
+                captureGeneration<=lastExplicitGeneration_ ||
+                session().readyBankGeneration.load(std::memory_order_acquire)!=
+                    captureGeneration))
                 return true; // already completed or superseded by user
             if(!captureGeneration){
                 ++selectionEpoch_; // explicit user/recall intent
@@ -559,7 +573,9 @@ public:
                 if(captureGeneration &&
                    (expectedSelection!=selectionEpoch_ ||
                     captureGeneration<=bankCaptureGeneration_ ||
-                    captureGeneration<=lastExplicitGeneration_))return true;
+                    captureGeneration<=lastExplicitGeneration_ ||
+                    session().readyBankGeneration.load(std::memory_order_acquire)!=
+                        captureGeneration))return true;
                 if(player_.publish(std::move(bank))){
                     bankFolder_=path;
                     bankFingerprint_=archive?a125::archive125AFingerprint(path):std::nullopt;
@@ -598,7 +614,9 @@ public:
             if(captureGeneration &&
                (expectedSelection!=selectionEpoch_ ||
                 captureGeneration<=bankCaptureGeneration_ ||
-                captureGeneration<=lastExplicitGeneration_))return true;
+                captureGeneration<=lastExplicitGeneration_ ||
+                session().readyBankGeneration.load(std::memory_order_acquire)!=
+                    captureGeneration))return true;
             loadFailed_=true;
         }
         return loaded;
@@ -614,7 +632,11 @@ public:
         std::uint32_t failedGeneration=0;
         unsigned failures=0;
         while(!stopBankWorker_.load(std::memory_order_acquire)){
-            const auto ready=session().readyBankGeneration.load(std::memory_order_acquire);
+            const auto completed=session().completedBank.read();
+            const auto ready=completed.ownerEpoch==
+                session().ownerEpoch.load(std::memory_order_acquire) &&
+                session().generatorOwner.load(std::memory_order_acquire)==this ?
+                completed.generation:0;
             // A subsequent user-initiated capture increments generation
             // immediately, but that must NOT invalidate an already-complete
             // earlier bank still awaiting background import. readyBankGeneration
@@ -626,9 +648,8 @@ public:
                     failures=0;
                 }
                 if(failures<200){
-                    const auto path=session().latestCompletedRun.chosenFolder();
-                    if(!path.empty()){
-                        if(loadSamples(path,false,ready)){
+                    if(!completed.path.empty()){
+                        if(loadSamples(completed.path,false,ready)){
                             publishedGeneration=ready;
                             failures=0;
                         }else ++failures;
@@ -871,7 +892,10 @@ public:
         }
         std::filesystem::path savedBankPath;
         std::optional<std::uint64_t> savedFingerprint;
-        const auto ready=session().readyBankGeneration.load(std::memory_order_acquire);
+        const auto completed=session().completedBank.read();
+        const auto ready=completed.ownerEpoch==
+            session().ownerEpoch.load(std::memory_order_acquire)?
+            completed.generation:0;
         {
             std::lock_guard<std::mutex> guard(bankMutex_);
             savedBankPath=bankFolder_;
@@ -883,7 +907,7 @@ public:
             // completed worker from its own or an older capture generation.
             if(ready!=0 && ready!=bankCaptureGeneration_ &&
                ready>lastExplicitGeneration_){
-                const auto newest=session().latestCompletedRun.chosenFolder();
+                const auto& newest=completed.path;
                 if(newest.extension()==".125A"){
                     savedBankPath=newest;
                     // Completed own capture is an authorized identity
@@ -1699,11 +1723,11 @@ private:
                         a125::write125AArchive(dir,archive,recordedName,
                                                recordedPlayback);
                         report<<"ARCHIVE,125A_READY,"<<archive.filename().string()<<"\n";
-                        report<<"BANK,125A_WAVS_READY\n";
-                        // Reader imports the self-contained ZIP into RAM.
-                        session().latestCompletedRun.choose(archive);
-                        session().readyBankGeneration.store(
-                            generation,std::memory_order_release);
+                        // A freed/replaced generator must never receive this bank.
+                        if(session().publishCompletedBank(
+                            archive,generation,runOwnerEpoch))
+                            report<<"BANK,125A_WAVS_READY\n";
+                        else report<<"BANK,SKIPPED_OWNER_CHANGED\n";
                     }catch(const std::exception&){
                         ++runErrors;
                         session().errors.fetch_add(1,std::memory_order_relaxed);
