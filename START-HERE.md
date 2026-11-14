@@ -1,4 +1,4 @@
-# START HERE – 125A AutoSampler P015
+# START HERE – 125A AutoSampler P016
 
 ## Ziel: aufnehmen und mit 125A selbst spielen
 
@@ -11,7 +11,7 @@ Kein SFZ-Export oder fremder Sampler gehört zum notwendigen Workflow. Das inter
 
 ## Windows-Installation
 
-- Auf dem [erfolgreichen P015-Windows-Testlauf](https://github.com/challanger2000/125A-Auto-Sampler-VST3/actions/runs/43567864929) unter **Artifacts** das ZIP `125A-AutoSampler-P015-Win64` herunterladen (P015 mit kurzen Werkseinstellungen, Normalize, One-Shot/Gate, Amp ADSR und einfacher GUI).
+- **Aktuelle, korrigierte Version:** Vom [erfolgreichen P016-Windows-Testlauf](https://github.com/challanger2000/125A-Auto-Sampler-VST3/actions/runs/43570184894) das ZIP [`125A-AutoSampler-P016-Win64`](https://github.com/challanger2000/125A-Auto-Sampler-VST3/actions/runs/43570184894/artifacts/14104102675) herunterladen. P016 behebt hörbare Normalize-Übersteuerung bei mehreren gleichzeitig spielenden One-Shots; kurze Aufnahme-Defaults, ADSR und die einfache GUI sind enthalten.
 - Den entpackten **vollständigen** Ordner `AutosamplerVST3.vst3` nach `C:\Program Files\Common Files\VST3\` kopieren.
 - Fender Studio Pro neu starten und beide 125A-Klassen im Plugin-Browser suchen.
 
