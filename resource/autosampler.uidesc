@@ -9,7 +9,7 @@
     <color name="Silver" rgba="#E4E5E7FF"/>
     <color name="Muted" rgba="#9FAAB5FF"/>
   </colors>
-  <template name="view" class="CViewContainer" origin="0, 0" size="686, 736" background-color="Dark" background-color-draw-style="filled" mouse-enabled="true" transparent="false">
+  <template name="view" class="CViewContainer" origin="0, 0" size="686, 772" background-color="Dark" background-color-draw-style="filled" mouse-enabled="true" transparent="false">
     <view class="CViewContainer" origin="14, 16" size="656, 78" background-color="Panel" background-color-draw-style="filled" transparent="false" mouse-enabled="false"/>
     <view class="CTextLabel" origin="29, 22" size="435, 34" title="125A   AUTO SAMPLER" font="~ NormalFontVeryBig" font-color="Silver" back-color="Panel" frame-color="Panel" frame-width="0" transparent="true" mouse-enabled="false" text-alignment="left"/>
     <view class="CTextLabel" origin="31, 56" size="447, 26" title="CAPTURE  +  PLAYBACK  /  WINDOWS VST3" font="~ NormalFont" font-color="Muted" back-color="Panel" frame-color="Panel" frame-width="0" transparent="true" mouse-enabled="false" text-alignment="left"/>
@@ -55,7 +55,7 @@
     <view class="CTextButton" origin="22, 504" size="139, 36" title="LOAD SAMPLES" font="~ NormalFont" text-color="Silver" text-color-highlighted="Dark" frame-color="Accent" frame-color-highlighted="Accent" frame-width="1" round-radius="7" gradient="Idle" gradient-highlighted="Active" kick-style="true" mouse-enabled="true" wants-focus="true"/>
     <view class="CTextLabel" origin="177, 505" size="487, 33" title="SAMPLER: EMPTY" font="~ NormalFont" font-color="Silver" back-color="Dark" frame-color="Dark" frame-width="0" transparent="true" mouse-enabled="false" text-alignment="left"/>
     <!-- P015: intentionally simple playback strip; capture controls stay unchanged. -->
-    <view class="CViewContainer" origin="14, 551" size="656, 165" background-color="Panel" background-color-draw-style="filled" transparent="false" mouse-enabled="false"/>
+    <view class="CViewContainer" origin="14, 551" size="656, 203" background-color="Panel" background-color-draw-style="filled" transparent="false" mouse-enabled="false"/>
     <view class="CTextLabel" origin="29, 555" size="615, 26" title="PLAYBACK    /    ONE-SHOT INSTRUMENT" font="~ NormalFont" font-color="Accent" back-color="Panel" frame-color="Panel" frame-width="0" transparent="true" mouse-enabled="false" text-alignment="left"/>
     <view class="CTextButton" control-tag="P1012" origin="29, 588" size="181, 36" title="NORMALIZE  -1 dBFS" font="~ NormalFont" text-color="Silver" text-color-highlighted="Dark" frame-color="Accent" frame-color-highlighted="Accent" frame-width="1" round-radius="7" gradient="Idle" gradient-highlighted="Active" kick-style="false" mouse-enabled="true" wants-focus="true"/>
     <view class="CTextButton" control-tag="P1013" origin="225, 588" size="181, 36" title="GATE  (OFF = ONE SHOT)" font="~ NormalFont" text-color="Silver" text-color-highlighted="Dark" frame-color="Accent" frame-color-highlighted="Accent" frame-width="1" round-radius="7" gradient="Idle" gradient-highlighted="Active" kick-style="false" mouse-enabled="true" wants-focus="true"/>
@@ -72,6 +72,9 @@
     <view class="CTextLabel" origin="513, 643" size="134, 17" title="RELEASE" font="~ NormalFont" font-color="Muted" back-color="Panel" frame-color="Panel" frame-width="0" transparent="true" mouse-enabled="false"/>
     <view class="CSlider" control-tag="P1017" origin="513, 665" size="95, 22" orientation="horizontal" mode="free click" draw-back="true" draw-back-color="Track" draw-frame="true" draw-frame-color="Panel" draw-value="true" draw-value-color="Accent" max-value="1" min-value="0" default-value="0.05" mouse-enabled="true" transparent="false"/>
     <view class="CTextEdit" control-tag="P1017" origin="612, 663" size="46, 26" font="~ NormalFont" font-color="Silver" back-color="Panel" frame-color="Frame" frame-width="1" text-alignment="center" transparent="false" mouse-enabled="true" min-value="0" max-value="1" value-precision="3"/>
+    <view class="CTextLabel" origin="29, 709" size="104, 18" title="GAIN  dB" font="~ NormalFont" font-color="Muted" back-color="Panel" frame-color="Panel" frame-width="0" transparent="true" mouse-enabled="false"/>
+    <view class="CSlider" control-tag="P1018" origin="141, 711" size="350, 22" orientation="horizontal" mode="free click" draw-back="true" draw-back-color="Track" draw-frame="true" draw-frame-color="Panel" draw-value="true" draw-value-color="Accent" max-value="1" min-value="0" default-value="0.5" mouse-enabled="true" transparent="false"/>
+    <view class="CTextEdit" control-tag="P1018" origin="514, 708" size="85, 28" font="~ NormalFont" font-color="Silver" back-color="Panel" frame-color="Frame" frame-width="1" text-alignment="center" transparent="false" mouse-enabled="true" min-value="0" max-value="1" value-precision="2"/>
   </template>
   <control-tags>
     <control-tag name="Run" tag="1000"/>
@@ -92,6 +95,7 @@
     <control-tag name="P1015" tag="1015"/>
     <control-tag name="P1016" tag="1016"/>
     <control-tag name="P1017" tag="1017"/>
+    <control-tag name="P1018" tag="1018"/>
   </control-tags>
   <gradients>
     <gradient name="Idle">
