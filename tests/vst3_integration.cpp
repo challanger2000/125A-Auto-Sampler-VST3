@@ -241,7 +241,7 @@ int run(const char* vst3path,bool matrix,bool customFolder){
     passthrough.numChannels=2;passthrough.channelBuffers32=passPtrs.data();
 
     EventList midiOut(32);
-    ParameterChanges params(7);
+    ParameterChanges params(9);
     auto param=[&](ParamID id,double value){
         int32 queueIndex=0,pointIndex=0;
         auto* q=params.addParameterData(id,queueIndex);
@@ -249,7 +249,9 @@ int run(const char* vst3path,bool matrix,bool customFolder){
                 "cannot configure VST3 parameter");
     };
     param(1000,1.); // RUN
+    param(1004,7./15.); // Explicitly stress 8 RRs; user default is 1.
     if(matrix){
+        param(1003,0.); // Matrix needs adjacent semitone roots, not octave skips.
         param(1001,60./127.);
         param(1002,61./127.);
         param(1005,1.); // Three velocities
@@ -263,7 +265,7 @@ int run(const char* vst3path,bool matrix,bool customFolder){
     int noteOns=0,noteOffs=0;
     std::set<int32> noteIDs;
     const int expectedTakes=matrix?48:8;
-    const std::int64_t period=static_cast<std::int64_t>(kRate)*3+kRate/10;
+    const std::int64_t period=static_cast<std::int64_t>(kRate)+kRate/10;
     const std::int64_t total=kRate/2+static_cast<std::int64_t>(expectedTakes)*period+kBlock;
     // Feed the exact same sample positions through both plugin components.
     // A 1ms pause approximates a working host and lets the I/O worker drain.
