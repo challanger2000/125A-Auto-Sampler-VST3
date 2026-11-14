@@ -61,16 +61,16 @@ enum : V::ParamID {
     kLayersParam, kHoldParam, kTailParam, kGapParam,
     kVelocity1Param, kVelocity2Param, kVelocity3Param,
     kNormalizeParam, kGateParam, kAttackParam, kDecayParam,
-    kSustainParam, kAmpReleaseParam
+    kSustainParam, kAmpReleaseParam, kGainParam
 };
-constexpr std::size_t kParamCount=a125::ParameterCount+6;
+constexpr std::size_t kParamCount=a125::ParameterCount+7;
 constexpr std::array<double,kParamCount> kDefaultParams{
     0.,60./127.,60./127.,1.,0.,0.,
-    (.5-.25)/7.75,(.5-.25)/9.75,(.1-.05)/.45,
-    99./126.,59./126.,119./126., 1.,0.,0.,0.,1.,.15/3.
+    (1.-.25)/7.75,(2.-.25)/9.75,(.1-.05)/.45,
+    99./126.,59./126.,119./126., 0.,0.,0.,0.,1.,.15/3.,.5
 };
-constexpr double kDefaultHold=(0.5-0.25)/7.75;
-constexpr double kDefaultTail=(0.5-0.25)/9.75;
+constexpr double kDefaultHold=(1.-0.25)/7.75;
+constexpr double kDefaultTail=(2.-0.25)/9.75;
 constexpr double kDefaultGap=(0.10-0.05)/0.45;
 
 
@@ -408,7 +408,7 @@ public:
            V::ParameterInfo::kCanAutomate,kVelocity2Param);
         parameters.addParameter(STR16("Velocity 3 (1-127)"),nullptr,126,119./126.,
            V::ParameterInfo::kCanAutomate,kVelocity3Param);
-        parameters.addParameter(STR16("Normalize bank (-1 dBFS)"),nullptr,1,1.,
+        parameters.addParameter(STR16("Normalize bank (-1 dBFS)"),nullptr,1,0.,
            V::ParameterInfo::kCanAutomate,kNormalizeParam);
         parameters.addParameter(STR16("Gate mode (off=One Shot)"),nullptr,1,0.,
            V::ParameterInfo::kCanAutomate,kGateParam);
@@ -420,6 +420,8 @@ public:
            V::ParameterInfo::kCanAutomate,kSustainParam);
         parameters.addParameter(STR16("Amp Release (0-3s)"),nullptr,0,.15/3.,
            V::ParameterInfo::kCanAutomate,kAmpReleaseParam);
+        parameters.addParameter(STR16("Gain (-12 to +12 dB)"),nullptr,0,.5,
+           V::ParameterInfo::kCanAutomate,kGainParam);
         // Independent of any GUI opening: register a non-realtime bank
         // import worker for successful captures from our recorder class.
         stopBankWorker_.store(false,std::memory_order_release);
@@ -431,7 +433,7 @@ public:
     // normalized 0..1 fractions in the editor.
     tresult PLUGIN_API getParamStringByValue(
             V::ParamID tag,V::ParamValue value,V::String128 text) override {
-        if(tag<=kRunParam || tag>kAmpReleaseParam)
+        if(tag<=kRunParam || tag>kGainParam)
             return SingleComponentEffect::getParamStringByValue(tag,value,text);
         if(!text)return Steinberg::kResultFalse;
         char buf[32]{};
@@ -461,6 +463,8 @@ public:
         case kSustainParam:
             std::snprintf(buf,sizeof(buf),"%d",
                 static_cast<int>(std::lround(value*100.)));break;
+        case kGainParam:
+            std::snprintf(buf,sizeof(buf),"%.1f",-12.+value*24.);break;
         default:return Steinberg::kResultFalse;
         }
         Steinberg::UString(text,128).fromAscii(buf);
@@ -468,7 +472,7 @@ public:
     }
     tresult PLUGIN_API getParamValueByString(
             V::ParamID tag,V::TChar* text,V::ParamValue& normalized) override {
-        if(tag<=kRunParam || tag>kAmpReleaseParam)
+        if(tag<=kRunParam || tag>kGainParam)
             return SingleComponentEffect::getParamValueByString(tag,text,normalized);
         if(!text)return Steinberg::kResultFalse;
         double entered=0.;
@@ -488,6 +492,7 @@ public:
         case kAttackParam: normalized=entered/2.;break;
         case kDecayParam: case kAmpReleaseParam: normalized=entered/3.;break;
         case kSustainParam:normalized=entered/100.;break;
+        case kGainParam:normalized=(entered+12.)/24.;break;
         default:return Steinberg::kResultFalse;
         }
         normalized=std::clamp(normalized,0.,1.);
@@ -504,7 +509,7 @@ public:
     tresult PLUGIN_API getState(Steinberg::IBStream* state) override {
         if(!state) return Steinberg::kResultFalse;
         Steinberg::IBStreamer io(state,kLittleEndian);
-        if(!io.writeInt32(0x125A1701)) return Steinberg::kResultFalse;
+        if(!io.writeInt32(0x125A1801)) return Steinberg::kResultFalse;
         // The Run switch is deliberately not persisted: project reopen
         // must never create WAV files before the user explicitly starts.
         for(std::size_t i=1;i<values_.size();++i)
@@ -555,22 +560,25 @@ public:
         if(!io.readInt32(version) ||
            (version!=0x125A0301 && version!=0x125A0401 &&
             version!=0x125A1001 && version!=0x125A1301 &&
-             version!=0x125A1501 && version!=0x125A1701))
+             version!=0x125A1501 && version!=0x125A1701 &&
+             version!=0x125A1801))
             return Steinberg::kResultFalse;
         // Older P003 files had 9 parameters. Upgrade without breaking
         // existing test projects; 3 editable velocity values get defaults.
         auto loaded=kDefaultParams;
         loaded[a125::Run]=0.;
         const std::size_t count=version==0x125A0301?9:
+            version==0x125A1801?loaded.size():
             (version==0x125A1501 || version==0x125A1701)?
-                loaded.size():a125::ParameterCount;
+                a125::ParameterCount+6:a125::ParameterCount;
         for(std::size_t i=1;i<count;++i) {
             if(!io.readDouble(loaded[i]) || !std::isfinite(loaded[i]) ||
                loaded[i]<0. || loaded[i]>1.) return Steinberg::kResultFalse;
         }
         std::filesystem::path restoredFolder;
         if(version==0x125A1001 || version==0x125A1301 ||
-           version==0x125A1501 || version==0x125A1701){
+           version==0x125A1501 || version==0x125A1701 ||
+           version==0x125A1801){
             Steinberg::int32 length=0;
             if(!io.readInt32(length) || length<0 || length>8192)
                 return Steinberg::kResultFalse;
@@ -585,7 +593,7 @@ public:
         }
         std::filesystem::path restoredBank;
         if(version==0x125A1301 || version==0x125A1501 ||
-           version==0x125A1701){
+           version==0x125A1701 || version==0x125A1801){
             Steinberg::int32 length=0;
             if(!io.readInt32(length) || length<0 || length>8192)
                 return Steinberg::kResultFalse;
@@ -599,7 +607,7 @@ public:
             }
         }
         std::string restoredName="Untitled Instrument";
-        if(version==0x125A1701){
+        if(version==0x125A1701 || version==0x125A1801){
             Steinberg::int32 nameLength=0;
             if(!io.readInt32(nameLength) || nameLength<=0 || nameLength>192)
                 return Steinberg::kResultFalse;
@@ -645,7 +653,7 @@ public:
                 auto* q=changes->getParameterData(i);
                 if(!q || q->getPointCount()==0) continue;
                 const auto id=q->getParameterId();
-                if(id<kRunParam || id>kAmpReleaseParam) continue;
+                if(id<kRunParam || id>kGainParam) continue;
                 V::ParamValue value=0; int32 offset=0;
                 if(q->getPoint(q->getPointCount()-1,offset,value)==Steinberg::kResultTrue)
                     values_[static_cast<std::size_t>(id-kRunParam)]=std::clamp(value,0.,1.);
@@ -746,6 +754,10 @@ private:
                 std::memory_order_relaxed)),
             static_cast<float>(values_[kAmpReleaseParam-kRunParam].load(
                 std::memory_order_relaxed)*3.));
+        const auto gainValue=values_[kGainParam-kRunParam].load(
+            std::memory_order_relaxed);
+        const float gain=static_cast<float>(
+            std::pow(10.,(-12.+24.*gainValue)/20.));
         auto* events=data.inputEvents;
         const int32 total=events?events->getEventCount():0;
         int32 eventIndex=0;
@@ -769,7 +781,7 @@ private:
                 ++eventIndex;
             }
             const auto pcm=player_.renderOne();
-            left[sample]=pcm[0];right[sample]=pcm[1];
+            left[sample]=pcm[0]*gain;right[sample]=pcm[1]*gain;
             sounded=sounded || pcm[0]!=0.f || pcm[1]!=0.f;
         }
         if(sounded)data.outputs[0].silenceFlags=0;
@@ -840,7 +852,7 @@ private:
     }
     std::array<std::atomic<double>,kParamCount> values_{
         0.,60./127.,60./127.,1.,0.,0.,kDefaultHold,kDefaultTail,kDefaultGap,
-        99./126.,59./126.,119./126., 1.,0.,0.,0.,1.,.15/3.};
+        99./126.,59./126.,119./126., 0.,0.,0.,0.,1.,.15/3.,.5};
     a125::JobConfig config_{};
     a125::BuiltInSampler player_{};
     std::mutex bankMutex_;
