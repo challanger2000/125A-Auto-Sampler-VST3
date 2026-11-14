@@ -1,4 +1,4 @@
-name: P017 Windows VST3 Portable Instrument Archive QA
+name: P018 Windows VST3 Archive Keyboard Recorder QA
 on:
   push:
     branches: ['develop/**']
@@ -41,7 +41,17 @@ jobs:
           if (@(Compare-Object -ReferenceObject $expected -DifferenceObject $actual).Count -ne 0) { throw "GUI parameter IDs differ from VST3" }
           $controls = @($gui.'vstgui-ui-description'.template.view | Where-Object { $_.'control-tag' -eq "Run" })
           if ($controls.Count -ne 1) { throw "Run button must be present" }
-          Write-Host "VSTGUI XML, 19 parameter tags, Run control and bundled resource: PASS"
+          $recorderResource = Get-ChildItem -Path $bundle.FullName -Recurse -File -Filter "recorder.uidesc" | Select-Object -First 1
+          if (-not $recorderResource) { throw "125A Recorder status GUI resource missing" }
+          [xml]$recorder = Get-Content -LiteralPath $recorderResource.FullName -Raw
+          $recorderViews = @($recorder.'vstgui-ui-description'.template.view)
+          if (@($recorderViews | Where-Object { $_.title -eq "RECORDER STATUS: IDLE" }).Count -ne 1) {
+            throw "Recorder must display its live status placeholder"
+          }
+          if (@($gui.'vstgui-ui-description'.template.view | Where-Object { $_.class -eq "KeyboardView" }).Count -ne 1) {
+            throw "125A GUI must contain native Steinberg KeyboardView"
+          }
+          Write-Host "P018 VSTGUI: 19 parameters, native keyboard, branded recorder status, valid packaged XML: PASS"
       - name: Official VST3 validator
         shell: pwsh
         run: |
@@ -77,10 +87,13 @@ jobs:
           Write-Host "P010: project-restored custom folder, eight real VST3 WAVs"
           & $runner $plugin.FullName 44100 256 custom
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Independent .125A ZIP/PCM24 compatibility
+        shell: pwsh
+        run: ./.github/scripts/verify125a.ps1
       - name: Upload VST3 test binary
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: 125A-AutoSampler-P017-Win64
+          name: 125A-AutoSampler-P018-Win64
           path: build-vst3/VST3/Release/*.vst3
           if-no-files-found: error
