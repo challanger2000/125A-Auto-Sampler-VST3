@@ -7,6 +7,18 @@
 - **125A AutoSampler MIDI:** generiert Note-On/Off, Notenbereiche, Velocity-Stufen und Round Robins; eigene anthrazitfarbene VSTGUI-Oberfläche mit Start/Stop und Live-Zählern.
 - **125A AutoSampler Recorder:** letzter Audio-Insert auf dem Quellinstrument, sammelt dessen echte Audiosamples und schreibt separate WAVs auf einem Hintergrundthread.
 
+## P008/P009 – automatischer Abschluss und sicherer Abbruch
+
+**P008 (PASS):** Der normale Sampling-Durchlauf wird nach dem letzten Ausklang automatisch abgeschlossen. Der Hintergrund-Recorder schreibt und schließt `RUN-REPORT.csv` bei laufender DAW, ohne dass das Plugin deaktiviert werden muss. Die GUI zeigt `RECORDING`, `FINALIZING` und `COMPLETE`.
+
+**P009 (PASS):** Ein manuelles STOP während einer aktiven Note erzeugt das passende MIDI-Note-Off, markiert den angebrochenen Take `ABORTED`, schließt ebenfalls den CSV-Bericht ohne Plugin-Deaktivierung und erzeugt **keine** unvollständige WAV-Datei. Ein erneuter Durchlauf setzt RUN-Aus→Ein voraus.
+
+**Native Windows-Nachweise:** 64/64 reguläre WAV-Dateien aus drei Samplerate-/Blockgrößen-Szenarien sowie der eigenständige STOP-/ABORTED-Regressionstest. Offizieller Steinberg-Validator, VSTGUI-HWND-Test und C++-Tests bestanden.
+
+- [Aktueller P009-Windows-VST3-Build](https://github.com/challanger2000/125A-Auto-Sampler-VST3/actions/runs/43535357254)
+- [P008 – Automatischer Abschluss](docs/P008-COMPLETION.md)
+- [P009 – Manuelles Stoppen](docs/P009-MANUAL-STOP.md)
+
 ## P007 – sicherer Neustart
 
 Ein neuer Sampling-Durchlauf startet **nur nach einem bewusst ausgeführten RUN-Aus→RUN-Ein-Wechsel** bei laufendem DAW-Transport. Ein DAW-Stopp, Loop/Songpositionssprung oder Plugin-Deaktivierung kann keine neue WAV-Session auslösen, nur weil der Run-Schalter noch auf Ein steht. Nach einem Stopp muss der Benutzer RUN zunächst ausschalten und erneut einschalten. Die wiederholte DAW-Wiedergabe allein erzeugt keine neuen Exporte.
@@ -40,4 +52,4 @@ Ein privater, **nicht ausgelieferter Windows-Test-Host** lädt beide **tatsächl
 - [P005: historischer Nachweis](docs/P005-VALIDATION.md)
 - [PR #2](https://github.com/challanger2000/125A-Auto-Sampler-VST3/pull/2)
 
-**Noch nicht als fertiges Produkt freigegeben.** Die vollständige Weiterleitung MIDI → Fremd-VST → Recorder innerhalb **Fender Studio Pro** sowie ASIO-Hardware und die finale Bedienung im echten Song sind noch nicht abgenommen. Der synthetische Windows-Test ist kein Klangtest mit EVM Isotope. P006 bleibt ein Entwicklungsstand.
+**Noch nicht als fertiges Produkt freigegeben.** Die vollständige Weiterleitung MIDI → Fremd-VST → Recorder innerhalb **Fender Studio Pro** sowie ASIO-Hardware und die finale Bedienung im echten Song sind noch nicht abgenommen. Der synthetische Windows-Test ist kein Klangtest mit EVM Isotope. P009 bleibt ein Entwicklungsstand.

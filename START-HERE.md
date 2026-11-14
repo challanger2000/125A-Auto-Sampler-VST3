@@ -1,6 +1,6 @@
-# START HERE – 125A AutoSampler P006
+# START HERE – 125A AutoSampler P009
 
-## 1. Was bis P006 getestet ist
+## 1. Was bis P009 getestet ist
 
 - Windows-x64-VST3 mit zwei echten Klassen: MIDI-Generator und Audio-Recorder
 - VSTGUI-Editor tatsächlich über Win32-HWND geöffnet, Status-Timer gestartet und sauber geschlossen
@@ -9,7 +9,15 @@
 - Realer Plugin-Stop mit springender Songposition sendet die passende Note-Off-ID
 - Getrennte RUN-REPORT.csv-Einträge; korrupte und abgebrochene Takes werden nicht exportiert
 
-[Abgenommener Windows-Build samt VST3-Artefakt](https://github.com/challanger2000/125A-Auto-Sampler-VST3/actions/runs/43530522001) – ZIP-Name **125A-AutoSampler-P006-Win64**. Nur die VST3-Datei installieren; das Testprogramm ist nicht Bestandteil des Plugins.
+[Abgenommener Windows-Build samt VST3-Artefakt](https://github.com/challanger2000/125A-Auto-Sampler-VST3/actions/runs/43535357254) – ZIP-Name **125A-AutoSampler-P009-Win64**. Nur die VST3-Datei installieren; das Testprogramm ist nicht Bestandteil des Plugins.
+
+## P008/P009 – Abschluss und manueller Abbruch
+
+Nach der letzten gesampelten Note schließt der Recorder automatisch seinen WAV-Lauf einschließlich `RUN-REPORT.csv`. Der Transport der DAW darf dabei weiterhin laufen.
+
+Wenn du **START/STOP vorzeitig ausschaltest**, beendet das Plugin die aktive MIDI-Note, verwirft den unvollständigen Take und meldet `ABORTED` im CSV-Bericht sowie in der GUI. Der Bericht wird geschlossen, ohne dass die Plugin-Instanzen entfernt werden müssen. Der Abbruch wurde mit den tatsächlichen Windows-VST3-Klassen und einer synthetischen Klangquelle erfolgreich getestet: 0 unvollständige WAVs.
+
+Ein neuer Start setzt RUN **Aus → Ein** voraus. Siehe [P008](docs/P008-COMPLETION.md) und [P009](docs/P009-MANUAL-STOP.md).
 
 ## Bedienhinweis für P007
 
