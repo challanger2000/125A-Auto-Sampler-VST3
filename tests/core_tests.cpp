@@ -533,6 +533,22 @@ void testP017PortableArchive() {
         fs::create_directories(relocatedRoot);
         const auto moved=relocatedRoot/"Vintage Bass.125A";
         fs::copy_file(archive,moved);
+        // Two instruments may have identical names/settings/number of WAVs
+        // while containing entirely DIFFERENT audio. Manifest-only
+        // fingerprints from P020/P021 were therefore insufficient.
+        const auto otherRoot=root/"different";
+        fs::create_directories(otherRoot/"takes");
+        const std::vector<a125::StereoFrame> otherWave(512,{.21f,-.09f});
+        a125::writeWav24((otherRoot/"takes"/"N60_V100_RR01.wav").string(),44100,otherWave);
+        a125::writeWav24((otherRoot/"takes"/"N72_V100_RR01.wav").string(),44100,otherWave);
+        const auto unrelated=otherRoot/"Vintage Bass.125A";
+        a125::write125AArchive(otherRoot/"takes",unrelated,"Vintage \"Bass\"",settings);
+        const auto differentFingerprint=a125::archive125AFingerprint(unrelated);
+        require(differentFingerprint && *differentFingerprint!=*fingerprint,
+            "P022 identical instrument metadata but different WAV audio must NOT match");
+        require(a125::archive125ALegacyFingerprint(archive)==
+                a125::archive125ALegacyFingerprint(unrelated),
+            "P022 fixture must prove same metadata with different PCM");
         require(a125::resolve125APath(
             root/"old-PC"/"Vintage Bass.125A",{},root/"Documents",fingerprint)==moved,
             "P020 a moved instrument must relink by filename and manifest CRC");
@@ -540,6 +556,16 @@ void testP017PortableArchive() {
             root/"old-PC"/"Vintage Bass.125A",{},root/"Documents",
             *fingerprint^0x10)==root/"old-PC"/"Vintage Bass.125A",
             "P020 a different archive fingerprint must NEVER silently relink");
+        fs::copy_file(unrelated,moved,fs::copy_options::overwrite_existing);
+        require(a125::resolve125APath(
+            root/"old-PC"/"Vintage Bass.125A",{},root/"Documents",fingerprint)==
+            root/"old-PC"/"Vintage Bass.125A",
+            "P022 archive with same name/manifest but different PCM must not relink");
+        fs::create_directories(root/"old-PC");
+        fs::copy_file(unrelated,root/"old-PC"/"Vintage Bass.125A");
+        require(a125::resolve125APath(
+            root/"old-PC"/"Vintage Bass.125A",{},root/"Documents",fingerprint).empty(),
+            "P022 existing unrelated archive at original path must fail closed");
         const auto missing=root/"old-PC"/"No Such Instrument.125A";
         require(a125::resolve125APath(missing,{},root/"Documents",fingerprint)==missing,
             "P020 missing archive must remain visible as missing");
@@ -577,6 +603,13 @@ void testP017PortableArchive() {
         auto frame=player.renderOne();
         require(std::abs(frame[0]-.65f)<.00001f,
             "P017 loaded archive must directly play as 125A instrument");
+        player.clearCurrent();
+        require(player.loadedZones()==0,
+            "P022 wrong DAW bank after failed state recall must be unavailable");
+        player.noteOn(60,100,44100.);
+        frame=player.renderOne();
+        require(frame[0]==0.f && frame[1]==0.f,
+            "P022 old voices must stop after project state bank is cleared");
         // A single corrupt PCM byte is caught by the ZIP CRC, rather than
         // being loaded as a changed sample.
         {
