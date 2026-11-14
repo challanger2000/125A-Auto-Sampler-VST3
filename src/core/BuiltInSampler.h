@@ -201,11 +201,20 @@ public:
     }
     // A bounded non-realtime visual snapshot. A published bank stays alive
     // until plugin teardown, so the GUI can read sample data without locks.
-    template<std::size_t N> bool waveform(std::array<float,N>& output) const noexcept {
+    template<std::size_t N> bool waveform(
+            std::array<float,N>& output,int selectedKey=60) const noexcept {
         output.fill(0.f);
         const auto* bank=current_.load(std::memory_order_acquire);
         if(!bank || bank->zones.empty() || N==0)return false;
-        const auto& pcm=bank->zones.front().pcm;
+        // The display follows the selected keyboard key. Match the same
+        // nearest-root rule as audible playback; display one captured WAV
+        // from its zone without copying or touching the audio thread.
+        const SampleZone* chosen=&bank->zones.front();
+        for(const auto& zone:bank->zones){
+            if(std::abs(selectedKey-zone.root)<std::abs(selectedKey-chosen->root))
+                chosen=&zone;
+        }
+        const auto& pcm=chosen->pcm;
         if(pcm.empty())return false;
         for(std::size_t i=0;i<N;++i){
             const auto a=i*pcm.size()/N;
