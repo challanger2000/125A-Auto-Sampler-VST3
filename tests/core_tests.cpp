@@ -387,6 +387,70 @@ void testNativeSamplerPlayback() {
     fs::remove_all(dir);
 }
 
+void testP015DynamicsAndGate() {
+    namespace fs=std::filesystem;
+    const auto dir=fs::temp_directory_path()/"125a_p015_dynamics_gate";
+    fs::remove_all(dir);
+    fs::create_directories(dir);
+    try {
+        const std::vector<a125::StereoFrame> quiet(1024,{.2f,-.1f});
+        const std::vector<a125::StereoFrame> loud(1024,{.8f,-.4f});
+        a125::writeWav24((dir/"N60_V40_RR01.wav").string(),44100,quiet);
+        a125::writeWav24((dir/"N60_V120_RR01.wav").string(),44100,loud);
+        auto bank=a125::loadCapturedBank(dir);
+        require(bank && bank->zones.size()==2,"P015 loads two velocity layers");
+        const float scale=bank->normalizeGain;
+        require(std::abs(.8f*scale-std::pow(10.f,-1.f/20.f))<.002f,
+            "P015 bank-wide normalize aims at -1 dBFS");
+        a125::BuiltInSampler player;
+        require(player.publish(std::move(bank)),"P015 publish bank");
+        player.setNormalize(true);
+        player.noteOn(60,40,44100.);
+        auto a=player.renderOne();
+        require(std::abs(a[0]-.2f*scale)<.002f,
+            "P015 normalized quiet layer must keep its relative level");
+        for(int i=0;i<1100;++i)player.renderOne();
+        player.noteOn(60,120,44100.);
+        a=player.renderOne();
+        require(std::abs(a[0]-.8f*scale)<.002f,
+            "P015 normalized loud layer must preserve velocity dynamics");
+        for(int i=0;i<1100;++i)player.renderOne();
+
+        // One-shot ignores Note-Off, even if it happens right after attack.
+        player.setNormalize(false);
+        player.setGate(false);
+        player.setEnvelope(0.f,0.f,1.f,.002f);
+        player.noteOn(60,120,44100.);
+        player.noteOff(60);
+        for(int i=0;i<100;++i)a=player.renderOne();
+        require(std::abs(a[0]-.8f)<.002f,
+            "P015 One-Shot must continue after MIDI Note-Off");
+        for(int i=0;i<1100;++i)player.renderOne();
+
+        // Gate starts a continuous, sample-rate-correct release.
+        player.setGate(true);
+        player.noteOn(60,120,44100.);
+        a=player.renderOne();
+        require(a[0]>.79f,"P015 Gate starts at captured loudness");
+        player.noteOff(60);
+        for(int i=0;i<45;++i)a=player.renderOne();
+        require(a[0]>.35f && a[0]<.5f,"P015 release reaches halfway");
+        for(int i=0;i<80;++i)a=player.renderOne();
+        require(std::abs(a[0])<.0001f,"P015 Gate release reaches silence");
+
+        // A non-zero attack must ramp from zero, never click at full level.
+        player.setEnvelope(.004f,0.f,1.f,.002f);
+        player.noteOn(60,120,44100.);
+        const auto first=player.renderOne();
+        for(int i=0;i<176;++i)a=player.renderOne();
+        require(first[0]>.0001f && first[0]<.02f,
+            "P015 amp attack must ramp from a low initial level");
+        require(a[0]>.79f,"P015 amp attack reaches full level");
+        std::cout<<"[PASS] P015 bank-wide normalize and One-Shot/Gate ADSR\n";
+    }catch(...){fs::remove_all(dir);throw;}
+    fs::remove_all(dir);
+}
+
 void testSfzKeyboardBank() {
     a125::JobConfig config;
     config.firstNote=60;
@@ -558,6 +622,7 @@ int main() {
         testCaptureIntegrityFailClosed();
         testRunDisplayTruthfulness();
         testNativeSamplerPlayback();
+        testP015DynamicsAndGate();
         testSfzKeyboardBank();
         testAutomaticBatch48Wavs();
         testWavAndTrim();
