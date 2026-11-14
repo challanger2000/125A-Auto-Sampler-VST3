@@ -134,6 +134,28 @@ void smokeNativeGui(IComponent* component,bool recorder=false){
         const auto last=controller->getParamNormalized(1002);
         require(std::abs(first-last)<1.e-6 && std::abs(first-before)>.01,
                 "P021 native keyboard mouse click did not select FROM=TO note");
+        // A11: a VSTGUI kick button calls valueChanged() on both press and
+        // reset. The OCT + / - action must occur once, not twice. Reuse the
+        // same keyboard coordinate to measure the shifted octave directly.
+        const auto click=[&](int x,int y){
+            const LPARAM position=MAKELPARAM(x,y);
+            SendMessageW(guiChild,WM_MOUSEMOVE,0,position);
+            SendMessageW(guiChild,WM_LBUTTONDOWN,MK_LBUTTON,position);
+            SendMessageW(guiChild,WM_LBUTTONUP,0,position);
+        };
+        const auto root=static_cast<int>(std::lround(first*127.));
+        click(764,568); // OCT + center, native editor coordinates
+        click(48,644); // same sampled keyboard key
+        const auto higher=static_cast<int>(std::lround(
+            controller->getParamNormalized(1001)*127.));
+        require(higher==root+12,
+                "A11 OCT + kick-style invoked zero or twice (expected +12)");
+        click(672,568); // OCT - center
+        click(48,644);
+        const auto original=static_cast<int>(std::lround(
+            controller->getParamNormalized(1001)*127.));
+        require(original==root,
+                "A11 OCT - kick-style invoked zero or twice (expected -12)");
     }
     require(view->removed()==kResultTrue,"VSTGUI could not detach cleanly");
     require(view->setFrame(nullptr)==kResultTrue,"VSTGUI host frame release failed");
