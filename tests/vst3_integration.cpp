@@ -534,6 +534,46 @@ int run(const char* vst3path,bool matrix,bool customFolder){
         }
         require(headlessAudible,
                 "P014: recorded WAV bank not playable without GUI or project setState");
+
+        // P016: native VST3 playback regression, not just a C++ core test.
+        // Eight coherent MIDI notes used to drive the per-bank -1 dBFS
+        // normalized voices into the hard output clipper.
+        EventList stackedMidi(16);
+        for(int v=0;v<8;++v) {
+            Event e{};
+            e.type=Event::kNoteOnEvent;
+            e.busIndex=0;e.sampleOffset=0;
+            e.noteOn.channel=0;
+            e.noteOn.pitch=static_cast<int16>(matrix?61:60);
+            e.noteOn.velocity=static_cast<float>(matrix?80:100)/127.f;
+            e.noteOn.noteId=9000+v;
+            require(stackedMidi.addEvent(e)==kResultOk,
+                "P016 cannot submit 8 simultaneous sample notes");
+        }
+        EventList noMidi(1);
+        float stackedPeak=0.f;
+        for(int block=0;block<16;++block) {
+            ProcessData render{};
+            render.processMode=kRealtime;
+            render.symbolicSampleSize=kSample32;
+            render.numSamples=kBlock;
+            render.numOutputs=1;render.outputs=&genOut;
+            render.inputEvents=block==0?&stackedMidi:&noMidi;
+            require(generator.processor->process(render)==kResultOk,
+                "P016 multi-note playback VST3 callback failed");
+            for(int32 i=0;i<kBlock;++i){
+                const auto idx=static_cast<std::size_t>(i);
+                require(std::isfinite(genL[idx])&&std::isfinite(genR[idx]),
+                    "P016 output contains nonfinite PCM");
+                stackedPeak=std::max(stackedPeak,
+                    std::max(std::abs(genL[idx]),std::abs(genR[idx])));
+            }
+        }
+        require(stackedPeak>.02f && stackedPeak<.9f,
+            "P016 normalized eight-voice VST3 output clipped or was silent");
+        std::cout<<"[PASS] P016 NATIVE VST3 NORMALIZE HEADROOM: 8 concurrent "
+                    "voices without hard clipping, peak="<<stackedPeak<<"\\n";
+
         require(generator.component->setActive(false)==kResultOk,
                 "cannot deactivate headless 125A player");
         generator.active=false;
