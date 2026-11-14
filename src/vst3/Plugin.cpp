@@ -286,6 +286,7 @@ public:
             beginEdit(tag);performEdit(tag,normalized);endEdit(tag);
         }
         mouseHeld_.store(note,std::memory_order_release);
+        selectedKey_.store(note,std::memory_order_relaxed);
         previewOn_.store(note,std::memory_order_release);
         if(keyboard_)keyboard_->setKeyPressed(note,true);
         return note;
@@ -326,9 +327,12 @@ public:
             if(data.inputEvents->getEvent(i,e)!=Steinberg::kResultOk)continue;
             if(e.type==V::Event::kNoteOnEvent){
                 const auto note=static_cast<int>(e.noteOn.pitch);
-                if(note>=0 && note<128)
+                if(note>=0 && note<128){
                     midiHeld_[static_cast<std::size_t>(note)].store(
                         e.noteOn.velocity>0.f,std::memory_order_relaxed);
+                    if(e.noteOn.velocity>0.f)
+                        selectedKey_.store(note,std::memory_order_relaxed);
+                }
             }else if(e.type==V::Event::kNoteOffEvent){
                 const auto note=static_cast<int>(e.noteOff.pitch);
                 if(note>=0 && note<128)
@@ -350,7 +354,8 @@ public:
     void updateWaveform(){
         if(!waveform_)return;
         std::array<float,a125ui::WaveformView::Points> wave{};
-        const bool valid=player_.waveform(wave);
+        const bool valid=player_.waveform(wave,
+            selectedKey_.load(std::memory_order_relaxed));
         waveform_->setWave(wave,valid);
     }
     Steinberg::IPlugView* PLUGIN_API createView(Steinberg::FIDString name) override {
@@ -1227,6 +1232,7 @@ private:
     VSTGUI::CTextButton* octaveUpButton_{nullptr};
     int keyboardStart_=36;
     std::atomic<int> mouseHeld_{-1};
+    std::atomic<int> selectedKey_{60};
     std::array<std::atomic<bool>,128> midiHeld_{};
     std::atomic<int> previewOn_{-1},previewOff_{-1};
     VSTGUI::CTextButton* folderButton_{nullptr};
