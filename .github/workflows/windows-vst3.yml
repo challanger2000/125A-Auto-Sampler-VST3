@@ -1,4 +1,4 @@
-name: P016 Windows VST3 Normalize Headroom QA
+name: P017 Windows VST3 Portable Instrument Archive QA
 on:
   push:
     branches: ['develop/**']
@@ -35,13 +35,13 @@ jobs:
           if (-not $resource) { throw "Native GUI description not packaged" }
           [xml]$gui = Get-Content -LiteralPath $resource.FullName -Raw
           $tags = @($gui.'vstgui-ui-description'.'control-tags'.'control-tag')
-          if ($tags.Count -ne 18) { throw "Expected 18 GUI parameter tags, got $($tags.Count)" }
+          if ($tags.Count -ne 19) { throw "Expected 19 GUI parameter tags, got $($tags.Count)" }
           $actual = @($tags | ForEach-Object { [int]$_.tag } | Sort-Object)
-          $expected = @(1000..1017)
+          $expected = @(1000..1018)
           if (@(Compare-Object -ReferenceObject $expected -DifferenceObject $actual).Count -ne 0) { throw "GUI parameter IDs differ from VST3" }
           $controls = @($gui.'vstgui-ui-description'.template.view | Where-Object { $_.'control-tag' -eq "Run" })
           if ($controls.Count -ne 1) { throw "Run button must be present" }
-          Write-Host "VSTGUI XML, 18 parameter tags, Run control and bundled resource: PASS"
+          Write-Host "VSTGUI XML, 19 parameter tags, Run control and bundled resource: PASS"
       - name: Official VST3 validator
         shell: pwsh
         run: |
@@ -81,6 +81,6 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: 125A-AutoSampler-P016-Win64
+          name: 125A-AutoSampler-P017-Win64
           path: build-vst3/VST3/Release/*.vst3
           if-no-files-found: error
