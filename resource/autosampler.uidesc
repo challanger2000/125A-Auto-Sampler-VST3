@@ -100,4 +100,14 @@
     <control-tag name="P1017" tag="1017"/>
     <control-tag name="P1018" tag="1018"/>
   </control-tags>
+  <gradients>
+    <gradient name="Idle">
+      <color-stop rgba="#404750FF" start="0"/>
+      <color-stop rgba="#23282FFF" start="1"/>
+    </gradient>
+    <gradient name="Active">
+      <color-stop rgba="#E0C692FF" start="0"/>
+      <color-stop rgba="#A58652FF" start="1"/>
+    </gradient>
+  </gradients>
 </vstgui-ui-description>
