@@ -527,6 +527,22 @@ void testP017PortableArchive() {
             "P017 must not overwrite a portable instrument archive");
         std::string name;
         a125::ArchivePlayback restoredSettings;
+        const auto fingerprint=a125::archive125AFingerprint(archive);
+        require(fingerprint.has_value(),"P020 .125A manifest fingerprint missing");
+        const auto relocatedRoot=root/"Documents"/"125A AutoSampler";
+        fs::create_directories(relocatedRoot);
+        const auto moved=relocatedRoot/"Vintage Bass.125A";
+        fs::copy_file(archive,moved);
+        require(a125::resolve125APath(
+            root/"old-PC"/"Vintage Bass.125A",{},root/"Documents",fingerprint)==moved,
+            "P020 a moved instrument must relink by filename and manifest CRC");
+        require(a125::resolve125APath(
+            root/"old-PC"/"Vintage Bass.125A",{},root/"Documents",
+            *fingerprint^0x10)==root/"old-PC"/"Vintage Bass.125A",
+            "P020 a different archive fingerprint must NEVER silently relink");
+        const auto missing=root/"old-PC"/"No Such Instrument.125A";
+        require(a125::resolve125APath(missing,{},root/"Documents",fingerprint)==missing,
+            "P020 missing archive must remain visible as missing");
         auto bank=a125::load125AArchive(archive,&name,&restoredSettings);
         require(bank && bank->zones.size()==2 && name=="Vintage \"Bass\"",
             "P017 ZIP must round-trip escaped instrument name and sample count");
