@@ -188,7 +188,7 @@ int run(const char* vst3path,bool matrix,bool customFolder){
     auto factory=module->getFactory();
     factory.setHostContext(&host);
 
-    auto generator=load(factory,host,"125A AutoSampler MIDI");
+    auto generator=load(factory,host,"125A AutoSampler");
     auto recorder=load(factory,host,"125A AutoSampler Recorder");
     smokeNativeGui(generator.component.get());
     const auto chosenRoot=base/"Chosen Export Folder"/"Takes";
@@ -618,7 +618,7 @@ int runAbort(const char* vst3path){
     HostApplication host;
     auto factory=module->getFactory();
     factory.setHostContext(&host);
-    auto generator=load(factory,host,"125A AutoSampler MIDI");
+    auto generator=load(factory,host,"125A AutoSampler");
     auto recorder=load(factory,host,"125A AutoSampler Recorder");
     (void)generator.component->activateBus(kEvent,kOutput,0,true);
 

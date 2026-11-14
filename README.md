@@ -2,11 +2,11 @@
 
 Windows-x64-VST3 für **automatisches Sampeln eines bereits in Fender Studio Pro geladenen VST-Instruments und direktes Spielen der aufgenommenen Samples im 125A selbst**.
 
-**125A IST der Sampler.** Es wird kein SFZ-Player, kein externer Sampler und kein eigener Fremd-VST-Host benötigt. Die Quell-VST bleibt in der DAW.
+**125A IST der Sampler.** Es wird kein SFZ-Player, kein externer Sampler und kein eigener Fremd-VST-Host benötigt. Das Quell-VST bleibt in der DAW.
 
 ## Bestandteile desselben VST3-Bundles
 
-- **125A AutoSampler MIDI (Instrument):** Gibt den automatischen Note-On-/Note-Off-Plan an die DAW weiter, nimmt gesampelte WAV-Bänke per **LOAD SAMPLES** in den eigenen internen Sampler auf und spielt sie anschließend bei eingehenden MIDI-Noten als Stereo-Audio.
+- **125A AutoSampler (Instrument):** Gibt den automatischen Note-On-/Note-Off-Plan an die DAW weiter, nimmt gesampelte WAV-Bänke per **LOAD SAMPLES** in den eigenen internen Sampler auf und spielt sie anschließend bei eingehenden MIDI-Noten als Stereo-Audio.
 - **125A AutoSampler Recorder (Effekt):** Steht als letzter Audio-Insert hinter dem zu samplenden Fremd-VST und schreibt echte Stereo-PCM24-WAVs auf einem separaten Writer-Thread.
 - Noten 0–127, 1–12 Halbtonschritte, 1–3 frei einstellbare Velocity-Layer, 1–16 Round Robins, konfigurierbare Noten- und Release-Dauern.
 - Zuverlässiger Aufnahmeabschluss: ungültige, lückenhafte, stumme und abgebrochene Takes werden nicht als erfolgreiche WAV-Exporte ausgegeben. Jede Aufnahme erzeugt einen eigenen `Run_...`-Ordner mit `RUN-REPORT.csv`.
@@ -14,20 +14,20 @@ Windows-x64-VST3 für **automatisches Sampeln eines bereits in Fender Studio Pro
 ## Eigenständige Sample-Wiedergabe (P013)
 
 1. Die WAVs werden als `N60_V100_RR01.wav` usw. im Run-Ordner gespeichert.
-2. Im Fenster **125A AutoSampler MIDI** auf **LOAD SAMPLES** klicken und den fertigen **Run-Ordner** auswählen (nicht den übergeordneten Exportordner).
-3. Das Instrument **125A AutoSampler MIDI** auf der DAW-Spur mit MIDI-Noten spielen: Es gibt nun Stereo-Audio aus seinem **eigenen** Sampler aus.
+2. Im Fenster **125A AutoSampler** auf **LOAD SAMPLES** klicken und den fertigen **Run-Ordner** auswählen (nicht den übergeordneten Exportordner).
+3. Das Instrument **125A AutoSampler** auf der DAW-Spur mit MIDI-Noten spielen: Es gibt nun Stereo-Audio aus seinem **eigenen** Sampler aus.
 4. Die Bank wird nach Root-Note, Velocity und Round-Robin-Index zugeordnet. Nicht gesampelte Zwischentöne werden durch Pitch-Transposition der nächsten aufgenommenen Grundnote gespielt.
 5. Der Sampler bietet bis zu 32 simultane Stimmen und spielt den aufgenommenen Ausklang einmalig ab (One-Shot). Es gibt noch keine Sustain-Loop-Erkennung.
 
-**Wichtig:** Der aktuelle Stand lädt fertige Banken **manuell mit LOAD SAMPLES**, nicht automatisch nach Aufnahmeende. Beim Projekt-Speichern wird der **Pfad** zur Bank gesichert und beim Laden erneut eingelesen; die WAV-Dateien werden **nicht in die Projektdatei eingebettet**. Den WAV-Ordner deshalb nicht verschieben oder löschen.
+**Bankübernahme:** Bei erfolgreichem Aufnahmeabschluss wird die gerade erzeugte WAV-Bank automatisch im 125A geladen, wenn dessen Oberfläche geöffnet ist. Ist sie geschlossen, wird beim nächsten Öffnen nachgeladen. **LOAD SAMPLES** ist zusätzlich für ältere oder andere Run-Ordner verfügbar. Beim Projekt-Speichern wird der **Pfad** zur Bank gesichert und beim Laden erneut eingelesen; die WAV-Dateien werden **nicht in die Projektdatei eingebettet**. Den WAV-Ordner deshalb nicht verschieben oder löschen.
 
 **Kein SFZ nötig:** Die bisherige P011/P012-SFZ-Exportidee wird im produktiven Aufnahmeablauf nicht mehr verwendet. Die historischen SFZ-Dateien und -Core-Tests sind nicht Bestandteil der P013-Wiedergabekette.
 
 ## Routing in Fender Studio Pro
 
-1. Eine Instrumentenspur mit **125A AutoSampler MIDI** erstellen.
+1. Eine Instrumentenspur mit **125A AutoSampler** erstellen.
 2. Auf einer anderen Instrumentenspur das zu sampelnde VST (z. B. EVM Isotope) laden.
-3. Als MIDI-Eingangsquelle des Fremd-VST den **MIDI-Ausgang von 125A AutoSampler MIDI** wählen und die Spur entsprechend monitoren.
+3. Als MIDI-Eingangsquelle des Fremd-VST den **MIDI-Ausgang von 125A AutoSampler** wählen und die Spur entsprechend monitoren.
 4. Im Audio-Insert der Fremd-VST-Spur **125A AutoSampler Recorder** möglichst als letzten Effekt setzen.
 5. DAW-Transport auf Play stellen, dann den 125A-RUN-Schalter einschalten. Nach dem vollständigen Abschluss den Run-Ordner in den eingebauten Sampler laden.
 6. RUN wieder ausschalten, falls er noch aktiviert ist, und anschließend MIDI auf der 125A-Spur spielen.
@@ -38,7 +38,7 @@ Das genaue MIDI-Routing, die physische ASIO-Ausgabe und das Dialogverhalten in *
 
 - **P001–P012:** Capture, sicherer Start/Stop, Export, Projektzustand und bisherige Windows-VST3-Integrationsfälle bestanden. Historische Prüfdokumente stehen unter [docs](docs/).
 - **P013:** eingebauter WAV-Sampler, MIDI-Wiedergabe, Round-Robin-/Velocity-Mapping und Projektzustand auf dem laufenden Entwicklungszweig. [Windows-CI für P013](https://github.com/challanger2000/125A-Auto-Sampler-VST3/actions/workflows/windows-vst3.yml) muss vollständigen Build, Steinberg-Validator und tatsächlich gerendertes VST3-Audio bestätigen.
-- Nur **ein** Generator/Recorder-Paar je DAW-Prozess unterstützt. Keine automatische Bankübernahme nach der Aufnahme, keine Sustain-Loops.
+- Nur **ein** Generator/Recorder-Paar je DAW-Prozess unterstützt. Automatische Bankübernahme über die geöffnete Oberfläche und manueller Bankwechsel; noch keine Sustain-Loops.
 - Kein fertiges Release, solange die Tests in Fender Studio Pro und mit ASIO-Hardware ausstehen. [PR #2 bleibt Draft](https://github.com/challanger2000/125A-Auto-Sampler-VST3/pull/2).
 
 **Installation und Aufnahmeablauf:** [START-HERE.md](START-HERE.md).
