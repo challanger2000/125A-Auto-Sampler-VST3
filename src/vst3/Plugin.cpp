@@ -41,6 +41,7 @@
 #include <limits>
 #include <mutex>
 #include <optional>
+#include <new>
 #ifdef _WIN32
 #include <windows.h>
 #include <shobjidl.h>
@@ -61,6 +62,10 @@ std::atomic<bool> a125AuditHoldRestore{false};
 std::atomic<bool> a125AuditRestoreEntered{false};
 std::atomic<bool> a125AuditIgnoreStaleRestore{false};
 std::atomic<bool> a125AuditSkipNamePreflight{false};
+std::atomic<bool> a125AuditHoldRestoreCommit{false};
+std::atomic<bool> a125AuditRestoreCommitEntered{false};
+std::atomic<bool> a125AuditPreemptRejectedRestore{false};
+std::atomic<bool> a125AuditFailRestorePrepare{false};
 }
 extern "C" __declspec(dllexport) void __cdecl A125_AuditHoldImport(int enabled) noexcept {
     if(enabled){
@@ -93,6 +98,20 @@ extern "C" __declspec(dllexport) void __cdecl A125_AuditIgnoreStaleRestore(int e
 }
 extern "C" __declspec(dllexport) void __cdecl A125_AuditSkipNamePreflight(int enabled) noexcept {
     a125AuditSkipNamePreflight.store(enabled!=0,std::memory_order_release);
+}
+extern "C" __declspec(dllexport) void __cdecl A125_AuditHoldRestoreCommit(int enabled) noexcept {
+    if(enabled)
+        a125AuditRestoreCommitEntered.store(false,std::memory_order_release);
+    a125AuditHoldRestoreCommit.store(enabled!=0,std::memory_order_release);
+}
+extern "C" __declspec(dllexport) int __cdecl A125_AuditRestoreCommitEntered() noexcept {
+    return a125AuditRestoreCommitEntered.load(std::memory_order_acquire)?1:0;
+}
+extern "C" __declspec(dllexport) void __cdecl A125_AuditPreemptRejectedRestore(int enabled) noexcept {
+    a125AuditPreemptRejectedRestore.store(enabled!=0,std::memory_order_release);
+}
+extern "C" __declspec(dllexport) void __cdecl A125_AuditFailRestorePrepare(int enabled) noexcept {
+    a125AuditFailRestorePrepare.store(enabled!=0,std::memory_order_release);
 }
 #endif
 
@@ -220,6 +239,13 @@ struct Session {
         std::lock_guard<std::mutex> lock(nameMutex);
         name=display;
         return true;
+    }
+    // setState() prepares and validates its name before publishing a bank.
+    // Swapping two already allocated strings makes the final commit
+    // allocation-free, including for the maximum 192-byte name.
+    void installPreparedCaptureName(std::string& ready) noexcept {
+        std::lock_guard<std::mutex> lock(nameMutex);
+        name.swap(ready);
     }
     mutable std::mutex nameMutex;
     std::string name="Untitled Instrument";
@@ -612,6 +638,7 @@ public:
                     if(restoreSelection!=selectionEpoch_)return false;
                 }else{
                     ++selectionEpoch_; // GUI explicit user intent
+                    ++guiSelectionEpoch_; // restore intent arbitration
                     lastExplicitGeneration_=session().generation.load(
                         std::memory_order_acquire);
                 }
@@ -1077,14 +1104,22 @@ public:
     }
     tresult PLUGIN_API setState(Steinberg::IBStream* state) override {
         if(!state) return Steinberg::kResultFalse;
-        // Reserve intent BEFORE parsing a potentially slow DAW stream.
-        // A newer GUI selection or host Restore must win the bank/parameters.
-        std::uint64_t restoreEpoch=0;
+        // Reserve HOST ORDER, not a live selection. Rejecting a newer
+        // malformed stream must NOT invalidate a legitimate older restore.
+        // Only a successfully prepared state preempts older intents.
+        try {
+        std::uint64_t restoreAttempt=0;
+        std::uint64_t originalGuiEpoch=0;
         {
             std::lock_guard<std::mutex> guard(bankMutex_);
-            restoreEpoch=++selectionEpoch_;
-            lastExplicitGeneration_=session().generation.load(
-                std::memory_order_acquire);
+            restoreAttempt=++nextRestoreAttempt_;
+            originalGuiEpoch=guiSelectionEpoch_;
+#ifdef A125_ENABLE_AUDIT_HOOKS
+            // S02 negative-control mutant: old behavior preempts even when
+            // this stream will later fail validation.
+            if(a125AuditPreemptRejectedRestore.load(std::memory_order_acquire))
+                ++guiSelectionEpoch_;
+#endif
         }
         Steinberg::IBStreamer io(state,kLittleEndian);
         Steinberg::int32 version=0;
@@ -1181,44 +1216,111 @@ public:
             if(!io.readInt64(stored))return Steinberg::kResultFalse;
             if(stored!=0)fingerprint=static_cast<std::uint64_t>(stored);
         }
-        // Decode/relink outside bankMutex_. Stale failures must never
-        // clear a more recent bank or apply old project metadata.
-        bool restored=false;
+        // Stage everything off the bank mutex and WITHOUT changing the
+        // live sampler, session metadata or controller. A bank that cannot
+        // be read still counts as a valid fail-closed project recall and
+        // clears playback only when its complete state is committed.
+        std::unique_ptr<a125::SampleBank> preparedBank;
+        std::filesystem::path preparedBankPath=restoredBank;
+        std::optional<std::uint64_t> preparedFingerprint=
+            legacyIdentity?std::nullopt:fingerprint;
         if(!restoredBank.empty()) {
-            std::filesystem::path documents;
+            try {
+                std::filesystem::path documents;
 #ifdef _WIN32
-            if(const char* home=std::getenv("USERPROFILE");home && *home)
-                documents=std::filesystem::path(home)/"Documents";
+                if(const char* home=std::getenv("USERPROFILE");home && *home)
+                    documents=std::filesystem::path(home)/"Documents";
 #endif
-            const bool unverifiedArchive=version==0x125A2201 &&
-                restoredBank.extension()==".125A" && !fingerprint;
-            const auto relocated=unverifiedArchive?std::filesystem::path{}:
-                a125::resolve125APath(
-                    restoredBank,restoredFolder,documents,fingerprint,legacyIdentity);
-            if(!unverifiedArchive)
-                restored=loadSamples(
-                    relocated,false,0,fingerprint,legacyIdentity,restoreEpoch);
+                const bool unverifiedArchive=version==0x125A2201 &&
+                    restoredBank.extension()==".125A" && !fingerprint;
+                if(!unverifiedArchive){
+                    auto relocated=a125::resolve125APath(
+                        restoredBank,restoredFolder,documents,fingerprint,legacyIdentity);
+                    if(relocated.extension()==".125A"){
+                        std::uint64_t parsedFingerprint=0;
+                        std::uint32_t parsedLegacyFingerprint=0;
+                        auto decoded=a125::load125AArchive(
+                            relocated,nullptr,nullptr,&parsedFingerprint,
+                            &parsedLegacyFingerprint);
+                        if(decoded && fingerprint &&
+                           (legacyIdentity ?
+                               parsedLegacyFingerprint!=
+                                   static_cast<std::uint32_t>(*fingerprint) :
+                               parsedFingerprint!=*fingerprint))
+                            decoded.reset();
+                        if(decoded){
+                            preparedBank=std::move(decoded);
+                            preparedBankPath=std::move(relocated);
+                            preparedFingerprint=parsedFingerprint;
+                        }
+                    }else if(!relocated.empty()){
+                        auto decoded=a125::loadCapturedBank(relocated);
+                        if(decoded){
+                            preparedBank=std::move(decoded);
+                            preparedBankPath=std::move(relocated);
+                            preparedFingerprint=std::nullopt;
+                        }
+                    }
+                }
+            }catch(const std::bad_alloc&){
+                return Steinberg::kResultFalse; // OOM: no live state changed
+            }catch(const std::exception&){
+                // Missing or corrupt archive: valid project, silent recall.
+                preparedBank.reset();
+            }
         }
+#ifdef A125_ENABLE_AUDIT_HOOKS
+        if(a125AuditHoldRestoreCommit.load(std::memory_order_acquire)){
+            bool first=false;
+            if(a125AuditRestoreCommitEntered.compare_exchange_strong(
+                    first,true,std::memory_order_acq_rel)){
+                while(a125AuditHoldRestoreCommit.load(std::memory_order_acquire))
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+        }
+        if(a125AuditFailRestorePrepare.load(std::memory_order_acquire))
+            throw std::bad_alloc{}; // nonshipping fault BEFORE publication
+#endif
+        // Every fallible name/path allocation is complete before publication.
+        // Move-only/swap-only metadata operations follow sampler publication.
+        // Keep the final arbitration + publication + metadata commit under
+        // one mutex: no other restore can interleave a partial state.
         {
             std::lock_guard<std::mutex> guard(bankMutex_);
-            bool stillCurrent=selectionEpoch_==restoreEpoch;
+            bool stillCurrent=guiSelectionEpoch_==originalGuiEpoch &&
+                lastCommittedRestoreAttempt_<=restoreAttempt;
 #ifdef A125_ENABLE_AUDIT_HOOKS
             if(a125AuditIgnoreStaleRestore.load(std::memory_order_acquire))
-                stillCurrent=true; // nonshipping negative-control mutation
+                stillCurrent=true; // retain independent A03 negative mutation
 #endif
             if(!stillCurrent)
-                return Steinberg::kResultOk; // superseded, not a failed restore
-            if(!restored) {
+                return Steinberg::kResultOk;
+            if(preparedBank){
+                if(!player_.publish(std::move(preparedBank))){
+                    // Resource exhaustion is a rejected request; preserve
+                    // the old bank, name, path, folder and parameters.
+                    return Steinberg::kResultFalse;
+                }
+                loadFailed_=false;
+            }else{
                 player_.clearCurrent();
-                bankFolder_=restoredBank;
-                bankFingerprint_=legacyIdentity?std::nullopt:fingerprint;
-                bankCaptureGeneration_=session().readyBankGeneration.load(
-                    std::memory_order_acquire);
                 loadFailed_=!restoredBank.empty();
             }
-            if(!session().setCaptureName(restoredName))
-                return Steinberg::kResultFalse;
-            session().exportTarget.choose(restoredFolder);
+            ++selectionEpoch_;
+            lastCommittedRestoreAttempt_=restoreAttempt;
+            lastExplicitGeneration_=session().generation.load(
+                std::memory_order_acquire);
+            bankFolder_.swap(preparedBankPath);
+            bankFingerprint_=preparedFingerprint;
+            bankCaptureGeneration_=session().readyBankGeneration.load(
+                std::memory_order_acquire);
+#ifdef A125_ENABLE_AUDIT_HOOKS
+            if(a125AuditSkipNamePreflight.load(std::memory_order_acquire) &&
+               !Session::validCaptureName(restoredName))
+                return Steinberg::kResultFalse; // intentional S01 mutant
+#endif
+            session().installPreparedCaptureName(restoredName);
+            session().exportTarget.choose(std::move(restoredFolder));
             previewOn_.store(-1,std::memory_order_release);
             previewOff_.store(-1,std::memory_order_release);
             mouseHeld_.store(-1,std::memory_order_release);
@@ -1232,8 +1334,14 @@ public:
             }
         }
         return Steinberg::kResultOk;
-    }
-    tresult PLUGIN_API setActive(TBool active) override {
+        }catch(const std::exception&){
+            // Exceptions must NEVER escape the VST3 IBStream ABI. All
+            // parsing/decode allocations occur before the live commit.
+            return Steinberg::kResultFalse;
+        }catch(...){
+            return Steinberg::kResultFalse;
+        }
+    }    tresult PLUGIN_API setActive(TBool active) override {
         if(!active) {
             player_.requestVoiceReset();
             cancel();
@@ -1550,7 +1658,10 @@ private:
     std::filesystem::path bankFolder_{};
     std::optional<std::uint64_t> bankFingerprint_{};
     std::uint32_t bankCaptureGeneration_=0; // guarded by bankMutex_
-    std::uint64_t selectionEpoch_=0; // manual/recall commands supersede workers
+    std::uint64_t selectionEpoch_=0; // actual committed choice / GUI request
+    std::uint64_t guiSelectionEpoch_=0; // only explicit GUI intents
+    std::uint64_t nextRestoreAttempt_=0; // ordered host calls, even if invalid
+    std::uint64_t lastCommittedRestoreAttempt_=0; // rejected calls never preempt
     std::uint32_t lastExplicitGeneration_=0; // don't resurrect stale completion
     std::atomic<bool> stopBankWorker_{false};
     std::thread bankWorker_;
