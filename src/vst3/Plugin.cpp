@@ -1087,6 +1087,17 @@ public:
             }
         }
         observeIncomingMidi(data);
+        // A host can reject an outgoing NoteOff during STOP. Retry on the
+        // next callback before any new capture or playback transaction.
+        if(retryPendingNoteOff_){
+            sendPendingNoteOff(data);
+            if(note_.pending()){
+                if(activeRun_)cancel();
+                runGate_.disarm();
+                lastBlockEnd_=kDisarmed;
+                return Steinberg::kResultOk;
+            }
+        }
         run_=values_[0]>=0.5;
         if(!run_)renderSampler(data);
         const bool playing=data.processContext &&
@@ -1161,9 +1172,10 @@ public:
         const auto first=relativeFirst/period;
         const auto last=std::min<std::uint64_t>(
             config_.takeCount(),relativeEnd/period+1);
-        for(std::uint64_t i=first;i<last;++i){
+        for(std::uint64_t i=first;i<last && activeRun_;++i){
             const auto take=a125::jobTake(config_,static_cast<std::size_t>(i));
             emit(data,blockStart,blockEnd,anchor,take.start,take,true);
+            if(!activeRun_)break;
             emit(data,blockStart,blockEnd,anchor,take.noteOff,take,false);
         }
         return Steinberg::kResultOk;
@@ -1247,12 +1259,14 @@ private:
             session().anchor.store(kDisarmed,std::memory_order_release);
         }
         activeRun_=false;
-        note_.reset();
+        // Do not erase a NoteOn that the downstream host has accepted until
+        // its matching NoteOff has actually been delivered.
+        if(note_.pending())retryPendingNoteOff_=true;
     }
     void sendPendingNoteOff(V::ProcessData& data) noexcept {
-        if(!data.outputEvents) return;
         const auto pending=note_.pending();
-        if(!pending) return;
+        if(!pending){retryPendingNoteOff_=false;return;}
+        if(!data.outputEvents){retryPendingNoteOff_=true;return;}
         V::Event e{};
         e.busIndex=0;
         e.sampleOffset=0;
@@ -1261,8 +1275,10 @@ private:
         e.noteOff.pitch=static_cast<Steinberg::int16>(pending->pitch);
         e.noteOff.velocity=0.f;
         e.noteOff.noteId=pending->noteId;
-        if(data.outputEvents->addEvent(e)==Steinberg::kResultOk)
+        if(data.outputEvents->addEvent(e)==Steinberg::kResultOk){
             note_.acceptedOff(pending->noteId);
+            retryPendingNoteOff_=false;
+        }else retryPendingNoteOff_=true;
     }
     void emit(V::ProcessData& data,std::int64_t first,std::int64_t end,
               std::int64_t anchor,std::uint64_t frame,
@@ -1292,7 +1308,17 @@ private:
         // Only events accepted by the host's output bus change our note state.
         if(data.outputEvents->addEvent(e)==Steinberg::kResultOk) {
             if(noteOn) note_.acceptedOn(take.note,static_cast<int>(take.takeIndex+1));
-            else note_.acceptedOff(static_cast<int>(take.takeIndex+1));
+            else {
+                note_.acceptedOff(static_cast<int>(take.takeIndex+1));
+                retryPendingNoteOff_=false;
+            }
+        }else{
+            // A rejected note cannot be treated as a valid capture. For a
+            // rejected Off preserve its owner for a later delivery attempt.
+            session().errors.fetch_add(1,std::memory_order_relaxed);
+            if(!noteOn && note_.pending())retryPendingNoteOff_=true;
+            cancel();
+            runGate_.disarm();
         }
     }
     std::array<std::atomic<double>,kParamCount> values_{
@@ -1309,6 +1335,7 @@ private:
     std::thread bankWorker_;
     bool loadFailed_=false;
     a125::ActiveNote note_{};
+    bool retryPendingNoteOff_=false; // audio-thread owned, survives cancel
     a125::RunGate runGate_{};
     VSTGUI::CTextLabel* statusLabel_{nullptr};  // owned by active editor
     VSTGUI::CTextLabel* folderLabel_{nullptr};

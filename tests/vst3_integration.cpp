@@ -45,6 +45,16 @@ constexpr double kTau=6.28318530717958647692;
 void require(bool value,const char* what) {
     if(!value)throw std::runtime_error(what);
 }
+class RejectingOffEvents final : public EventList {
+public:
+    using EventList::EventList;
+    bool refuseOff=false;
+    tresult PLUGIN_API addEvent(Event& event) override {
+        if(refuseOff && event.type==Event::kNoteOffEvent)
+            return kResultFalse;
+        return EventList::addEvent(event);
+    }
+};
 class TestHostFrame final : public FObject, public IPlugFrame {
 public:
     tresult PLUGIN_API resizeView(IPlugView* view,ViewRect* desired) override {
@@ -973,8 +983,9 @@ int runAbort(const char* vst3path){
     passthrough.numChannels=2;passthrough.channelBuffers32=outChannels.data();
 
     const auto playBlock=[&](std::int64_t at,ParameterChanges* changes,
-                             bool& sawOn,bool& sawOff){
-        EventList events(8);
+                             bool& sawOn,bool& sawOff,bool rejectOff=false){
+        RejectingOffEvents events(8);
+        events.refuseOff=rejectOff;
         ProcessContext context{};
         context.sampleRate=kRate;
         context.projectTimeSamples=at;
@@ -1024,8 +1035,11 @@ int runAbort(const char* vst3path){
     qi=0;pi=0;
     auto* off=runOff.addParameterData(1000,qi);
     require(off && off->addPoint(0,0.,pi)==kResultOk,"P009 Run OFF unavailable");
-    playBlock(at,&runOff,sawOn,sawOff);
-    require(sawOff,"P009 STOP must send a NoteOff for the pending sound");
+    playBlock(at,&runOff,sawOn,sawOff,true);
+    require(!sawOff,"A12 negative fixture rejected the first output NoteOff");
+    playBlock(at+kBlock,nullptr,sawOn,sawOff);
+    require(sawOff,
+        "A12 rejected STOP NoteOff must be retried and accepted next callback");
 
     bool closed=false;
     bool wavFound=false;
