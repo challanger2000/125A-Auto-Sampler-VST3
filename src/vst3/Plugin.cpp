@@ -285,22 +285,38 @@ public:
             SingleComponentEffect::setParamNormalized(tag,normalized);
             beginEdit(tag);performEdit(tag,normalized);endEdit(tag);
         }
+        mouseHeld_.store(note,std::memory_order_release);
         previewOn_.store(note,std::memory_order_release);
         if(keyboard_)keyboard_->setKeyPressed(note,true);
         return note;
     }
     void onNoteOff(VSTGUI::KeyboardViewBase::NoteIndex note,int32_t) override {
         if(note<0 || note>127)return;
+        mouseHeld_.store(-1,std::memory_order_release);
         previewOff_.store(note,std::memory_order_release);
         if(keyboard_)keyboard_->setKeyPressed(note,false);
     }
     void onNoteModulation(int32_t,double,double) override {}
     void updateKeyboard(){
         if(!keyboard_)return;
+        keyboard_->setRoots(player_.rootNotes());
+        const auto held=mouseHeld_.load(std::memory_order_relaxed);
         for(int note=0;note<128;++note)
-            keyboard_->setKeyPressed(note,
+            keyboard_->setKeyPressed(note,note==held ||
                 midiHeld_[static_cast<std::size_t>(note)].load(
                     std::memory_order_relaxed));
+    }
+    void scrollKeyboard(int semitones){
+        keyboardStart_=std::clamp(keyboardStart_+semitones,0,79);
+        if(keyboard_)keyboard_->setKeyRange(
+            static_cast<VSTGUI::KeyboardViewBase::NoteIndex>(keyboardStart_),
+            static_cast<VSTGUI::KeyboardViewBase::NumNotes>(49));
+        if(rangeLabel_){
+            const auto label=std::string("NOTES ")+std::to_string(keyboardStart_)+
+                " - "+std::to_string(keyboardStart_+48);
+            rangeLabel_->setText(label.c_str());
+        }
+        updateKeyboard();
     }
     void observeIncomingMidi(const V::ProcessData& data) noexcept {
         if(!data.inputEvents)return;
@@ -354,9 +370,12 @@ public:
             view=metal;
         }
         if(auto* keys=dynamic_cast<VSTGUI::KeyboardView*>(view)){
-            keyboard_=keys;
+            auto* marked=new a125ui::ZoneKeyboardView(*keys);
+            keys->forget();
+            view=marked;
+            keyboard_=marked;
             keyboard_->setDelegate(this);
-            updateKeyboard();
+            scrollKeyboard(0);
         }
         if(auto* edit=dynamic_cast<VSTGUI::CTextEdit*>(view)){
             if(edit->getText()=="INSTRUMENT NAME"){
@@ -368,9 +387,16 @@ public:
             if(label->getText()=="STATUS: READY")statusLabel_=label;
             if(label->getText()=="OUTPUT: DEFAULT")folderLabel_=label;
             if(label->getText()=="SAMPLER: EMPTY")samplerLabel_=label;
+            if(label->getText()=="NOTES 36 - 84")rangeLabel_=label;
         }
         if(auto* button=dynamic_cast<VSTGUI::CTextButton*>(view)){
-            if(button->getTitle()=="CHOOSE FOLDER"){
+            if(button->getTitle()=="OCT -"){
+                octaveDownButton_=button;
+                octaveDownButton_->registerControlListener(this);
+            }else if(button->getTitle()=="OCT +"){
+                octaveUpButton_=button;
+                octaveUpButton_->registerControlListener(this);
+            }else if(button->getTitle()=="CHOOSE FOLDER"){
                 folderButton_=button;
                 folderButton_->registerControlListener(this);
             }else if(button->getTitle()=="DEFAULT"){
@@ -387,6 +413,8 @@ public:
         return view;
     }
     void valueChanged(VSTGUI::CControl* control) override {
+        if(control==octaveDownButton_){scrollKeyboard(-12);return;}
+        if(control==octaveUpButton_){scrollKeyboard(12);return;}
         if(control==instrumentNameEdit_){
             if(!session().setCaptureName(instrumentNameEdit_->getText().getString())){
                 instrumentNameEdit_->setText(session().captureName().c_str());
@@ -531,6 +559,8 @@ public:
         if(folderButton_)folderButton_->unregisterControlListener(this);
         if(defaultButton_)defaultButton_->unregisterControlListener(this);
         if(loadButton_)loadButton_->unregisterControlListener(this);
+        if(octaveDownButton_)octaveDownButton_->unregisterControlListener(this);
+        if(octaveUpButton_)octaveUpButton_->unregisterControlListener(this);
         if(importButton_)importButton_->unregisterControlListener(this);
         if(instrumentNameEdit_)instrumentNameEdit_->unregisterControlListener(this);
         folderButton_=nullptr;
@@ -541,6 +571,9 @@ public:
         if(keyboard_)keyboard_->setDelegate(nullptr);
         keyboard_=nullptr;
         waveform_=nullptr;
+        rangeLabel_=nullptr;
+        octaveDownButton_=nullptr;
+        octaveUpButton_=nullptr;
         folderLabel_=nullptr;
         samplerLabel_=nullptr;
         statusLabel_=nullptr;
@@ -863,6 +896,7 @@ public:
             for(auto& held:midiHeld_)held.store(false,std::memory_order_relaxed);
             previewOn_.store(-1,std::memory_order_relaxed);
             previewOff_.store(-1,std::memory_order_relaxed);
+            mouseHeld_.store(-1,std::memory_order_relaxed);
         }
         return SingleComponentEffect::setActive(active);
     }
@@ -1109,8 +1143,13 @@ private:
     VSTGUI::CTextButton* loadButton_{nullptr};
     VSTGUI::CTextButton* importButton_{nullptr};
     VSTGUI::CTextEdit* instrumentNameEdit_{nullptr};
-    VSTGUI::KeyboardView* keyboard_{nullptr};
+    a125ui::ZoneKeyboardView* keyboard_{nullptr};
     a125ui::WaveformView* waveform_{nullptr};
+    VSTGUI::CTextLabel* rangeLabel_{nullptr};
+    VSTGUI::CTextButton* octaveDownButton_{nullptr};
+    VSTGUI::CTextButton* octaveUpButton_{nullptr};
+    int keyboardStart_=36;
+    std::atomic<int> mouseHeld_{-1};
     std::array<std::atomic<bool>,128> midiHeld_{};
     std::atomic<int> previewOn_{-1},previewOff_{-1};
     VSTGUI::CTextButton* folderButton_{nullptr};
