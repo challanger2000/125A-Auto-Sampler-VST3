@@ -19,6 +19,8 @@
 #include <stdexcept>
 #include <sstream>
 #include <string>
+#include <thread>
+#include <atomic>
 #include <vector>
 
 namespace {
@@ -814,6 +816,28 @@ void testAuditCompletionSnapshotConsistency() {
                 snapshot.path==path,
                 "A03 capture path and generation must remain bound");
     }
+    // Writer and reader overlap intentionally: a torn pair would associate
+    // the path of generation N+1 with token N. Publish/read must be atomic.
+    std::atomic<bool> torn{false};
+    std::thread writer([&]{
+        for(std::uint32_t n=501;n<2501;++n)
+            completed.publish(std::to_string(n)+".125A",n,42);
+    });
+    std::thread reader([&]{
+        for(int i=0;i<4000;++i){
+            const auto snapshot=completed.read();
+            if(snapshot.generation==0 || snapshot.ownerEpoch!=42 ||
+               snapshot.path.filename().string()!=
+                   std::to_string(snapshot.generation)+".125A"){
+                torn.store(true,std::memory_order_relaxed);
+                break;
+            }
+        }
+    });
+    writer.join();
+    reader.join();
+    require(!torn.load(std::memory_order_relaxed),
+            "A03 concurrent completion generation/path snapshot torn");
     completed.reset();
     require(completed.read().generation==0 && completed.read().path.empty(),
             "A02 new project must not inherit previous completion event");
