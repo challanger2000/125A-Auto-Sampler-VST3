@@ -1238,6 +1238,19 @@ public:
                 const bool unverifiedArchive=version==0x125A2201 &&
                     restoredBank.extension()==".125A" && !fingerprint;
                 if(!unverifiedArchive){
+#ifdef A125_ENABLE_AUDIT_HOOKS
+                    // Preserve the existing A03 pre-decode barrier even
+                    // though setState now stages, rather than publishes,
+                    // its decoded bank through loadSamples().
+                    if(a125AuditHoldRestore.load(std::memory_order_acquire)){
+                        bool first=false;
+                        if(a125AuditRestoreEntered.compare_exchange_strong(
+                                first,true,std::memory_order_acq_rel)){
+                            while(a125AuditHoldRestore.load(std::memory_order_acquire))
+                                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                        }
+                    }
+#endif
                     auto relocated=a125::resolve125APath(
                         restoredBank,restoredFolder,documents,fingerprint,legacyIdentity);
                     if(relocated.extension()==".125A"){
