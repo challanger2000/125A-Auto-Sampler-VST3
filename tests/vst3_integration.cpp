@@ -211,6 +211,18 @@ int run(const char* vst3path,bool matrix,bool customFolder){
 
     auto generator=load(factory,host,"125A AutoSampler");
     auto recorder=load(factory,host,"125A AutoSampler Recorder");
+    // A02: with a shared capture route but no explicit pair ID, a second
+    // generator/recorder MUST be refused rather than consuming the live
+    // session or silently saving another track's bank.
+    for(const auto& cls:factory.classInfos()){
+        if(cls.category()!=kVstAudioEffectClass ||
+           (cls.name()!="125A AutoSampler" &&
+            cls.name()!="125A AutoSampler Recorder"))continue;
+        auto duplicate=factory.createInstance<IComponent>(cls.ID());
+        require(bool(duplicate),"A02 could not construct second instance");
+        require(duplicate->initialize(&host)!=kResultOk,
+                "A02 simultaneous second capture component must fail closed");
+    }
     smokeNativeGui(generator.component.get());
     smokeNativeGui(recorder.component.get(),true);
     // Legacy P015 Gate=0 means OneShot ON. New P021 UI stores OneShot=1.

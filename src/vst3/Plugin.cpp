@@ -96,6 +96,55 @@ struct Session {
     a125::ExportTarget exportTarget;
     a125::ExportTarget latestCompletedRun;
     std::atomic<std::uint32_t> readyBankGeneration{0};
+    // P024 supports exactly one capture pair. Make that a *technical* lease,
+    // not a promise in README: a second VST3 may not consume another song's
+    // session, and an old recorder may not publish after project teardown.
+    std::mutex ownerMutex;
+    std::atomic<void*> generatorOwner{nullptr},recorderOwner{nullptr};
+    std::atomic<std::uint64_t> ownerEpoch{0},recorderBoundEpoch{0};
+    bool acquireGenerator(void* owner){
+        std::lock_guard<std::mutex> lock(ownerMutex);
+        const auto old=generatorOwner.load(std::memory_order_acquire);
+        if(old)return old==owner;
+        if(recorderOwner.load(std::memory_order_acquire) &&
+           recorderBoundEpoch.load(std::memory_order_acquire)!=0)return false;
+        anchor.store(kDisarmed,std::memory_order_release);
+        readyBankGeneration.store(0,std::memory_order_release);
+        captureEndedGeneration.store(0,std::memory_order_release);
+        writerFinishedGeneration.store(0,std::memory_order_release);
+        interruptedGeneration.store(0,std::memory_order_release);
+        observed.store(0);written.store(0);rejected.store(0);
+        silent.store(0);errors.store(0);dropped.store(0);
+        exportTarget.choose({});
+        latestCompletedRun.choose({});
+        (void)setCaptureName("Untitled Instrument");
+        ownerEpoch.fetch_add(1,std::memory_order_acq_rel);
+        generatorOwner.store(owner,std::memory_order_release);
+        return true;
+    }
+    void releaseGenerator(void* owner){
+        std::lock_guard<std::mutex> lock(ownerMutex);
+        if(generatorOwner.load(std::memory_order_acquire)!=owner)return;
+        anchor.store(kDisarmed,std::memory_order_release);
+        readyBankGeneration.store(0,std::memory_order_release);
+        latestCompletedRun.choose({});
+        generatorOwner.store(nullptr,std::memory_order_release);
+        ownerEpoch.fetch_add(1,std::memory_order_acq_rel);
+    }
+    bool acquireRecorder(void* owner){
+        std::lock_guard<std::mutex> lock(ownerMutex);
+        const auto old=recorderOwner.load(std::memory_order_acquire);
+        if(old)return old==owner;
+        recorderBoundEpoch.store(0,std::memory_order_release);
+        recorderOwner.store(owner,std::memory_order_release);
+        return true;
+    }
+    void releaseRecorder(void* owner){
+        std::lock_guard<std::mutex> lock(ownerMutex);
+        if(recorderOwner.load(std::memory_order_acquire)!=owner)return;
+        recorderOwner.store(nullptr,std::memory_order_release);
+        recorderBoundEpoch.store(0,std::memory_order_release);
+    }
     // Controlled GUI/state/recorder threads only; never from process().
     std::string captureName() const {
         std::lock_guard<std::mutex> lock(nameMutex);
@@ -261,12 +310,16 @@ class MidiGenerator final : public V::SingleComponentEffect,
                             public VSTGUI::KeyboardViewPlayerDelegate {
 public:
     static FUnknown* createInstance(void*) {return (V::IAudioProcessor*)new MidiGenerator();}
-    ~MidiGenerator() override {stopBankMonitor();}
+    ~MidiGenerator() override {
+        stopBankMonitor();
+        session().releaseGenerator(this);
+    }
     tresult PLUGIN_API terminate() override {
         // The Steinberg validator calls terminate()/initialize() on the SAME
         // object. A joinable std::thread cannot be overwritten: join it
         // before reinitialization or MSVC fail-fasts during VST3 validation.
         stopBankMonitor();
+        session().releaseGenerator(this);
         return SingleComponentEffect::terminate();
     }
     void stopBankMonitor() noexcept {
@@ -543,6 +596,7 @@ public:
         return loaded;
     }
     void monitorBanks() noexcept {
+        try{
         // Recorder publishes only complete banks. The first non-realtime
         // ZIP open can fail transiently (AV/file-sharing/IO). Do not mark a
         // generation handled until the in-memory sampler has actually
@@ -574,6 +628,9 @@ public:
                 }
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(40));
+        }
+        }catch(...){
+            session().errors.fetch_add(1,std::memory_order_relaxed);
         }
     }
     void updateSamplerLabel(){
@@ -655,8 +712,11 @@ public:
         statusLabel_->setText(line);
     }
     tresult PLUGIN_API initialize(FUnknown* context) override {
-        if(SingleComponentEffect::initialize(context)!=Steinberg::kResultOk)
+        if(!session().acquireGenerator(this))return Steinberg::kResultFalse;
+        if(SingleComponentEffect::initialize(context)!=Steinberg::kResultOk){
+            session().releaseGenerator(this);
             return Steinberg::kResultFalse;
+        }
         addAudioOutput(STR16("Sampler Stereo Out"),V::SpeakerArr::kStereo);
         addEventInput(STR16("Play Notes Into 125A"),1);
         addEventOutput(STR16("Generated MIDI"),1);
@@ -776,6 +836,7 @@ public:
     }
     tresult PLUGIN_API setupProcessing(V::ProcessSetup& setup) override {
         sampleRate_=setup.sampleRate;
+        player_.requestVoiceReset(); // different output rate invalidates old increments
         cancel();
         return SingleComponentEffect::setupProcessing(setup);
     }
@@ -978,6 +1039,9 @@ public:
                 std::memory_order_acquire);
             loadFailed_=false;
         }
+        // A restored project is a new musical context, even after a
+        // *successful* bank load: retire voices from the previous project.
+        player_.requestVoiceReset();
         // Project load may occur concurrently with audio. Never modify
         // activeRun_ or run_ from the state thread; process() observes
         // Run=Off and stops at its next callback.
@@ -990,6 +1054,7 @@ public:
     }
     tresult PLUGIN_API setActive(TBool active) override {
         if(!active) {
+            player_.requestVoiceReset();
             cancel();
             runGate_.disarm();
             for(auto& held:midiHeld_)held.store(false,std::memory_order_relaxed);
@@ -1316,7 +1381,15 @@ class Recorder final : public V::SingleComponentEffect,
                        public VSTGUI::VST3EditorDelegate {
 public:
     static FUnknown* createInstance(void*) {return (V::IAudioProcessor*)new Recorder();}
-    ~Recorder() override {stopWorker();}
+    ~Recorder() override {
+        stopWorker();
+        session().releaseRecorder(this);
+    }
+    tresult PLUGIN_API terminate() override {
+        stopWorker();
+        session().releaseRecorder(this);
+        return SingleComponentEffect::terminate();
+    }
     Steinberg::IPlugView* PLUGIN_API createView(Steinberg::FIDString name) override {
         if(Steinberg::FIDStringsEqual(name,V::ViewType::kEditor)){
             auto* editor=new VSTGUI::VST3Editor(this,"recorder","recorder.uidesc");
@@ -1356,8 +1429,11 @@ public:
         recorderStatusLabel_=nullptr;
     }
     tresult PLUGIN_API initialize(FUnknown* context) override {
-        if(SingleComponentEffect::initialize(context)!=Steinberg::kResultOk)
+        if(!session().acquireRecorder(this))return Steinberg::kResultFalse;
+        if(SingleComponentEffect::initialize(context)!=Steinberg::kResultOk){
+            session().releaseRecorder(this);
             return Steinberg::kResultFalse;
+        }
         addAudioInput(STR16("Stereo Input"),V::SpeakerArr::kStereo);
         addAudioOutput(STR16("Stereo Output"),V::SpeakerArr::kStereo);
         return Steinberg::kResultOk;
@@ -1373,9 +1449,22 @@ public:
         if(active) {
             if(!worker_.joinable()){
                 exit_.store(false,std::memory_order_release);
-                worker_=std::thread([this]{consume();});
+                worker_=std::thread([this]{
+                    // No exception from a worker may escape into std::terminate
+                    // and kill the hosting DAW (including std::bad_alloc).
+                    try{consume();}catch(...){
+                        const auto gen=session().generation.load(std::memory_order_acquire);
+                        session().errors.fetch_add(1,std::memory_order_relaxed);
+                        session().interruptedGeneration.store(gen,std::memory_order_release);
+                        session().anchor.store(kDisarmed,std::memory_order_release);
+                        session().writerFinishedGeneration.store(gen,std::memory_order_release);
+                    }
+                });
             }
-        } else stopWorker();
+        } else {
+            stopWorker();
+            session().recorderBoundEpoch.store(0,std::memory_order_release);
+        }
         active_.store(active!=0,std::memory_order_release);
         return SingleComponentEffect::setActive(active);
     }
@@ -1385,6 +1474,17 @@ public:
            data.numInputs==0 || !data.inputs || data.symbolicSampleSize!=V::kSample32 ||
            !data.inputs[0].channelBuffers32 || !worker_.joinable() || data.numSamples<=0)
             return Steinberg::kResultOk;
+        const auto epoch=session().ownerEpoch.load(std::memory_order_acquire);
+        if(!session().generatorOwner.load(std::memory_order_acquire))
+            return Steinberg::kResultOk;
+        auto bound=session().recorderBoundEpoch.load(std::memory_order_acquire);
+        if(bound==0){
+            auto empty=std::uint64_t{0};
+            (void)session().recorderBoundEpoch.compare_exchange_strong(
+                empty,epoch,std::memory_order_acq_rel);
+            bound=session().recorderBoundEpoch.load(std::memory_order_acquire);
+        }
+        if(bound!=epoch)return Steinberg::kResultOk;
         const auto generationBefore=session().generation.load(std::memory_order_acquire);
         const auto anchor=session().anchor.load(std::memory_order_acquire);
         if(anchor==kDisarmed) return Steinberg::kResultOk;
@@ -1460,6 +1560,7 @@ private:
         a125::ArchivePlayback recordedPlayback;
         bool configWasVerified=false;
         std::uint32_t closedGeneration=0;
+        std::uint64_t runOwnerEpoch=0;
         std::uint64_t runWritten=0,runRejected=0,runSilent=0,runErrors=0;
         std::uint64_t droppedAtRunStart=0;
         auto root=outputRoot();
@@ -1488,7 +1589,10 @@ private:
                     runWritten==recordedConfig.takeCount() &&
                     runRejected==0 && runSilent==0 && runErrors==0 &&
                     queue_.dropped()==droppedAtRunStart &&
-                    session().interruptedGeneration.load(std::memory_order_acquire)!=generation;
+                    session().interruptedGeneration.load(std::memory_order_acquire)!=generation &&
+                    runOwnerEpoch!=0 &&
+                    session().ownerEpoch.load(std::memory_order_acquire)==runOwnerEpoch &&
+                    session().generatorOwner.load(std::memory_order_acquire)!=nullptr;
                 if(complete){
                     try {
                         const auto stem=a125::safe125AStem(recordedName);
@@ -1552,6 +1656,7 @@ private:
         auto openRun=[&](std::uint32_t gen) {
             // Snapshot the immutable MIDI plan and user-selected folder
             // outside the audio thread, once per recorder generation.
+            runOwnerEpoch=session().recorderBoundEpoch.load(std::memory_order_acquire);
             recordedConfig=session().read();
             recordedName=session().captureName();
             recordedPlayback=session().readCapturedPlayback();
