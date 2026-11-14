@@ -513,17 +513,30 @@ public:
         return loaded;
     }
     void monitorBanks() noexcept {
-        // Recorder publishes only complete banks; playback import must work
-        // without any VSTGUI editor, and must never touch process().
-        std::uint32_t attemptedGeneration=0;
+        // Recorder publishes only complete banks. The first non-realtime
+        // ZIP open can fail transiently (AV/file-sharing/IO). Do not mark a
+        // generation handled until the in-memory sampler has actually
+        // published its bank. Retry for at most ~8 seconds, then surface
+        // failure without loading partial or different instruments.
+        std::uint32_t publishedGeneration=0;
+        std::uint32_t failedGeneration=0;
+        unsigned failures=0;
         while(!stopBankWorker_.load(std::memory_order_acquire)){
             const auto ready=session().readyBankGeneration.load(std::memory_order_acquire);
             const auto current=session().generation.load(std::memory_order_acquire);
-            if(ready!=0 && ready!=attemptedGeneration && ready==current){
-                const auto path=session().latestCompletedRun.chosenFolder();
-                if(!path.empty()){
-                    attemptedGeneration=ready; // one read per completed run
-                    loadSamples(path);
+            if(ready!=0 && ready!=publishedGeneration && ready==current){
+                if(failedGeneration!=ready){
+                    failedGeneration=ready;
+                    failures=0;
+                }
+                if(failures<200){
+                    const auto path=session().latestCompletedRun.chosenFolder();
+                    if(!path.empty()){
+                        if(loadSamples(path)){
+                            publishedGeneration=ready;
+                            failures=0;
+                        }else ++failures;
+                    }else ++failures;
                 }
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(40));
