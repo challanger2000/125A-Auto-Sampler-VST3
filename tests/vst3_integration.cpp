@@ -29,6 +29,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <iterator>
 #include <stdexcept>
 #include <set>
@@ -1686,7 +1687,7 @@ int runRestoreRace(const char* vst3path,bool mutant,bool invalidNameMutant=false
 // The test-only negative mutants reproduce the previous rejection-preemption
 // bug and an allocation exception AFTER publication, respectively.
 int runRestoreTransactionFaults(const char* vst3path,
-                                bool staleRejectedMutant,bool allocationMutant){
+                                bool staleRejectedMutant,bool allocationMutant,bool onlyAllocation=false){
     require(kRate==44100 && kBlock==256,
             "S02/F01 transaction fixture requires 44.1kHz/256");
     namespace fs=std::filesystem;
@@ -1850,7 +1851,7 @@ int runRestoreTransactionFaults(const char* vst3path,
         require(generator.component->setState(&baseline)==kResultOk,
                 "S02/F01 cannot initialize state B");
     };
-    if(!allocationMutant){
+    if(!onlyAllocation){
         // Four distinct rejected later requests: name, invalid version,
         // NaN first normalized parameter, and truncated parameter stream.
         for(int kind=0;kind<4;++kind){
@@ -1926,13 +1927,15 @@ int runRestoreTransactionFaults(const char* vst3path,
         beforeFault(0);
         verify(newBank,newFolder,"Initial",newParams,.4f,
                "F01 preparation exception altered previous project");
-        earlier.rewind();
-        afterFault(1);
-        require(generator.component->setState(&earlier)==kResultFalse,
-                "F01 injected postpublish mutant did not throw");
-        afterFault(0);
-        verify(newBank,newFolder,"Initial",newParams,.4f,
-               "F01 allocation failure left partially committed bank");
+        if(allocationMutant){
+            earlier.rewind();
+            afterFault(1);
+            require(generator.component->setState(&earlier)==kResultFalse,
+                    "F01 injected postpublish mutant did not throw");
+            afterFault(0);
+            verify(newBank,newFolder,"Initial",newParams,.4f,
+                   "F01 allocation failure left partially committed bank");
+        }
     }
     fs::remove_all(root);
     std::cout<<"[PASS] S02/F01 native VST3 transaction and allocation scenario\n";
@@ -2187,8 +2190,10 @@ int main(int argc,char** argv){
             return runRestoreTransactionFaults(argv[1],false,false);
         if(mode=="restore-commit-race-mutant")
             return runRestoreTransactionFaults(argv[1],true,false);
+        if(mode=="restore-oom")
+            return runRestoreTransactionFaults(argv[1],false,false,true);
         if(mode=="restore-oom-mutant")
-            return runRestoreTransactionFaults(argv[1],false,true);
+            return runRestoreTransactionFaults(argv[1],false,true,true);
         require(mode.empty() || mode=="matrix" || mode=="custom" ||
                 mode=="pending" || mode=="priority" || mode=="pending-mutant" ||
                 mode=="priority-no-replay",
