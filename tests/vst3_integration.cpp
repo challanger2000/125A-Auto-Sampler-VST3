@@ -542,7 +542,7 @@ int run(const char* vst3path,bool matrix,bool customFolder){
         for(double value:params)require(io.writeDouble(value),
             "cannot serialize native sampler parameters");
         require(io.writeInt32(0),"native bank requires no external export path");
-        const auto folder=capturedRunDirectory.u8string();
+        auto folder=capturedRunDirectory.u8string();
         require(io.writeInt32(static_cast<int32>(folder.size())),
             "cannot serialize captured WAV bank folder length");
         int32 actual=0;
