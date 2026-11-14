@@ -456,6 +456,58 @@ void testP015DynamicsAndGate() {
     fs::remove_all(dir);
 }
 
+void testP016NormalizePolyphonicHeadroom() {
+    namespace fs=std::filesystem;
+    const auto dir=fs::temp_directory_path()/"125a_p016_polyphonic_normalize";
+    fs::remove_all(dir);
+    fs::create_directories(dir);
+    try {
+        // A full-scale-ish sustained waveform exposes the previous hard
+        // clipper immediately: 2 voices at -1 dBFS would sum to +5 dBFS.
+        const std::vector<a125::StereoFrame> sample(512,{.8f,-.8f});
+        a125::writeWav24((dir/"N60_V100_RR01.wav").string(),44100,sample);
+        auto bank=a125::loadCapturedBank(dir);
+        require(bank && bank->zones.size()==1,"P016 load mono-root stereo WAV");
+        a125::BuiltInSampler player;
+        require(player.publish(std::move(bank)),"P016 publish WAV bank");
+        player.setNormalize(true);
+        player.noteOn(60,100,44100.);
+        auto a=player.renderOne();
+        const float target=std::pow(10.f,-1.f/20.f);
+        require(std::abs(a[0]-target)<.002f,
+            "P016 single normalized sample must retain -1 dBFS target");
+        // Overlap 8 one-shot notes without Note-Off; no hard clip or
+        // intermodulation from a saturating output stage is acceptable.
+        for(int i=0;i<7;++i)player.noteOn(60,100,44100.);
+        for(int frame=0;frame<200;++frame) {
+            a=player.renderOne();
+            require(std::isfinite(a[0]) && std::isfinite(a[1]) &&
+                    std::abs(a[0])<=target+.002f &&
+                    std::abs(a[1])<=target+.002f,
+                "P016 normalized 8-voice sum must not overload or clip");
+        }
+        require(std::abs(a[0]-target)<.003f,
+            "P016 normalized 8-voice sum must retain musical level");
+        // New note after silence must recover the level of a single note.
+        for(int i=0;i<600;++i)player.renderOne();
+        player.noteOn(60,100,44100.);
+        a=player.renderOne();
+        require(std::abs(a[0]-target)<.003f,
+            "P016 normalize headroom must reset after note tails end");
+        // Without Normalize, the sampler must not destroy float peaks
+        // by hard-clipping: the DAW may apply a downstream linear gain.
+        for(int i=0;i<600;++i)player.renderOne();
+        player.setNormalize(false);
+        player.noteOn(60,100,44100.);
+        player.noteOn(60,100,44100.);
+        a=player.renderOne();
+        require(a[0]>1.55f && a[1]<-1.55f,
+            "P016 float playback must preserve unclipped multi-voice peaks");
+        std::cout<<"[PASS] P016 Normalize: safe 8-voice sum, 1-voice recovery, unclipped float bus\\n";
+    }catch(...){fs::remove_all(dir);throw;}
+    fs::remove_all(dir);
+}
+
 void testSfzKeyboardBank() {
     a125::JobConfig config;
     config.firstNote=60;
@@ -628,6 +680,7 @@ int main() {
         testRunDisplayTruthfulness();
         testNativeSamplerPlayback();
         testP015DynamicsAndGate();
+        testP016NormalizePolyphonicHeadroom();
         testSfzKeyboardBank();
         testAutomaticBatch48Wavs();
         testWavAndTrim();
