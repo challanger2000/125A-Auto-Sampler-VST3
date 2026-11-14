@@ -7,6 +7,7 @@
 #include <ole2.h>
 #include "base/source/fobject.h"
 #include "pluginterfaces/gui/iplugview.h"
+#include "core/InstrumentArchive.h"
 #include "pluginterfaces/vst/ivsteditcontroller.h"
 #include "public.sdk/source/vst/hosting/module.h"
 #include "public.sdk/source/vst/utility/memoryibstream.h"
@@ -586,6 +587,8 @@ int run(const char* vst3path,bool matrix,bool customFolder){
     std::size_t wavs=0,reports=0;
     std::set<std::string> expectedNames;
     std::filesystem::path capturedRunDirectory;
+    std::filesystem::path capturedArchive;
+    std::size_t archiveCount=0;
     for(int note=60;note<=(matrix?61:60);++note)
         for(const int vel:matrix?std::vector<int>{40,80,120}:std::vector<int>{100})
             for(int rr=1;rr<=8;++rr)
@@ -601,6 +604,14 @@ int run(const char* vst3path,bool matrix,bool customFolder){
                 "wrong, duplicated or unexpected note/velocity/RR WAV filename");
             ++wavs;
             capturedRunDirectory=entry.path().parent_path();
+        } else if(entry.path().extension()==".125A"){
+            capturedArchive=entry.path();
+            ++archiveCount;
+            std::string instrumentName;
+            auto bank=a125::load125AArchive(capturedArchive,&instrumentName);
+            require(bank && bank->zones.size()==static_cast<std::size_t>(expectedTakes) &&
+                    instrumentName=="Untitled Instrument",
+                "P017 captured .125A is not a playable, self-contained ZIP");
         } else if(entry.path().filename()=="RUN-REPORT.csv"){
             std::ifstream in(entry.path());
             const std::string report((std::istreambuf_iterator<char>(in)),{});
@@ -611,11 +622,14 @@ int run(const char* vst3path,bool matrix,bool customFolder){
                     report.find("SUMMARY,droppedFrames,0")!=std::string::npos &&
                     report.find("BANK,125A_WAVS_READY")!=std::string::npos,
                     "native bank readiness not confirmed by recorder");
+            require(report.find("ARCHIVE,125A_READY")!=std::string::npos,
+                "P017 recorder did not persist a complete .125A archive");
             ++reports;
         }
     }
     require(static_cast<int>(wavs)==expectedTakes && expectedNames.empty() &&
-            reports==1 && !capturedRunDirectory.empty(),
+            reports==1 && archiveCount==1 && !capturedArchive.empty() &&
+            !capturedRunDirectory.empty(),
             "native 125A bank must contain every requested sample WAV");
     if(customFolder){
         require(!std::filesystem::exists(base/"Documents"/"125A AutoSampler"),
@@ -635,7 +649,9 @@ int run(const char* vst3path,bool matrix,bool customFolder){
         for(double value:params)require(io.writeDouble(value),
             "cannot serialize native sampler parameters");
         require(io.writeInt32(0),"native bank requires no external export path");
-        auto folder=capturedRunDirectory.u8string();
+        // The DAW state must restore a portable .125A archive, not
+        // an obsolete absolute directory full of loose recordings.
+        auto folder=capturedArchive.u8string();
         require(io.writeInt32(static_cast<int32>(folder.size())),
             "cannot serialize captured WAV bank folder length");
         int32 actual=0;
@@ -644,7 +660,7 @@ int run(const char* vst3path,bool matrix,bool customFolder){
             "cannot serialize captured WAV bank");
         bankState.rewind();
         require(generator.component->setState(&bankState)==kResultOk,
-            "125A plugin failed to load its own recorded WAV bank");
+            "P017 125A plugin failed to load its own recorded ZIP instrument");
         ResizableMemoryIBStream saved;
         require(generator.component->getState(&saved)==kResultOk,
             "125A cannot save playable bank in project");
@@ -687,6 +703,8 @@ int run(const char* vst3path,bool matrix,bool customFolder){
         require(generator.component->setActive(false)==kResultOk,
             "native player could not deactivate after audio output");
         generator.active=false;
+        std::cout<<"[PASS] P017 PORTABLE .125A: ZIP archive auto-export, "
+                     "native load and DAW state restore\n";
         std::cout<<"[PASS] P013 BUILT-IN 125A VST3 PLAYER: "
                  <<audible<<" audible PCM frames from real captured WAV bank; "
                  <<"MIDI note / velocity / project restore\n";
