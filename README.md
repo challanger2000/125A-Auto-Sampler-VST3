@@ -7,6 +7,17 @@
 - **125A AutoSampler MIDI:** generiert Note-On/Off, Notenbereiche, Velocity-Stufen und Round Robins; eigene anthrazitfarbene VSTGUI-Oberfläche mit Start/Stop und Live-Zählern.
 - **125A AutoSampler Recorder:** letzter Audio-Insert auf dem Quellinstrument, sammelt dessen echte Audiosamples und schreibt separate WAVs auf einem Hintergrundthread.
 
+## P011/P012 – automatische SFZ-Bank und verständlicher Exportstatus
+
+**P011 (Windows PASS):** Ein vollständig erfolgreicher Sampling-Run erzeugt neben den WAVs automatisch eine verschiebbare `125A AutoSampler.sfz` mit **Tastaturzonen, Velocity-Layern und 1–16 Round Robins**. Beim STOP, bei stummen oder verlorenen Samples sowie bei Schreibfehlern wird keine unvollständige Sampler-Bank ausgegeben. [P011: Windows-Build und Test](https://github.com/challanger2000/125A-Auto-Sampler-VST3/actions/runs/43539385851) – erneut **72/72 WAVs** mit korrekten SFZ-Referenzen.
+
+**P012:** Die GUI unterscheidet jetzt `COMPLETE` nur bei voller Ausgabe, `PARTIAL / FAILED`, `FAILED`, `ABORTED` und `NO AUDIO RECORDER`. Die neue Statuslogik soll einen fehlenden Recorder nicht mehr endlos als `FINALIZING` anzeigen.
+
+**SFZ-Grenze:** Die erste Bank nutzt `loop_mode=one_shot`: Jede gesampelte Note wird mit ihrem aufgenommenen Ausklang einmal abgespielt. Es gibt noch keine automatischen Sustain-Loops. Die SFZ-Wiedergabe in einem externen Sampler ist noch nicht praktisch abgenommen.
+
+- [P011 – SFZ-Erzeugung und Tests](docs/P011-SFZ-BANK.md)
+- [P012 – Aufnahme-/Fehlerstatus](docs/P012-RUN-STATUS.md)
+
 ## P010 – wählbarer WAV-Ausgabeordner
 
 Die MIDI-GUI besitzt jetzt **CHOOSE FOLDER** (Windows-Ordnerdialog) und **DEFAULT** (Rückkehr zum Standardverzeichnis). Der aktuell ausgewählte Ordner wird angezeigt und mit dem DAW-Projekt gespeichert. Der Recorder übernimmt die Auswahl zu Beginn jedes neuen Runs auf seinem Datei-Worker; der Audiothread bleibt frei von Dateioperationen und Sperren. Der Default bleibt `%USERPROFILE%\\Documents\\125A AutoSampler`.
@@ -58,4 +69,4 @@ Ein privater, **nicht ausgelieferter Windows-Test-Host** lädt beide **tatsächl
 - [P005: historischer Nachweis](docs/P005-VALIDATION.md)
 - [PR #2](https://github.com/challanger2000/125A-Auto-Sampler-VST3/pull/2)
 
-**Noch nicht als fertiges Produkt freigegeben.** Die vollständige Weiterleitung MIDI → Fremd-VST → Recorder innerhalb **Fender Studio Pro** sowie ASIO-Hardware und die finale Bedienung im echten Song sind noch nicht abgenommen. Der synthetische Windows-Test ist kein Klangtest mit EVM Isotope. P010 bleibt ein Entwicklungsstand.
+**Noch nicht als fertiges Produkt freigegeben.** Die vollständige Weiterleitung MIDI → Fremd-VST → Recorder innerhalb **Fender Studio Pro** sowie ASIO-Hardware und die finale Bedienung im echten Song sind noch nicht abgenommen. Der synthetische Windows-Test ist kein Klangtest mit EVM Isotope. P012 bleibt ein Entwicklungsstand.

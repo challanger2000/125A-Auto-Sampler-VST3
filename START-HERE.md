@@ -1,6 +1,6 @@
-# START HERE – 125A AutoSampler P010
+# START HERE – 125A AutoSampler P012
 
-## 1. Was bis P010 getestet ist
+## 1. Was bis P011 getestet ist; P012 in Windows-QA
 
 - Windows-x64-VST3 mit zwei echten Klassen: MIDI-Generator und Audio-Recorder
 - VSTGUI-Editor tatsächlich über Win32-HWND geöffnet, Status-Timer gestartet und sauber geschlossen
@@ -10,6 +10,16 @@
 - Getrennte RUN-REPORT.csv-Einträge; korrupte und abgebrochene Takes werden nicht exportiert
 
 [P010 Windows-Build samt VST3-Artefakt – PASS](https://github.com/challanger2000/125A-Auto-Sampler-VST3/actions/runs/43538521360) – ZIP-Name **125A-AutoSampler-P010-Win64**. Nur die VST3-Datei installieren; das Testprogramm ist nicht Bestandteil des Plugins.
+
+## P011/P012 – SFZ-Instrument automatisch mit ausgeben
+
+Bei einem **vollständig erfolgreichen** Durchlauf entstehen automatisch die PCM24-Stereo-WAVs und die Datei `125A AutoSampler.sfz` **im selben Run-Ordner**. Die SFZ-Datei lässt sich als gemapptes Instrument in einem SFZ-kompatiblen Sampler laden. WAV-Dateien immer zusammen mit der SFZ im Ordner lassen oder gemeinsam verschieben.
+
+SFZ ordnet gesampelte Noten inklusive Zwischentönen, Velocity-Layer und Round Robins zu. Stand P011 ist **One-Shot-Abspielung**, keine automatische Sustain-Loop-Erkennung. Bei fehlender, stummer oder beschädigter WAV sowie bei Abbruch entsteht bewusst **keine** SFZ-Bank; `RUN-REPORT.csv` enthält dann `BANK,SKIPPED_INCOMPLETE` beziehungsweise `BANK,SFZ_ERROR`. Bei Erfolg erscheint `BANK,SFZ_CREATED,125A AutoSampler.sfz`.
+
+Die P012-GUI zeigt `COMPLETE` nur bei fehlerfreiem Export, sonst `PARTIAL / FAILED`, `FAILED` oder `ABORTED`; ohne aktiven Recorder nach Ende des Durchlaufs `NO AUDIO RECORDER`.
+
+Siehe [P011-SFZ-Dokumentation](docs/P011-SFZ-BANK.md) und [P012-Statusregeln](docs/P012-RUN-STATUS.md).
 
 ## P010 – Ausgabeordner wählen
 
@@ -61,7 +71,7 @@ Erwartetes Ausgabeverzeichnis:
 
 `%USERPROFILE%\Documents\125A AutoSampler\Run_<Zeit>_G<Generation>_<Zähler>\`
 
-Bei erfolgreichem Test befinden sich acht Dateien `N60_V100_RR01.wav` bis `N60_V100_RR08.wav` im Verzeichnis. **RUN-REPORT.csv** muss acht `OK`-Zeilen sowie `SUMMARY,exported,8`, `SUMMARY,rejected,0` und `SUMMARY,droppedFrames,0` enthalten.
+Bei erfolgreichem Test befinden sich acht Dateien `N60_V100_RR01.wav` bis `N60_V100_RR08.wav` und die gemappte Datei `125A AutoSampler.sfz` im Verzeichnis. **RUN-REPORT.csv** muss acht `OK`-Zeilen sowie `SUMMARY,exported,8`, `SUMMARY,rejected,0` und `SUMMARY,droppedFrames,0` enthalten.
 
 **Bei fehlendem MIDI-Routing oder Stille ist das kein PASS.** Der Recorder meldet `SILENCE`, `INCOMPLETE`, `ABORTED`, `INVALID` oder `EXPORT_ERROR`, statt fehlerhafte Takes als funktionierende WAV-Dateien auszugeben. Diese Resultate erscheinen im Bericht; die GUI zeigt dazu Zähler.
 
@@ -86,6 +96,7 @@ Bei mehreren aktiven Velocity-Layern werden ihre Werte aufsteigend angeordnet. *
 - Bisher nur **ein** Generator-/Recorder-Paar je Host-Prozess
 - Benutzerauswahl per GUI-Ordnerdialog implementiert, aber in Fender Studio Pro noch nicht praktisch getestet
 - Eigener DAW-Transportstart aus dem Plugin ist nicht garantiert; Play muss in Fender Studio Pro laufen
+- Die neue SFZ-Bank wurde noch nicht mit einem tatsächlichen externen Sampler musikalisch abgespielt
 - Keine bestätigte Fender-Studio-Pro-End-to-End-Abnahme mit EVM Isotope
 - Kein physischer ASIO-Hardwaretest; dieser folgt erst bei der abschließenden DAW-Praxisabnahme
 - 125A Plugin Test Lab P68/P74 behandelt Mehrklassen-VST3 noch nicht automatisch; der P006-Windows-Integrationstest ist eine separate, produktbezogene echte VST3-Prüfung, **keine Behauptung über einen Lab-P74-PASS**
