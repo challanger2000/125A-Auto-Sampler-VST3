@@ -31,6 +31,7 @@ Nach dem Laden einer Bank stehen direkt im 125A-Editor zur Verfügung:
 - **ONE SHOT / GATE:** One-Shot ist Standard und spielt die gesamte kurze Aufnahme unabhängig vom Loslassen der Taste. Gate schaltet Note-Off und die Amp-Release-Phase frei.
 - **AMP ADSR:** Attack 0–2 Sekunden, Decay 0–3 Sekunden, Sustain 0–100 %, Release 0–3 Sekunden. Ohne zusätzliches Processing bleibt der aufgezeichnete Originalklang hörbar.
 - **NOTE STEP:** Bereits vorhanden: 1–12 Halbtöne (etwa C1/C2/C3/C4 mit Step 12); der interne Player transponiert die Lücken.
+- **Schneller Vintage-Start:** Die Werkseinstellung nimmt nur **1 Round Robin**, **1 Velocity-Layer** und pro Take **0,5 Sekunden Note + 0,5 Sekunden Ausklang + 0,1 Sekunden Pause** auf. NOTE STEP steht zunächst auf **12 Halbtönen**. Für besondere Klänge kann alles bewusst verlängert oder dichter gesampelt werden.
 
 Ein einfacher dunkel gehaltener VSTGUI-Testbereich ist angefügt. Die 18 Parameter sind DAW-automatisierbar. Die komplette Aufnahme-WAV wird ohne Sustain-Loop gespielt. Für Vintage-One-Shots bewusst kein Loop-Editor, keine Effektkette und keine komplexe Modulationsmatrix.
 
