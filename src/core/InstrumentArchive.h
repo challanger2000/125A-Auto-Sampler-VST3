@@ -84,9 +84,12 @@ inline std::string safe125AStem(std::string_view displayName){
     std::string upper=stem;
     std::transform(upper.begin(),upper.end(),upper.begin(),
         [](unsigned char c){return static_cast<char>(std::toupper(c));});
-    if(upper=="CON" || upper=="PRN" || upper=="AUX" || upper=="NUL" ||
-       (upper.size()==4 && (upper.starts_with("COM") || upper.starts_with("LPT")) &&
-        upper[3]>='1' && upper[3]<='9'))stem+="_";
+    // Windows reserves DOS device basenames even when a suffix follows a dot.
+    // E.g. CON.bass.125A and LPT1.take.125A cannot be created normally.
+    const auto device=upper.substr(0,upper.find('.'));
+    if(device=="CON" || device=="PRN" || device=="AUX" || device=="NUL" ||
+       (device.size()==4 && (device.starts_with("COM") || device.starts_with("LPT")) &&
+        device[3]>='1' && device[3]<='9'))stem+="_";
     return stem;
 }
 inline bool valid125AName(const std::string& name){
@@ -513,7 +516,8 @@ inline std::unique_ptr<SampleBank> load125AArchive(
             if(!readCapturedWavBytes(pcm,zone) ||
                (sampleRate!=0 && sampleRate!=zone.sampleRate))return {};
             sampleRate=zone.sampleRate;
-            groups[{zone.root,zone.velocity}].insert(zone.rr);
+            if(!groups[{zone.root,zone.velocity}].insert(zone.rr).second)
+                return {}; // semantic tuple duplicated under a different ZIP name
             bank->zones.push_back(std::move(zone));
         }
         for(const auto& [key,rounds]:groups){

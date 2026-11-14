@@ -833,8 +833,24 @@ int run(const char* vst3path,bool matrix,bool customFolder){
             require(std::abs(genL[static_cast<std::size_t>(i)])<1.e-7f &&
                     std::abs(genR[static_cast<std::size_t>(i)])<1.e-7f,
                 "P024 DAW state without PCM fingerprint played an unverified bank");
-        std::cout<<"[PASS] P024 unverified modern project bank fails closed; "
-                    "no wrong-name sample is audible\\n";
+        // A01: project Autosave must never authorize a rejected ZIP.
+        // This is the exact native DLL/component->getState->setState chain.
+        ResizableMemoryIBStream repeatedState;
+        require(generator.component->getState(&repeatedState)==kResultOk,
+                "A01 failed recalled state must still be saveable");
+        repeatedState.rewind();
+        require(generator.component->setState(&repeatedState)==kResultOk,
+                "A01 second recall of the saved rejected state failed");
+        std::fill(genL.begin(),genL.end(),.123f);
+        std::fill(genR.begin(),genR.end(),.123f);
+        require(generator.processor->process(probe)==kResultOk,
+                "A01 replay after second recall failed");
+        for(int32 i=0;i<kBlock;++i)
+            require(std::abs(genL[static_cast<std::size_t>(i)])<1.e-7f &&
+                    std::abs(genR[static_cast<std::size_t>(i)])<1.e-7f,
+                "A01 saved rejected state became audible on second recall");
+        std::cout<<"[PASS] P024/A01 rejected project bank remains silent "
+                    "through save and second recall\\n";
     }
     // P013: the SAME 125A instrument must directly play the just-recorded
     // WAV bank. No SFZ file, second sampler, or external playback VST.

@@ -418,6 +418,10 @@ public:
         return view;
     }
     void valueChanged(VSTGUI::CControl* control) override {
+        // VSTGUI kick-style buttons notify both press and reset. Commands
+        // (including file pickers) must execute only on the active edge.
+        if(control && control!=instrumentNameEdit_ &&
+           control->getValue()<=control->getMin())return;
         if(control==octaveDownButton_){scrollKeyboard(-12);return;}
         if(control==octaveUpButton_){scrollKeyboard(12);return;}
         if(control==instrumentNameEdit_){
@@ -474,10 +478,13 @@ public:
         // Worker/UI/state threads can all request a bank, but never ASIO.
         // Loaded PCM stays alive so a voice can safely finish during a swap.
         bool loaded=false;
-        if(captureGeneration){
+        std::uint64_t expectedSelection=0;
+        {
             std::lock_guard<std::mutex> guard(bankMutex_);
-            if(bankCaptureGeneration_==captureGeneration)
-                return true; // explicit DAW/user bank choice already won
+            if(captureGeneration && captureGeneration<=bankCaptureGeneration_)
+                return true; // captured completion is already superseded
+            if(!captureGeneration)++selectionEpoch_; // explicit user/recall intent
+            expectedSelection=selectionEpoch_;
         }
         try {
             a125::ArchivePlayback archivePlayback;
@@ -491,7 +498,8 @@ public:
                 // DAW recall/import may have completed while this ZIP was
                 // being decoded. Do not let the stale worker overwrite it.
                 if(captureGeneration &&
-                   bankCaptureGeneration_==captureGeneration)return true;
+                   (expectedSelection!=selectionEpoch_ ||
+                    captureGeneration<=bankCaptureGeneration_))return true;
                 if(player_.publish(std::move(bank))){
                     bankFolder_=path;
                     bankFingerprint_=archive?a125::archive125AFingerprint(path):std::nullopt;
@@ -528,7 +536,8 @@ public:
         if(!loaded){
             std::lock_guard<std::mutex> guard(bankMutex_);
             if(captureGeneration &&
-               bankCaptureGeneration_==captureGeneration)return true;
+               (expectedSelection!=selectionEpoch_ ||
+                captureGeneration<=bankCaptureGeneration_))return true;
             loadFailed_=true;
         }
         return loaded;
@@ -805,7 +814,9 @@ public:
                 const auto newest=session().latestCompletedRun.chosenFolder();
                 if(newest.extension()==".125A"){
                     savedBankPath=newest;
-                    savedFingerprint.reset();
+                    // Completed own capture is an authorized identity
+                    // source, unlike an arbitrary failed project recall.
+                    savedFingerprint=a125::archive125AFingerprint(newest);
                 }
             }
         }
@@ -825,8 +836,8 @@ public:
         Steinberg::int32 written=0;
         if(state->write(instrumentName.data(),nameLength,&written)!=Steinberg::kResultOk ||
            written!=nameLength)return Steinberg::kResultFalse;
-        if(!savedFingerprint && savedBankPath.extension()==".125A")
-            savedFingerprint=a125::archive125AFingerprint(savedBankPath);
+        // Never mint a fingerprint by saving a rejected/unverified bank.
+        // In particular, getState() must preserve fail-closed P024 recall.
         // 0 means no available archive identity. Persist every ZIP entry's
         // CRC contribution, not just the common instrument.json manifest.
         if(!io.writeInt64(static_cast<Steinberg::int64>(
@@ -920,6 +931,10 @@ public:
         }
         if(!session().setCaptureName(restoredName))
             return Steinberg::kResultFalse;
+        {
+            std::lock_guard<std::mutex> guard(bankMutex_);
+            ++selectionEpoch_; // invalidate in-flight older autoimports
+        }
         // A recalled DAW project must not inherit a queued GUI audition
         // click or stuck keyboard light from the previous song/session.
         previewOn_.store(-1,std::memory_order_release);
@@ -949,7 +964,7 @@ public:
                 std::lock_guard<std::mutex> guard(bankMutex_);
                 player_.clearCurrent();
                 bankFolder_=restoredBank;
-                bankFingerprint_.reset();
+                bankFingerprint_=legacyIdentity?std::nullopt:fingerprint;
                 bankCaptureGeneration_=session().readyBankGeneration.load(
                     std::memory_order_acquire);
                 loadFailed_=true;
@@ -1135,10 +1150,13 @@ private:
                     const int velocity=static_cast<int>(
                         std::lround(std::clamp(e.noteOn.velocity,0.f,1.f)*127.f));
                     if(velocity>0)
-                        player_.noteOn(e.noteOn.pitch,velocity,sampleRate_);
-                    else player_.noteOff(e.noteOn.pitch);
+                        player_.noteOn(e.noteOn.pitch,velocity,sampleRate_,
+                                       e.noteOn.noteId,e.noteOn.channel);
+                    else player_.noteOff(e.noteOn.pitch,e.noteOn.noteId,
+                                         e.noteOn.channel);
                 }else if(e.type==V::Event::kNoteOffEvent){
-                    player_.noteOff(e.noteOff.pitch);
+                    player_.noteOff(e.noteOff.pitch,e.noteOff.noteId,
+                                     e.noteOff.channel);
                 }
                 ++eventIndex;
             }
@@ -1221,6 +1239,7 @@ private:
     std::filesystem::path bankFolder_{};
     std::optional<std::uint64_t> bankFingerprint_{};
     std::uint32_t bankCaptureGeneration_=0; // guarded by bankMutex_
+    std::uint64_t selectionEpoch_=0; // manual/recall commands supersede workers
     std::atomic<bool> stopBankWorker_{false};
     std::thread bankWorker_;
     bool loadFailed_=false;

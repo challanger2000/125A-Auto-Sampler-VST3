@@ -581,6 +581,7 @@ void testP017PortableArchive() {
         require(a125::safe125AStem("Vintage/Bad:*?Name")=="Vintage_Bad___Name",
             "P017 archive filenames must sanitize Windows reserved characters");
         require(a125::safe125AStem("CON")=="CON_" &&
+                a125::safe125AStem("CON.bass")=="CON.bass_" &&
                 a125::safe125AStem("lpt1.")=="lpt1_" &&
                 a125::safe125AStem("  ")=="Instrument",
             "P019 Windows reserved names and blank archive names must be safe");
@@ -769,6 +770,35 @@ void testAutomaticBatch48Wavs() {
     std::filesystem::remove_all(root);
 }
 
+void testAuditSamplerNoteIdentityAndNames() {
+    int key=0,velocity=0,rr=0;
+    require(!a125::parseSampleName("N060_V100_RR01.wav",key,velocity,rr) &&
+            !a125::parseSampleName("N60_V100_RR1.wav",key,velocity,rr),
+            "A09 duplicate semantic WAV aliases must be rejected");
+    require(a125::parseSampleName("N0_V1_RR01.wav",key,velocity,rr) &&
+            a125::parseSampleName("N127_V127_RR16.wav",key,velocity,rr),
+            "A09 canonical WAV boundaries must remain accepted");
+    auto bank=std::make_unique<a125::SampleBank>();
+    a125::SampleZone zone;
+    zone.root=60;zone.velocity=100;zone.rr=1;
+    zone.pcm.assign(200,{.25f,-.25f});
+    bank->zones.push_back(std::move(zone));
+    a125::BuiltInSampler player;
+    require(player.publish(std::move(bank)),"A14 sample bank publication");
+    player.setGate(true);
+    player.setEnvelope(0.f,0.f,1.f,0.f);
+    player.noteOn(60,100,44100.,3301,0);
+    player.noteOn(60,100,44100.,3302,0);
+    auto both=player.renderOne();
+    require(std::abs(both[0]-.5f)<.00001f,"A14 two independent notes sound");
+    player.noteOff(60,3301,0);
+    auto remaining=player.renderOne();
+    require(std::abs(remaining[0]-.25f)<.00001f,
+            "A14 NoteOff may not kill a separate noteId of equal pitch");
+    player.noteOff(60,3302,0);
+    require(player.renderOne()[0]==0.f,
+            "A14 last noteId off must release remaining voice");
+}
 void testWavAndTrim() {
     std::vector<a125::StereoFrame> samples(32,{0.f,0.f});
     for(int i=8;i<24;++i) samples[static_cast<std::size_t>(i)]={0.5f,-0.25f};
@@ -811,6 +841,7 @@ int main() {
         testSfzKeyboardBank();
         testAutomaticBatch48Wavs();
         testWavAndTrim();
+        testAuditSamplerNoteIdentityAndNames();
         std::cout << "P001 core tests PASSED\n";
         return 0;
     } catch(const std::exception& e) {

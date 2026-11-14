@@ -51,15 +51,20 @@ inline bool parseSampleName(const std::string& s,int& note,int& vel,int& rr) noe
         remainder.remove_prefix(prefix.size());
         return true;
     };
-    const auto number=[&](int& value) {
+    const auto number=[&](int& value,bool roundRobin=false) {
         const auto* begin=remainder.data();
         const auto [end,err]=std::from_chars(begin,begin+remainder.size(),value);
         if(err!=std::errc{} || end==begin)return false;
-        remainder.remove_prefix(static_cast<std::size_t>(end-begin));
+        const auto digits=static_cast<std::size_t>(end-begin);
+        // One canonical spelling per semantic sample tuple. A ZIP may
+        // contain distinct strings that otherwise select the same RR slot.
+        if((roundRobin && digits!=2) ||
+           (!roundRobin && digits>1 && *begin=='0'))return false;
+        remainder.remove_prefix(digits);
         return true;
     };
     return literal("N") && number(note) && literal("_V") && number(vel) &&
-           literal("_RR") && number(rr) && literal(".wav") && remainder.empty() &&
+           literal("_RR") && number(rr,true) && literal(".wav") && remainder.empty() &&
            note>=0 && note<=127 && vel>=1 && vel<=127 && rr>=1 && rr<=16;
 }
 
@@ -228,7 +233,7 @@ public:
         }
         return true;
     }
-    void noteOn(int key,int velocity,double outputRate) noexcept {
+    void noteOn(int key,int velocity,double outputRate,int noteId=-1,int channel=0) noexcept {
         clearVoicesIfRequested();
         if(key<0 || key>127 || velocity<1 || velocity>127 ||
            outputRate<8000 || outputRate>384000)return;
@@ -278,6 +283,8 @@ public:
             std::pow(2.,static_cast<double>(key-chosen->root)/12.);
         voice->stamp=++timestamp_;
         voice->key=key;
+        voice->noteId=noteId;
+        voice->channel=channel;
         voice->normalizeGain=bank->normalizeGain;
         voice->outputRate=outputRate;
         voice->sustain=sustain_;
@@ -291,11 +298,13 @@ public:
         if(voice->stage==Stage::Sustain)voice->level=voice->sustain;
         voice->releaseStep=0.f;
     }
-    void noteOff(int key) noexcept {
-        // One-Shot intentionally ignores Note-Off. Gate applies a proper
-        // release to each currently playing voice for that MIDI pitch.
+    void noteOff(int key,int noteId=-1,int channel=0) noexcept {
+        // For identified VST3 notes, release only the matching voice. Hosts
+        // using noteId=-1 fall back to the pitch + channel contract.
         if(!gate_)return;
-        for(auto& v:voices_)if(v.zone && v.key==key && v.stage!=Stage::Release){
+        for(auto& v:voices_)if(v.zone && v.channel==channel &&
+            (noteId>=0 ? v.noteId==noteId : v.key==key) &&
+            v.stage!=Stage::Release){
             if(release_<=0.f){v.zone=nullptr;continue;}
             v.releaseStep=v.level/static_cast<float>(
                 std::max(1.,release_*v.outputRate));
@@ -349,7 +358,7 @@ private:
         const SampleZone* zone=nullptr;
         double position=0.,increment=1.,outputRate=44100.;
         std::uint64_t stamp=0;
-        int key=0;
+        int key=0,noteId=-1,channel=0;
         float normalizeGain=1.f;
         float level=1.f,attackStep=0.f,decayStep=0.f,releaseStep=0.f;
         float sustain=1.f;
