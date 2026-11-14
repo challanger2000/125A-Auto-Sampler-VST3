@@ -106,6 +106,17 @@ struct Session {
     }
     mutable std::mutex nameMutex;
     std::string name="Untitled Instrument";
+    std::array<std::atomic<double>,7> capturedPlayback{0.,0.,0.,0.,1.,.05,.5};
+    void setCapturedPlayback(const a125::ArchivePlayback& value) noexcept {
+        for(std::size_t i=0;i<value.params.size();++i)
+            capturedPlayback[i].store(value.params[i],std::memory_order_relaxed);
+    }
+    a125::ArchivePlayback readCapturedPlayback() const noexcept {
+        a125::ArchivePlayback value;
+        for(std::size_t i=0;i<value.params.size();++i)
+            value.params[i]=capturedPlayback[i].load(std::memory_order_relaxed);
+        return value;
+    }
     std::atomic<int> firstNote{60},lastNote{60},step{12},roundRobins{1},layers{1};
     std::atomic<int> velocity0{100},velocity1{80},velocity2{120};
     std::atomic<std::uint64_t> hold{22050},tail{22050},gap{4410};
@@ -280,19 +291,38 @@ public:
             folderLabel_->setText(caption.c_str());
         }
     }
-    void loadSamples(const std::filesystem::path& path){
+    void loadSamples(const std::filesystem::path& path,
+                     bool applyInstrumentSettings=false){
         // Worker/UI/state threads can all request a bank, but never ASIO.
         // Loaded PCM stays alive so a voice can safely finish during a swap.
         bool loaded=false;
         try {
-            auto bank=path.extension()==".125A"?
-                a125::load125AArchive(path):a125::loadCapturedBank(path);
+            a125::ArchivePlayback archivePlayback;
+            std::string archiveName;
+            const bool archive=path.extension()==".125A";
+            auto bank=archive?
+                a125::load125AArchive(path,&archiveName,&archivePlayback):
+                a125::loadCapturedBank(path);
             if(bank){
                 std::lock_guard<std::mutex> guard(bankMutex_);
                 if(player_.publish(std::move(bank))){
                     bankFolder_=path;
                     loadFailed_=false;
                     loaded=true;
+                }
+                if(loaded && archive && applyInstrumentSettings){
+                    // GUI-initiated import; never invoke host parameter APIs
+                    // from the asynchronous bank monitor or the ASIO callback.
+                    for(std::size_t i=0;i<archivePlayback.params.size();++i){
+                        const auto index=static_cast<std::size_t>(
+                            kNormalizeParam-kRunParam)+i;
+                        values_[index].store(archivePlayback.params[i],
+                                             std::memory_order_release);
+                        SingleComponentEffect::setParamNormalized(
+                            static_cast<V::ParamID>(kNormalizeParam+i),
+                            archivePlayback.params[i]);
+                    }
+                    (void)session().setCaptureName(archiveName);
                 }
             }
         } catch(const std::exception&) {
@@ -698,6 +728,11 @@ public:
             if(blockStart>std::numeric_limits<std::int64_t>::max()-lead)
                 return Steinberg::kResultOk;
             const auto anchor=blockStart+lead;
+            a125::ArchivePlayback snapshot;
+            for(std::size_t i=0;i<snapshot.params.size();++i)
+                snapshot.params[i]=values_[static_cast<std::size_t>(
+                    kNormalizeParam-kRunParam)+i].load(std::memory_order_relaxed);
+            session().setCapturedPlayback(snapshot);
             session().publish(config_,static_cast<int>(sampleRate_),anchor);
             activeRun_=true;
         }
@@ -1020,6 +1055,7 @@ private:
         bool attemptedRun=false;
         a125::JobConfig recordedConfig{};
         std::string recordedName="Untitled Instrument";
+        a125::ArchivePlayback recordedPlayback;
         bool configWasVerified=false;
         std::uint32_t closedGeneration=0;
         std::uint64_t runWritten=0,runRejected=0,runSilent=0,runErrors=0;
@@ -1053,7 +1089,8 @@ private:
                         // archive with the same user-facing instrument name.
                         const auto archive=root/(stem+" ["+
                             dir.filename().string()+"].125A");
-                        a125::write125AArchive(dir,archive,recordedName);
+                        a125::write125AArchive(dir,archive,recordedName,
+                                               recordedPlayback);
                         report<<"ARCHIVE,125A_READY,"<<archive.filename().string()<<"\n";
                         report<<"BANK,125A_WAVS_READY\n";
                         // Reader imports the self-contained ZIP into RAM.
@@ -1094,6 +1131,7 @@ private:
             // outside the audio thread, once per recorder generation.
             recordedConfig=session().read();
             recordedName=session().captureName();
+            recordedPlayback=session().readCapturedPlayback();
             configWasVerified=recordedConfig.valid() &&
                 session().generation.load(std::memory_order_acquire)==gen;
             root=a125::ExportTarget::resolve(
