@@ -536,6 +536,13 @@ void testP017PortableArchive() {
             "P017 self-contained archive must preserve playback settings");
         require(a125::safe125AStem("Vintage/Bad:*?Name")=="Vintage_Bad___Name",
             "P017 archive filenames must sanitize Windows reserved characters");
+        require(a125::safe125AStem("CON")=="CON_" &&
+                a125::safe125AStem("lpt1.")=="lpt1_" &&
+                a125::safe125AStem("  ")=="Instrument",
+            "P019 Windows reserved names and blank archive names must be safe");
+        require(throws([&]{a125::write125AArchive(root/"takes",
+                root/"unsafe.125A",std::string("Bad\nName"));}),
+            "P019 control characters in instrument names must be rejected");
         require(bank->zones[0].root==60 && bank->zones[1].root==72 &&
                 bank->zones[0].pcm.size()==wave.size(),
             "P017 source WAVs must retain root mapping and frame count");
