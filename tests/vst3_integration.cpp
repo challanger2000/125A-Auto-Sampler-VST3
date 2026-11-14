@@ -1012,6 +1012,70 @@ int run(const char* vst3path,bool matrix,bool customFolder){
             "native 125A player rendered silence instead of recorded instrument");
         require(outputMidi.getEventCount()==0,
             "native playback mode should not emit a new sampling sequence");
+        // A14 N03: two VST3 NoteOns with the SAME pitch but distinct
+        // noteIds are separate voices. NoteOff for only the first noteId
+        // must NOT release the second voice in Gate mode.
+        {
+            ParameterChanges gateParams(2);
+            int32 queueIndex=0, pointIndex=0;
+            auto* gate=gateParams.addParameterData(1013,queueIndex);
+            require(gate && gate->addPoint(0,0.,pointIndex)==kResultOk,
+                "A14 cannot enable Gate mode");
+            auto* release=gateParams.addParameterData(1017,queueIndex);
+            require(release && release->addPoint(0,0.,pointIndex)==kResultOk,
+                "A14 cannot set zero Gate release");
+            const auto pitch=static_cast<int16>(matrix?61:60);
+            EventList stacked(4), removeOne(2), unused(2);
+            const auto addNote=[&](EventList& events,bool on,int id,int offset){
+                Event e{};
+                e.busIndex=0;e.sampleOffset=offset;
+                if(on){
+                    e.type=Event::kNoteOnEvent;
+                    e.noteOn.channel=0;e.noteOn.pitch=pitch;
+                    e.noteOn.velocity=.79f;e.noteOn.noteId=id;
+                }else{
+                    e.type=Event::kNoteOffEvent;
+                    e.noteOff.channel=0;e.noteOff.pitch=pitch;
+                    e.noteOff.velocity=0.f;e.noteOff.noteId=id;
+                }
+                require(events.addEvent(e)==kResultOk,"A14 MIDI setup failed");
+            };
+            addNote(stacked,false,99,0); // finish preceding P013 test voice
+            addNote(stacked,true,3301,1);
+            addNote(stacked,true,3302,1);
+            ProcessData twoNotes{};
+            twoNotes.processMode=kRealtime;
+            twoNotes.symbolicSampleSize=kSample32;
+            twoNotes.numSamples=kBlock;
+            twoNotes.numOutputs=1;twoNotes.outputs=&genOut;
+            twoNotes.inputEvents=&stacked;
+            twoNotes.inputParameterChanges=&gateParams;
+            twoNotes.outputEvents=&unused;
+            require(generator.processor->process(twoNotes)==kResultOk,
+                "A14 stacked MIDI render failed");
+            int before=0;
+            for(int32 i=0;i<kBlock;++i)
+                if(std::abs(genL[static_cast<std::size_t>(i)])>.003f)++before;
+            require(before>kBlock/3,
+                "A14 invalid fixture: overlapping notes were not audible");
+            addNote(removeOne,false,3301,0);
+            ProcessData afterOff{};
+            afterOff.processMode=kRealtime;
+            afterOff.symbolicSampleSize=kSample32;
+            afterOff.numSamples=kBlock;
+            afterOff.numOutputs=1;afterOff.outputs=&genOut;
+            afterOff.inputEvents=&removeOne;
+            afterOff.outputEvents=&unused;
+            require(generator.processor->process(afterOff)==kResultOk,
+                "A14 selective NoteOff render failed");
+            int after=0;
+            for(int32 i=0;i<kBlock;++i)
+                if(std::abs(genL[static_cast<std::size_t>(i)])>.003f)++after;
+            require(after>kBlock/3,
+                "A14: NoteOff id 3301 killed simultaneous id 3302 at same pitch");
+        }
+        std::cout<<"[PASS] A14 REAL VST3: distinct same-pitch noteIds "
+                    "survive unrelated Gate NoteOff\\n";
         require(generator.component->setActive(false)==kResultOk,
             "native player could not deactivate after audio output");
         generator.active=false;
