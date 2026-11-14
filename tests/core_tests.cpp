@@ -582,7 +582,9 @@ void testP017PortableArchive() {
         require(a125::safe125AStem("Vintage/Bad:*?Name")=="Vintage_Bad___Name",
             "P017 archive filenames must sanitize Windows reserved characters");
         require(a125::safe125AStem("CON")=="CON_" &&
-                a125::safe125AStem("CON.bass")=="CON.bass_" &&
+                a125::safe125AStem("CON.bass")=="CON_.bass" &&
+                a125::safe125AStem("LPT1.take")=="LPT1_.take" &&
+                a125::safe125AStem("CON .song")=="CON _.song" &&
                 a125::safe125AStem("lpt1.")=="lpt1_" &&
                 a125::safe125AStem("  ")=="Instrument",
             "P019 Windows reserved names and blank archive names must be safe");
@@ -775,6 +777,30 @@ class FailOnFlushBuffer final:public std::stringbuf {
 public:
     int sync() override {return -1;}
 };
+void testAuditWindowsDeviceArchiveNames() {
+#ifdef _WIN32
+    // This is a real Windows filesystem probe, not merely a string check.
+    const auto root=std::filesystem::temp_directory_path()/
+        "125a_windows_reserved_filename_probe";
+    std::filesystem::create_directories(root);
+    const auto safeName=a125::safe125AStem("CON.bass")+".125A";
+    const auto target=root/safeName;
+    std::filesystem::remove(target);
+    {
+        std::ofstream stream(target,std::ios::binary|std::ios::trunc);
+        require(bool(stream),"A15 sanitized DOS device filename cannot be created");
+        stream<<"ok";
+        stream.flush();
+        require(bool(stream),"A15 sanitized DOS device filename cannot be written");
+        stream.close();
+        require(bool(stream),"A15 sanitized DOS device filename cannot be closed");
+    }
+    require(std::filesystem::file_size(target)==2,
+            "A15 sanitized Windows archive filename must be a real file");
+    std::filesystem::remove(target);
+    std::filesystem::remove(root);
+#endif
+}
 void testAuditSafeUnicodeStems() {
     const std::string many(95,'a');
     const auto stem=a125::safe125AStem(many+"\xC3\xBC");
@@ -925,6 +951,7 @@ int main() {
         testAuditBankLifetimeAndWavPersistence();
         testAuditStrictManifest();
         testAuditSafeUnicodeStems();
+        testAuditWindowsDeviceArchiveNames();
         std::cout << "P001 core tests PASSED\n";
         return 0;
     } catch(const std::exception& e) {

@@ -115,10 +115,24 @@ inline std::string safe125AStem(std::string_view displayName){
         [](unsigned char c){return static_cast<char>(std::toupper(c));});
     // Windows reserves DOS device basenames even when a suffix follows a dot.
     // E.g. CON.bass.125A and LPT1.take.125A cannot be created normally.
-    const auto device=upper.substr(0,upper.find('.'));
+    const auto dot=upper.find('.');
+    std::string_view device(upper.data(),dot==std::string::npos?upper.size():dot);
+    while(!device.empty() && device.back()==' ')device.remove_suffix(1);
+    const bool numericPort=device.size()==4 &&
+        (device.starts_with("COM") || device.starts_with("LPT")) &&
+        device[3]>='1' && device[3]<='9';
+    const bool superscriptPort=device.size()==5 &&
+        (device.starts_with("COM") || device.starts_with("LPT")) &&
+        static_cast<unsigned char>(device[3])==0xC2 &&
+        (static_cast<unsigned char>(device[4])==0xB9 ||
+         static_cast<unsigned char>(device[4])==0xB2 ||
+         static_cast<unsigned char>(device[4])==0xB3);
     if(device=="CON" || device=="PRN" || device=="AUX" || device=="NUL" ||
-       (device.size()==4 && (device.starts_with("COM") || device.starts_with("LPT")) &&
-        device[3]>='1' && device[3]<='9'))stem+="_";
+       numericPort || superscriptPort){
+        // IMPORTANT: inserting at the END leaves CON.bass_.125A reserved.
+        // The DOS device basename must itself change: CON_.bass.125A.
+        stem.insert(dot==std::string::npos?stem.size():dot,"_");
+    }
     return stem;
 }
 inline bool valid125AName(const std::string& name){
