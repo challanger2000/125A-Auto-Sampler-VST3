@@ -93,6 +93,50 @@ jobs:
       - name: Independent .125A ZIP/PCM24 compatibility
         shell: pwsh
         run: ./.github/scripts/verify125a.ps1
+      # Independent host/QA source pinned to reviewed 125A Test Lab commit.
+      # Technical baseline does not imply DAW, physical ASIO or release PASS.
+      - name: Checkout independent 125A Plugin Test Lab
+        uses: actions/checkout@v4
+        with:
+          repository: challanger2000/125A-Plugin-Test-Lab
+          ref: 7213fe1f81f4036f74431cb5b2d7dbd09b73ee5c
+          path: _independent_lab
+          fetch-depth: 1
+      - name: Build independent native Windows VST3 hosts
+        shell: pwsh
+        run: |
+          cmake -S _independent_lab -B build-independent-lab -G "Visual Studio 17 2022" -A x64
+          if ($LASTEXITCODE -ne 0) { throw "Independent Test Lab configure failed" }
+          cmake --build build-independent-lab --config Release --parallel 4 --target TestLabGUI TestLabHost TestLabStateStress
+          if ($LASTEXITCODE -ne 0) { throw "Independent Test Lab host build failed" }
+      - name: Independent Test Lab P74 real VST3 technical baseline
+        shell: pwsh
+        run: |
+          $bundle = @(Get-ChildItem build-vst3/VST3/Release -Directory -Filter 'AutosamplerVST3.vst3')
+          $gui = @(Get-ChildItem build-independent-lab -Recurse -File -Filter '125A_Test_Lab_GUI.exe')
+          $audio = @(Get-ChildItem build-independent-lab -Recurse -File -Filter '125A_Test_Lab_Host.exe')
+          $stress = @(Get-ChildItem build-independent-lab -Recurse -File -Filter '125A_Test_Lab_State_Stress.exe')
+          if ($bundle.Count -ne 1 -or $gui.Count -ne 1 -or $audio.Count -ne 1 -or $stress.Count -ne 1) {
+            throw 'Exact product and three independent native hosts are required'
+          }
+          $PSNativeCommandUseErrorActionPreference = $false
+          python _independent_lab/tests/run_universal_qa.py --plugin $bundle[0].FullName --gui-host $gui[0].FullName --audio-host $audio[0].FullName --stress-host $stress[0].FullName --run-technical-baseline --timeout 110 --out build-independent-evidence/p74
+          $status = $LASTEXITCODE
+          $reportPath = 'build-independent-evidence/p74/UNIVERSAL-QA-RESULT.json'
+          if (!(Test-Path $reportPath)) { throw 'Independent P74 result missing' }
+          $report = Get-Content $reportPath -Raw | ConvertFrom-Json
+          if ($status -ne 0 -or $report.status -ne 'TECHNICAL_BASELINE_PASS' -or
+              $report.discovery -ne 'PASS' -or $report.native_technical -ne 'PASS' -or
+              $report.release_approved -ne $false) {
+            throw 'Independent P74 baseline FAIL/INCONCLUSIVE; never release approved'
+          }
+      - name: Upload independent P74 evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: 125A-AutoSampler-P74-Independent-Technical-Evidence
+          path: build-independent-evidence/p74/
+          if-no-files-found: warn
       - name: Upload VST3 test binary
         if: success()
         uses: actions/upload-artifact@v4
