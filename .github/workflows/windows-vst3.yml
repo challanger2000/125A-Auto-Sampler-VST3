@@ -125,6 +125,24 @@ jobs:
           # Preserve the intentional failing mutant as evidence, but the
           # verified positive+negative suite itself has succeeded.
           exit 0
+      - name: A03 real concurrent Restore A / newer Restore B and killed mutant
+        shell: pwsh
+        run: |
+          $bundle = @(Get-ChildItem build-vst3/VST3/Release -Directory -Filter 'AutosamplerAuditVST3.vst3')
+          if ($bundle.Count -ne 1) { throw 'A03 QA-only bundle not built' }
+          $runner = 'build-vst3/Release/AutosamplerIntegration.exe'
+          & $runner $bundle[0].FullName 44100 256 restore-race
+          if ($LASTEXITCODE -ne 0) { throw 'A03 concurrent VST3 setState arbitration failed' }
+          $PSNativeCommandUseErrorActionPreference = $false
+          $negative = & $runner $bundle[0].FullName 44100 256 restore-race-mutant 2>&1
+          $negativeCode = $LASTEXITCODE
+          if ($negativeCode -eq 0 -or
+              (($negative | Out-String) -notmatch 'A03 stale restore overwrote newer bank')) {
+            $negative | Out-Host
+            throw 'A03 stale-restore mutation survived native regression'
+          }
+          Write-Host '[PASS] A03 stale-restore mutation killed, newer intent preserved'
+          exit 0
       - name: Independent .125A ZIP/PCM24 compatibility
         shell: pwsh
         run: ./.github/scripts/verify125a.ps1
