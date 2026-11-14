@@ -494,6 +494,128 @@ int run(const char* vst3path,bool matrix){
              <<"; no lost frames\n";
     return 0;
 }
+
+int runAbort(const char* vst3path){
+    // Actual VST3 processors stay active during the entire abort test.
+    const auto base=std::filesystem::absolute("p009-abort-vst3-output");
+    std::filesystem::remove_all(base);
+    std::filesystem::create_directories(base/"Documents");
+    require(_putenv_s("USERPROFILE",base.string().c_str())==0,
+            "cannot set isolated P009 recorder output");
+    std::string error;
+    auto module=Module::create(vst3path,error);
+    require(bool(module),"cannot load P009 VST3 bundle");
+    HostApplication host;
+    auto factory=module->getFactory();
+    factory.setHostContext(&host);
+    auto generator=load(factory,host,"125A AutoSampler MIDI");
+    auto recorder=load(factory,host,"125A AutoSampler Recorder");
+    (void)generator.component->activateBus(kEvent,kOutput,0,true);
+
+    std::vector<Sample32> midiLeft(kBlock),midiRight(kBlock),
+        sourceLeft(kBlock),sourceRight(kBlock),outLeft(kBlock),outRight(kBlock);
+    std::array<Sample32*,2> midiChannels{midiLeft.data(),midiRight.data()};
+    std::array<Sample32*,2> srcChannels{sourceLeft.data(),sourceRight.data()};
+    std::array<Sample32*,2> outChannels{outLeft.data(),outRight.data()};
+    AudioBusBuffers midiOutput{},source{},passthrough{};
+    midiOutput.numChannels=2;midiOutput.channelBuffers32=midiChannels.data();
+    source.numChannels=2;source.channelBuffers32=srcChannels.data();
+    passthrough.numChannels=2;passthrough.channelBuffers32=outChannels.data();
+
+    const auto playBlock=[&](std::int64_t at,ParameterChanges* changes,
+                             bool& sawOn,bool& sawOff){
+        EventList events(8);
+        ProcessContext context{};
+        context.sampleRate=kRate;
+        context.projectTimeSamples=at;
+        context.state=ProcessContext::kPlaying;
+        ProcessData midi{};
+        midi.processMode=kRealtime;midi.symbolicSampleSize=kSample32;
+        midi.numSamples=kBlock;midi.numOutputs=1;midi.outputs=&midiOutput;
+        midi.outputEvents=&events;midi.processContext=&context;
+        midi.inputParameterChanges=changes;
+        require(generator.processor->process(midi)==kResultOk,
+                "P009 generator process failed");
+        for(int32 i=0;i<events.getEventCount();++i){
+            Event e{};
+            require(events.getEvent(i,e)==kResultOk,"P009 MIDI event unavailable");
+            if(e.type==Event::kNoteOnEvent) sawOn=true;
+            if(e.type==Event::kNoteOffEvent) sawOff=true;
+        }
+        for(int i=0;i<kBlock;++i) {
+            const auto sound=sawOn && !sawOff ? .2f : 0.f;
+            sourceLeft[static_cast<std::size_t>(i)]=sound;
+            sourceRight[static_cast<std::size_t>(i)]=sound*.5f;
+        }
+        ProcessData rec{};
+        rec.processMode=kRealtime;rec.symbolicSampleSize=kSample32;
+        rec.numSamples=kBlock;rec.numInputs=1;rec.inputs=&source;
+        rec.numOutputs=1;rec.outputs=&passthrough;
+        rec.processContext=&context;
+        require(recorder.processor->process(rec)==kResultOk,
+                "P009 recorder process failed");
+    };
+
+    ParameterChanges runOn(1);
+    int32 qi=0,pi=0;
+    auto* on=runOn.addParameterData(1000,qi);
+    require(on && on->addPoint(0,1.,pi)==kResultOk,"P009 Run ON unavailable");
+    bool sawOn=false,sawOff=false;
+    std::int64_t at=0;
+    // Begin with the half-second lead. Stop while the FIRST note is still
+    // held, well before its 1s NoteOff and 2s release window.
+    for(;at<static_cast<std::int64_t>(kRate)*3/4;at+=kBlock){
+        playBlock(at,at==0?&runOn:nullptr,sawOn,sawOff);
+        if((at/kBlock)%8==0)std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    require(sawOn && !sawOff,
+            "P009 must abort an actively sounding note before NoteOff");
+    ParameterChanges runOff(1);
+    qi=0;pi=0;
+    auto* off=runOff.addParameterData(1000,qi);
+    require(off && off->addPoint(0,0.,pi)==kResultOk,"P009 Run OFF unavailable");
+    playBlock(at,&runOff,sawOn,sawOff);
+    require(sawOff,"P009 STOP must send a NoteOff for the pending sound");
+
+    bool closed=false;
+    bool wavFound=false;
+    const auto root=base/"Documents"/"125A AutoSampler";
+    for(int attempt=0;attempt<150 && !closed;++attempt){
+        if(std::filesystem::exists(root)){
+            for(const auto& entry:std::filesystem::recursive_directory_iterator(root)){
+                if(!entry.is_regular_file())continue;
+                if(entry.path().extension()==".wav")wavFound=true;
+                if(entry.path().filename()=="RUN-REPORT.csv"){
+                    std::ifstream reader(entry.path(),std::ios::binary);
+                    const std::string report((std::istreambuf_iterator<char>(reader)),{});
+                    if(report.find("SUMMARY,exported,0")!=std::string::npos &&
+                       report.find("SUMMARY,rejected,1")!=std::string::npos &&
+                       report.find("ABORTED")!=std::string::npos)
+                        closed=true;
+                }
+            }
+        }
+        if(!closed)std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
+    require(!wavFound && closed,
+            "mid-take STOP must close report with ABORTED and no partial WAV while active");
+    // Leave the DAW playing after STOP. No automatic restart or phantom MIDI.
+    for(int n=0;n<12;++n){
+        const bool oldOn=sawOn;
+        playBlock(at+(n+1)*kBlock,nullptr,sawOn,sawOff);
+        require(sawOn==oldOn && sawOff,"P009 unexpected MIDI after Stop");
+    }
+    // Both components are still active at the moment the CSV was verified.
+    require(recorder.component->setActive(false)==kResultOk,
+            "P009 recorder deactivation failed");
+    recorder.active=false;
+    require(generator.component->setActive(false)==kResultOk,
+            "P009 generator deactivation failed");
+    generator.active=false;
+    std::cout<<"[PASS] REAL VST3 mid-take STOP: pending NoteOff, "
+                "ABORTED CSV without plugin unload, 0 partial WAVs\n";
+    return 0;
+}
 }
 int main(int argc,char** argv){
     try{
@@ -504,8 +626,10 @@ int main(int argc,char** argv){
         require((kRate==44100 || kRate==48000 || kRate==96000) &&
                 (kBlock==64 || kBlock==256 || kBlock==512 || kBlock==1024),
                 "invalid sample rate or block size");
-        const bool matrix=argc>=5 && std::string(argv[4])=="matrix";
-        return run(argv[1],matrix);
+        const std::string mode=argc>=5?argv[4]:"";
+        if(mode=="abort") return runAbort(argv[1]);
+        require(mode.empty() || mode=="matrix","invalid integration test mode");
+        return run(argv[1],mode=="matrix");
     }catch(const std::exception& e){
         std::cerr<<"[FAIL] P005 REAL VST3 integration: "<<e.what()<<"\n";
         return 1;
