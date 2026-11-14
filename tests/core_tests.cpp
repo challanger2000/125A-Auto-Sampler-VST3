@@ -839,6 +839,44 @@ void testAuditWindowsDeviceArchiveNames() {
     std::filesystem::remove(root);
 #endif
 }
+void testAuditStaggeredNormalizeAndSuccessfulRecall() {
+    auto bank=std::make_unique<a125::SampleBank>();
+    a125::SampleZone zone;
+    zone.root=60;zone.velocity=100;zone.rr=1;
+    zone.pcm.assign(4096,{.75f,-.75f});
+    bank->zones.push_back(std::move(zone));
+    a125::BuiltInSampler player;
+    require(player.publish(std::move(bank)),
+            "A08 cannot publish normalized one-shot fixture");
+    player.setNormalize(true);
+    player.setEnvelope(0.f,0.f,1.f,0.f);
+    player.noteOn(60,100,44100.,1,0);
+    const auto first=player.renderOne();
+    require(std::abs(first[0]-.75f)<.00001f,
+            "A08 first normalized voice incorrect");
+    player.setEnvelope(2.f,0.f,1.f,0.f);
+    player.noteOn(60,100,44100.,2,0);
+    const auto staggered=player.renderOne();
+    require(std::abs(staggered[0]-first[0])<.005f,
+            "A08 new silent Attack must not instantly attenuate held voice by 6dB");
+    auto next=std::make_unique<a125::SampleBank>();
+    a125::SampleZone newZone;
+    newZone.root=60;newZone.velocity=100;newZone.rr=1;
+    newZone.pcm.assign(4096,{.125f,-.125f});
+    next->zones.push_back(std::move(newZone));
+    require(player.publish(std::move(next)),
+            "A07 successful project bank replacement publication failed");
+    player.requestVoiceReset();
+    const auto silence=player.renderOne();
+    require(silence[0]==0.f && silence[1]==0.f,
+            "A07 successful project recall must retire old sounding voices");
+    player.setNormalize(false);
+    player.setEnvelope(0.f,0.f,1.f,0.f);
+    player.noteOn(60,100,44100.,3,0);
+    const auto fresh=player.renderOne();
+    require(std::abs(fresh[0]-.125f)<.00001f,
+            "A07 next project must use only its new instrument bank");
+}
 void testAuditCompletionSnapshotConsistency() {
     a125::CompletedBankPublication completed;
     require(completed.read().generation==0 && completed.read().path.empty(),
@@ -1029,6 +1067,7 @@ int main() {
         testAuditSafeUnicodeStems();
         testAuditWindowsDeviceArchiveNames();
         testAuditCompletionSnapshotConsistency();
+        testAuditStaggeredNormalizeAndSuccessfulRecall();
         std::cout << "P001 core tests PASSED\n";
         return 0;
     } catch(const std::exception& e) {
