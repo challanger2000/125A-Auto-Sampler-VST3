@@ -259,11 +259,13 @@ public:
     }
     StereoFrame renderOne() noexcept {
         StereoFrame mix{};
+        unsigned activeVoices=0;
         for(auto& voice:voices_) {
             if(!voice.zone)continue;
             const auto& wave=voice.zone->pcm;
             const auto index=static_cast<std::size_t>(voice.position);
             if(index>=wave.size()) {voice.zone=nullptr;continue;}
+            ++activeVoices;
             const auto next=std::min(index+1,wave.size()-1);
             const auto frac=static_cast<float>(voice.position-index);
             const float gain=advanceEnvelope(voice)*
@@ -275,7 +277,19 @@ public:
             voice.position+=voice.increment;
             if(voice.position>=static_cast<double>(wave.size()))voice.zone=nullptr;
         }
-        for(float& x:mix)x=std::clamp(x,-1.f,1.f);
+        if(normalize_){
+            // Bank-wide peak normalization is -1 dBFS PER VOICE. Two
+            // simultaneous full-scale voices used to exceed 0 dBFS and hit
+            // the old hard clipper. Share the available headroom across
+            // currently audible voices; this is a linear gain stage, NOT
+            // saturation/soft clipping, and does not touch the source WAVs.
+            const float target=1.f/static_cast<float>(std::max(1u,activeVoices));
+            if(target<polyMixGain_)polyMixGain_=target; // fast safe attack
+            else polyMixGain_+= (target-polyMixGain_)*.001f; // smooth recovery
+            for(float& x:mix)x*=polyMixGain_;
+        }else polyMixGain_=1.f;
+        // Never hard-clip inside a float VST3 bus. A downstream DAW gain
+        // can attenuate an over-0dBFS float mix without lost peaks.
         return mix;
     }
 private:
@@ -318,5 +332,7 @@ private:
     std::uint64_t timestamp_=0;
     float attack_=0.f,decay_=0.f,sustain_=1.f,release_=.15f;
     bool normalize_=false,gate_=false;
+    // Audio-thread-only gain follower: no heap, mutex or lookahead latency.
+    float polyMixGain_=1.f;
 };
 } // namespace a125
