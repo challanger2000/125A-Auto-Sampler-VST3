@@ -1077,124 +1077,156 @@ public:
         }
         return SingleComponentEffect::setActive(active);
     }
+    // Apply every VST3 automation point at its declared in-block sample.
+    // Fixed-size cursors: no allocation, mutex, or filesystem access on ASIO.
     tresult PLUGIN_API process(V::ProcessData& data) override {
         if(data.numOutputs>0 && data.outputs && data.symbolicSampleSize==V::kSample32 &&
-           data.outputs[0].channelBuffers32) {
-            for(int32 ch=0;ch<data.outputs[0].numChannels;++ch) {
+           data.outputs[0].channelBuffers32){
+            for(int32 ch=0;ch<data.outputs[0].numChannels;++ch){
                 auto* p=data.outputs[0].channelBuffers32[ch];
                 if(p && data.numSamples>0)
                     std::memset(p,0,static_cast<std::size_t>(data.numSamples)*sizeof(float));
             }
             data.outputs[0].silenceFlags=3;
         }
-        if(data.inputParameterChanges) {
+        observeIncomingMidi(data);
+        struct ParamCursor {V::IParamValueQueue* q=nullptr; int32 next=0;};
+        std::array<ParamCursor,kParamCount> cursors{};
+        if(data.inputParameterChanges){
             auto* changes=data.inputParameterChanges;
-            for(int32 i=0;i<changes->getParameterCount();++i) {
+            for(int32 i=0;i<changes->getParameterCount();++i){
                 auto* q=changes->getParameterData(i);
-                if(!q || q->getPointCount()==0) continue;
+                if(!q || q->getPointCount()<=0)continue;
                 const auto id=q->getParameterId();
-                if(id<kRunParam || id>kGainParam) continue;
-                V::ParamValue value=0; int32 offset=0;
-                if(q->getPoint(q->getPointCount()-1,offset,value)==Steinberg::kResultTrue)
-                    values_[static_cast<std::size_t>(id-kRunParam)]=std::clamp(value,0.,1.);
+                if(id>=kRunParam && id<=kGainParam)
+                    cursors[static_cast<std::size_t>(id-kRunParam)].q=q;
             }
         }
-        observeIncomingMidi(data);
-        // A host can reject an outgoing NoteOff during STOP. Retry on the
-        // next callback before any new capture or playback transaction.
+        if(data.numSamples<=0){
+            for(std::size_t index=0;index<cursors.size();++index){
+                const auto* q=cursors[index].q;
+                if(!q)continue;
+                int32 offset=0;
+                V::ParamValue value=0.;
+                if(q->getPoint(q->getPointCount()-1,offset,value)==Steinberg::kResultTrue)
+                    values_[index].store(std::clamp(value,0.,1.),std::memory_order_relaxed);
+            }
+            return Steinberg::kResultOk;
+        }
+        int32 at=0;
+        while(at<data.numSamples){
+            int32 end=data.numSamples;
+            for(std::size_t index=0;index<cursors.size();++index){
+                auto& cursor=cursors[index];
+                if(!cursor.q)continue;
+                while(cursor.next<cursor.q->getPointCount()){
+                    int32 offset=0;
+                    V::ParamValue value=0.;
+                    if(cursor.q->getPoint(cursor.next,offset,value)!=Steinberg::kResultTrue){
+                        ++cursor.next;
+                        continue;
+                    }
+                    if(offset<=at){
+                        if(std::isfinite(value))
+                            values_[index].store(std::clamp(value,0.,1.),
+                                                 std::memory_order_relaxed);
+                        ++cursor.next;
+                    }else{
+                        end=std::min(end,offset);
+                        break;
+                    }
+                }
+            }
+            if(end<=at)end=at+1;
+            processSegment(data,at,end);
+            at=end;
+        }
+        return Steinberg::kResultOk;
+    }
+
+    // Sub-block scheduling preserves the real host block's MIDI event offsets.
+    void processSegment(V::ProcessData& data,int32 start,int32 end) noexcept {
+        run_=values_[0].load(std::memory_order_relaxed)>=.5;
+        if(!run_)renderSampler(data,start,end);
         if(retryPendingNoteOff_){
-            sendPendingNoteOff(data);
+            sendPendingNoteOff(data,start);
             if(note_.pending()){
                 if(activeRun_)cancel();
                 runGate_.disarm();
                 lastBlockEnd_=kDisarmed;
-                return Steinberg::kResultOk;
+                return;
             }
         }
-        run_=values_[0]>=0.5;
-        if(!run_)renderSampler(data);
         const bool playing=data.processContext &&
-            (data.processContext->state & V::ProcessContext::kPlaying);
-        const bool ready=playing && data.outputEvents && data.numSamples>0;
-        // One explicit OFF->ON transition per job. Restarting DAW transport
-        // while Run remains ON never triggers another recording session.
+            (data.processContext->state&V::ProcessContext::kPlaying);
+        const bool ready=playing && data.outputEvents && end>start;
         const bool startRequested=runGate_.observe(run_,ready);
-        if(!ready || !run_) {
+        if(!ready || !run_){
             if(activeRun_){
-                if(data.outputEvents)
-                    sendPendingNoteOff(data);
+                sendPendingNoteOff(data,start);
                 cancel();
             }
             lastBlockEnd_=kDisarmed;
-            return Steinberg::kResultOk;
+            return;
         }
-        const std::int64_t blockStart=data.processContext->projectTimeSamples;
-        if(blockStart>std::numeric_limits<std::int64_t>::max()-data.numSamples)
-            return Steinberg::kResultOk;
-        const std::int64_t blockEnd=blockStart+data.numSamples;
-        if(activeRun_ && lastBlockEnd_!=kDisarmed && lastBlockEnd_!=blockStart) {
-            // Do not accidentally replay a loop onto the same WAV names.
-            sendPendingNoteOff(data);
+        const auto base=data.processContext->projectTimeSamples;
+        if(base>std::numeric_limits<std::int64_t>::max()-end)return;
+        const auto first=base+start;
+        const auto lastFrame=base+end;
+        if(activeRun_ && lastBlockEnd_!=kDisarmed && lastBlockEnd_!=first){
+            sendPendingNoteOff(data,start);
             cancel();
             runGate_.disarm();
-            // Keep the visible Run parameter unchanged. Its next
-            // OFF->ON transition is required to start another job.
             lastBlockEnd_=kDisarmed;
-            return Steinberg::kResultOk;
+            return;
         }
-        if(!activeRun_) {
-            if(!startRequested) return Steinberg::kResultOk;
-            // Audition events are unrelated to the new capture and must
-            // not turn into phantom notes when this job completes.
+        if(!activeRun_){
+            if(!startRequested)return;
             previewOn_.store(-1,std::memory_order_relaxed);
             previewOff_.store(-1,std::memory_order_relaxed);
             config_=makeConfig();
-            if(!config_.valid()) return Steinberg::kResultOk;
+            if(!config_.valid())return;
             const auto lead=static_cast<std::int64_t>(sampleRate_/2.);
-            if(blockStart>std::numeric_limits<std::int64_t>::max()-lead)
-                return Steinberg::kResultOk;
-            const auto anchor=blockStart+lead;
+            if(first>std::numeric_limits<std::int64_t>::max()-lead)return;
+            const auto anchor=first+lead;
             a125::ArchivePlayback snapshot;
             for(std::size_t i=0;i<snapshot.params.size();++i)
                 snapshot.params[i]=values_[static_cast<std::size_t>(
                     kNormalizeParam-kRunParam)+i].load(std::memory_order_relaxed);
-            snapshot.params[1]=1.-snapshot.params[1]; // archive Gate bit
+            snapshot.params[1]=1.-snapshot.params[1];
             session().setCapturedPlayback(snapshot);
             session().publish(config_,static_cast<int>(sampleRate_),anchor);
             activeRun_=true;
         }
-        lastBlockEnd_=blockEnd;
+        lastBlockEnd_=lastFrame;
         const auto anchor=session().anchor.load(std::memory_order_acquire);
-        if(anchor==kDisarmed || blockEnd<=anchor) return Steinberg::kResultOk;
-        if(a125::jobCompleteAtBlockStart(config_,anchor,blockStart)){
-            // Not until this next block: the recorder may be called after
-            // the MIDI generator for a shared DAW processing block.
+        if(anchor==kDisarmed || lastFrame<=anchor)return;
+        if(a125::jobCompleteAtBlockStart(config_,anchor,first)){
             session().captureEndedGeneration.store(
                 session().generation.load(std::memory_order_acquire),
                 std::memory_order_release);
             cancel(false);
             runGate_.disarm();
             lastBlockEnd_=kDisarmed;
-            return Steinberg::kResultOk;
+            return;
         }
-        const auto relativeFirst=blockStart<=anchor?0:
-             static_cast<std::uint64_t>(blockStart-anchor);
-        const auto relativeEnd=static_cast<std::uint64_t>(blockEnd-anchor);
+        const auto relativeFirst=first<=anchor?0:
+            static_cast<std::uint64_t>(first-anchor);
+        const auto relativeEnd=static_cast<std::uint64_t>(lastFrame-anchor);
         const auto period=config_.period();
-        // Only scan the takes intersecting this audio block, not the whole job.
-        const auto first=relativeFirst/period;
-        const auto last=std::min<std::uint64_t>(
+        const auto takeFirst=relativeFirst/period;
+        const auto takeLast=std::min<std::uint64_t>(
             config_.takeCount(),relativeEnd/period+1);
-        for(std::uint64_t i=first;i<last && activeRun_;++i){
+        for(std::uint64_t i=takeFirst;i<takeLast && activeRun_;++i){
             const auto take=a125::jobTake(config_,static_cast<std::size_t>(i));
-            emit(data,blockStart,blockEnd,anchor,take.start,take,true);
+            emit(data,first,lastFrame,base,anchor,take.start,take,true);
             if(!activeRun_)break;
-            emit(data,blockStart,blockEnd,anchor,take.noteOff,take,false);
+            emit(data,first,lastFrame,base,anchor,take.noteOff,take,false);
         }
-        return Steinberg::kResultOk;
     }
+
 private:
-    void renderSampler(V::ProcessData& data) noexcept {
+    void renderSampler(V::ProcessData& data,int32 start,int32 end) noexcept {
         if(!player_.loadedZones() || data.numSamples<=0 ||
            data.numOutputs<1 || !data.outputs ||
            data.symbolicSampleSize!=V::kSample32 ||
@@ -1229,7 +1261,14 @@ private:
         const int32 total=events?events->getEventCount():0;
         int32 eventIndex=0;
         bool sounded=false;
-        for(int32 sample=0;sample<data.numSamples;++sample){
+        // Earlier segments have already consumed earlier MIDI input events.
+        while(eventIndex<total){
+            V::Event e{};
+            if(events->getEvent(eventIndex,e)!=Steinberg::kResultOk ||
+               e.sampleOffset<start)++eventIndex;
+            else break;
+        }
+        for(int32 sample=start;sample<end;++sample){
             while(eventIndex<total){
                 V::Event e{};
                 if(events->getEvent(eventIndex,e)!=Steinberg::kResultOk){
@@ -1276,13 +1315,13 @@ private:
         // its matching NoteOff has actually been delivered.
         if(note_.pending())retryPendingNoteOff_=true;
     }
-    void sendPendingNoteOff(V::ProcessData& data) noexcept {
+    void sendPendingNoteOff(V::ProcessData& data,int32 offset) noexcept {
         const auto pending=note_.pending();
         if(!pending){retryPendingNoteOff_=false;return;}
         if(!data.outputEvents){retryPendingNoteOff_=true;return;}
         V::Event e{};
         e.busIndex=0;
-        e.sampleOffset=0;
+        e.sampleOffset=offset;
         e.type=V::Event::kNoteOffEvent;
         e.noteOff.channel=0;
         e.noteOff.pitch=static_cast<Steinberg::int16>(pending->pitch);
@@ -1294,7 +1333,7 @@ private:
         }else retryPendingNoteOff_=true;
     }
     void emit(V::ProcessData& data,std::int64_t first,std::int64_t end,
-              std::int64_t anchor,std::uint64_t frame,
+              std::int64_t hostBlockStart,std::int64_t anchor,std::uint64_t frame,
               const a125::JobTake& take,bool noteOn) noexcept {
         if(frame>static_cast<std::uint64_t>(
                std::numeric_limits<std::int64_t>::max()-std::max<std::int64_t>(anchor,0)))
@@ -1303,7 +1342,7 @@ private:
         if(time<first || time>=end)return;
         V::Event e{};
         e.busIndex=0;
-        e.sampleOffset=static_cast<int32>(time-first);
+        e.sampleOffset=static_cast<int32>(time-hostBlockStart);
         if(noteOn){
             e.type=V::Event::kNoteOnEvent;
             e.noteOn.channel=0;
