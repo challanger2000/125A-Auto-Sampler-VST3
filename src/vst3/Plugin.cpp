@@ -574,7 +574,7 @@ public:
             if(state->write(bankPath.data(),bankLength,&written)!=Steinberg::kResultOk ||
                written!=bankLength)return Steinberg::kResultFalse;
         }
-        const auto instrumentName=session().captureName();
+        auto instrumentName=session().captureName();
         const auto nameLength=static_cast<Steinberg::int32>(instrumentName.size());
         if(nameLength<=0 || nameLength>192 || !io.writeInt32(nameLength))
             return Steinberg::kResultFalse;
