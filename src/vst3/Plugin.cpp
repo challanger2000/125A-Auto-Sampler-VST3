@@ -4,6 +4,7 @@
 #include "core/JobParameters.h"
 #include "core/CaptureIntegrity.h"
 #include "core/ActiveNote.h"
+#include "core/RunGate.h"
 #include "core/SampleProcessing.h"
 #include "base/source/fstreamer.h"
 #include "pluginterfaces/base/ibstream.h"
@@ -298,7 +299,10 @@ public:
         return Steinberg::kResultOk;
     }
     tresult PLUGIN_API setActive(TBool active) override {
-        if(!active) cancel();
+        if(!active) {
+            cancel();
+            runGate_.disarm();
+        }
         return SingleComponentEffect::setActive(active);
     }
     tresult PLUGIN_API process(V::ProcessData& data) override {
@@ -326,7 +330,11 @@ public:
         run_=values_[0]>=0.5;
         const bool playing=data.processContext &&
             (data.processContext->state & V::ProcessContext::kPlaying);
-        if(!playing || !run_ || !data.outputEvents || data.numSamples<=0) {
+        const bool ready=playing && data.outputEvents && data.numSamples>0;
+        // One explicit OFF->ON transition per job. Restarting DAW transport
+        // while Run remains ON never triggers another recording session.
+        const bool startRequested=runGate_.observe(run_,ready);
+        if(!ready || !run_) {
             if(activeRun_){
                 if(data.outputEvents)
                     sendPendingNoteOff(data);
@@ -341,11 +349,16 @@ public:
         const std::int64_t blockEnd=blockStart+data.numSamples;
         if(activeRun_ && lastBlockEnd_!=kDisarmed && lastBlockEnd_!=blockStart) {
             // Do not accidentally replay a loop onto the same WAV names.
-            sendPendingNoteOff(data); cancel(); run_=false; values_[0]=0.;
+            sendPendingNoteOff(data);
+            cancel();
+            runGate_.disarm();
+            // Keep the visible Run parameter unchanged. Its next
+            // OFF->ON transition is required to start another job.
             lastBlockEnd_=kDisarmed;
             return Steinberg::kResultOk;
         }
         if(!activeRun_) {
+            if(!startRequested) return Steinberg::kResultOk;
             config_=makeConfig();
             if(!config_.valid()) return Steinberg::kResultOk;
             const auto lead=static_cast<std::int64_t>(sampleRate_/2.);
@@ -436,6 +449,7 @@ private:
         99./126.,59./126.,119./126.};
     a125::JobConfig config_{};
     a125::ActiveNote note_{};
+    a125::RunGate runGate_{};
     VSTGUI::CTextLabel* statusLabel_{nullptr};  // owned by active editor
     VSTGUI::SharedPointer<VSTGUI::CVSTGUITimer> timer_{};
     double sampleRate_=44100.;
