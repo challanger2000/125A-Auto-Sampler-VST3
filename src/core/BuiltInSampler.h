@@ -184,6 +184,26 @@ public:
         const auto* bank=current_.load(std::memory_order_acquire);
         return bank?bank->zones.size():0;
     }
+    // A bounded non-realtime visual snapshot. A published bank stays alive
+    // until plugin teardown, so the GUI can read sample data without locks.
+    template<std::size_t N> bool waveform(std::array<float,N>& output) const noexcept {
+        output.fill(0.f);
+        const auto* bank=current_.load(std::memory_order_acquire);
+        if(!bank || bank->zones.empty() || N==0)return false;
+        const auto& pcm=bank->zones.front().pcm;
+        if(pcm.empty())return false;
+        for(std::size_t i=0;i<N;++i){
+            const auto a=i*pcm.size()/N;
+            const auto end=std::min(pcm.size(),(i+1)*pcm.size()/N);
+            const auto skip=std::max<std::size_t>(1,(end-a)/32);
+            float maximum=0.f;
+            for(std::size_t frame=a;frame<end;frame+=skip)
+                maximum=std::max(maximum,std::max(
+                    std::abs(pcm[frame][0]),std::abs(pcm[frame][1])));
+            output[i]=std::clamp(maximum,0.f,1.f);
+        }
+        return true;
+    }
     void noteOn(int key,int velocity,double outputRate) noexcept {
         if(key<0 || key>127 || velocity<1 || velocity>127 ||
            outputRate<8000 || outputRate>384000)return;
