@@ -61,20 +61,21 @@ public:
 LRESULT CALLBACK testWindowProc(HWND hwnd,UINT msg,WPARAM w,LPARAM l) {
     return DefWindowProcW(hwnd,msg,w,l);
 }
-void smokeNativeGui(IComponent* component){
+void smokeNativeGui(IComponent* component,bool recorder=false){
     const HRESULT com=CoInitializeEx(nullptr,COINIT_APARTMENTTHREADED);
     require(SUCCEEDED(com),"cannot initialize Win32 COM STA for VSTGUI");
     IEditController* controller=nullptr;
     require(component->queryInterface(IEditController::iid,
               reinterpret_cast<void**>(&controller))==kResultOk && controller,
             "MIDI VST3 combined edit controller not available");
-    require(controller->getParameterCount()==19,
-            "native MIDI editor must expose 19 VST3 parameters");
+    require(controller->getParameterCount()==(recorder?0:19),
+            "native VSTGUI parameter count inconsistent with its component");
     IPlugView* view=controller->createView(ViewType::kEditor);
     require(view,"MIDI VST3 supplies no real editor");
     ViewRect rect{};
     require(view->getSize(&rect)==kResultTrue &&
-            rect.getWidth()>=600 && rect.getHeight()>=400,
+            rect.getWidth()>=(recorder?450:600) &&
+            rect.getHeight()>=(recorder?140:400),
             "native GUI has invalid editor geometry");
     require(view->isPlatformTypeSupported(kPlatformTypeHWND)==kResultTrue,
             "native GUI does not support HWND");
@@ -113,8 +114,9 @@ void smokeNativeGui(IComponent* component){
     controller->release();
     DestroyWindow(hwnd);
     CoUninitialize();
-    std::cout<<"[PASS] REAL VSTGUI editor: 19 parameters, Win32 HWND attach, "
-                "live timer and clean detach\\n";
+    std::cout<<"[PASS] REAL VSTGUI "<<(recorder?"recorder status":"main instrument")
+             <<" editor: "<<controller->getParameterCount()
+             <<" parameters, Win32 HWND attach, timer and clean detach\\n";
 }
 struct Instance {
     IPtr<IComponent> component;
@@ -192,6 +194,7 @@ int run(const char* vst3path,bool matrix,bool customFolder){
     auto generator=load(factory,host,"125A AutoSampler");
     auto recorder=load(factory,host,"125A AutoSampler Recorder");
     smokeNativeGui(generator.component.get());
+    smokeNativeGui(recorder.component.get(),true);
     const auto chosenRoot=base/"Chosen Export Folder"/"Takes";
     if(customFolder){
         std::filesystem::create_directories(chosenRoot);
