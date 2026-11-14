@@ -661,7 +661,6 @@ private:
             current.clear();
         };
         auto openRun=[&](std::uint32_t gen) {
-            if(attemptedRun) closeRun();
             dir.clear();
             haveRun=false;
             attemptedRun=true;
@@ -711,6 +710,9 @@ private:
                 {f.generation,f.take,f.offset,f.expectedFrames,f.last});
             if(decision.abandonedPrevious) reject("INCOMPLETE");
             if(!attemptedRun || generation!=f.generation) {
+                // Close the previous generation before publishing the new
+                // generation ID to the background report and GUI.
+                if(attemptedRun && report) closeRun();
                 generation=f.generation;
                 openRun(generation);
             }
