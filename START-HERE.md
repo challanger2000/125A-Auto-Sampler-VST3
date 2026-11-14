@@ -11,7 +11,7 @@ Kein SFZ-Export oder fremder Sampler gehört zum notwendigen Workflow. Das inter
 
 ## Windows-Installation
 
-- Auf der Seite der [Windows-VST3-Tests](https://github.com/challanger2000/125A-Auto-Sampler-VST3/actions/workflows/windows-vst3.yml) einen **erfolgreichen** P013-Lauf wählen; unter **Artifacts** das ZIP `125A-AutoSampler-P013-Win64` herunterladen.
+- Auf dem [erfolgreichen P013-Windows-Testlauf](https://github.com/challanger2000/125A-Auto-Sampler-VST3/actions/runs/43542007225) unter **Artifacts** das ZIP `125A-AutoSampler-P013-Win64` herunterladen.
 - Den entpackten **vollständigen** Ordner `AutosamplerVST3.vst3` nach `C:\Program Files\Common Files\VST3\` kopieren.
 - Fender Studio Pro neu starten und beide 125A-Klassen im Plugin-Browser suchen.
 
@@ -51,7 +51,7 @@ Standard: `%USERPROFILE%\Documents\125A AutoSampler\Run_<...>\`.
 - Der interne Sampler lädt die WAV-Dateien direkt, **ohne** externe `.sfz`-Bank.
 - **CHOOSE FOLDER** und **DEFAULT** setzen den Aufnahme-Ausgabeordner; **LOAD SAMPLES** wählt dagegen den Ordner des abzuspielenden Instruments.
 
-Die VST3-Regression arbeitet mit einem synthetischen Testinstrument, lädt anschließend den tatsächlich aufgenommenen WAV-Run **in die 125A-VST3 selbst** und prüft den generierten Audioausgang. Das ist nicht mit einem musikalischen Test in Fender Studio Pro gleichzusetzen.
+**P013 Windows-PASS:** Die VST3-Regression arbeitet mit einem synthetischen Testinstrument, lädt anschließend den tatsächlich aufgenommenen WAV-Run **in die 125A-VST3 selbst** und prüft dessen hörbaren Stereo-Audioausgang in vier unabhängigen Szenarien. 72/72 WAVs sind korrekt erstellt worden. Das ist nicht mit einem musikalischen Test in Fender Studio Pro gleichzusetzen.
 
 ## Offene Grenzen
 

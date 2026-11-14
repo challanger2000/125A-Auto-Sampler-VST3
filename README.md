@@ -19,7 +19,7 @@ Windows-x64-VST3 für **automatisches Sampeln eines bereits in Fender Studio Pro
 4. Die Bank wird nach Root-Note, Velocity und Round-Robin-Index zugeordnet. Nicht gesampelte Zwischentöne werden durch Pitch-Transposition der nächsten aufgenommenen Grundnote gespielt.
 5. Der Sampler bietet bis zu 32 simultane Stimmen und spielt den aufgenommenen Ausklang einmalig ab (One-Shot). Es gibt noch keine Sustain-Loop-Erkennung.
 
-**Bankübernahme:** Bei erfolgreichem Aufnahmeabschluss wird die gerade erzeugte WAV-Bank automatisch im 125A geladen, wenn dessen Oberfläche geöffnet ist. Ist sie geschlossen, wird beim nächsten Öffnen nachgeladen. **LOAD SAMPLES** ist zusätzlich für ältere oder andere Run-Ordner verfügbar. Beim Projekt-Speichern wird der **Pfad** zur Bank gesichert und beim Laden erneut eingelesen; die WAV-Dateien werden **nicht in die Projektdatei eingebettet**. Den WAV-Ordner deshalb nicht verschieben oder löschen.
+**Bankübernahme:** Bei erfolgreichem Aufnahmeabschluss wird die gerade erzeugte WAV-Bank automatisch im 125A geladen, wenn dessen Oberfläche geöffnet ist. Die Funktion wurde implementiert, die direkte automatische GUI-Timer-Übernahme in Fender Studio Pro aber noch nicht durch einen Mausklick-Praxistest abgenommen. Ist sie geschlossen, wird beim nächsten Öffnen nachgeladen. **LOAD SAMPLES** ist zusätzlich für ältere oder andere Run-Ordner verfügbar. Beim Projekt-Speichern wird der **Pfad** zur Bank gesichert und beim Laden erneut eingelesen; die WAV-Dateien werden **nicht in die Projektdatei eingebettet**. Den WAV-Ordner deshalb nicht verschieben oder löschen.
 
 **Kein SFZ nötig:** Die bisherige P011/P012-SFZ-Exportidee wird im produktiven Aufnahmeablauf nicht mehr verwendet. Die historischen SFZ-Dateien und -Core-Tests sind nicht Bestandteil der P013-Wiedergabekette.
 
@@ -37,7 +37,7 @@ Das genaue MIDI-Routing, die physische ASIO-Ausgabe und das Dialogverhalten in *
 ## Entwicklungsstand / Abnahmegrenzen
 
 - **P001–P012:** Capture, sicherer Start/Stop, Export, Projektzustand und bisherige Windows-VST3-Integrationsfälle bestanden. Historische Prüfdokumente stehen unter [docs](docs/).
-- **P013:** eingebauter WAV-Sampler, MIDI-Wiedergabe, Round-Robin-/Velocity-Mapping und Projektzustand auf dem laufenden Entwicklungszweig. [Windows-CI für P013](https://github.com/challanger2000/125A-Auto-Sampler-VST3/actions/workflows/windows-vst3.yml) muss vollständigen Build, Steinberg-Validator und tatsächlich gerendertes VST3-Audio bestätigen.
+- **P013 – Windows-Abnahme PASS:** Eingebauter WAV-Sampler, MIDI-Wiedergabe, Round-Robin-/Velocity-Mapping und Projektzustand. [Erfolgreiche vollständige Windows-VST3-Abnahme mit tatsächlicher PCM-Wiedergabe](https://github.com/challanger2000/125A-Auto-Sampler-VST3/actions/runs/43542007225): 72/72 WAVs und vier native MIDI-zu-Audio-Playback-Proben, Steinberg-Validator, GUI- und Core-Tests grün. Artefakt: `125A-AutoSampler-P013-Win64`.
 - Nur **ein** Generator/Recorder-Paar je DAW-Prozess unterstützt. Automatische Bankübernahme über die geöffnete Oberfläche und manueller Bankwechsel; noch keine Sustain-Loops.
 - Kein fertiges Release, solange die Tests in Fender Studio Pro und mit ASIO-Hardware ausstehen. [PR #2 bleibt Draft](https://github.com/challanger2000/125A-Auto-Sampler-VST3/pull/2).
 
