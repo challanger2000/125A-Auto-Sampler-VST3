@@ -66,6 +66,7 @@ std::atomic<bool> a125AuditHoldRestoreCommit{false};
 std::atomic<bool> a125AuditRestoreCommitEntered{false};
 std::atomic<bool> a125AuditPreemptRejectedRestore{false};
 std::atomic<bool> a125AuditFailRestorePrepare{false};
+std::atomic<bool> a125AuditFailRestoreAfterPublish{false};
 }
 extern "C" __declspec(dllexport) void __cdecl A125_AuditHoldImport(int enabled) noexcept {
     if(enabled){
@@ -112,6 +113,9 @@ extern "C" __declspec(dllexport) void __cdecl A125_AuditPreemptRejectedRestore(i
 }
 extern "C" __declspec(dllexport) void __cdecl A125_AuditFailRestorePrepare(int enabled) noexcept {
     a125AuditFailRestorePrepare.store(enabled!=0,std::memory_order_release);
+}
+extern "C" __declspec(dllexport) void __cdecl A125_AuditFailRestoreAfterPublish(int enabled) noexcept {
+    a125AuditFailRestoreAfterPublish.store(enabled!=0,std::memory_order_release);
 }
 #endif
 
@@ -1302,6 +1306,10 @@ public:
                     return Steinberg::kResultFalse;
                 }
                 loadFailed_=false;
+#ifdef A125_ENABLE_AUDIT_HOOKS
+                if(a125AuditFailRestoreAfterPublish.load(std::memory_order_acquire))
+                    throw std::bad_alloc{}; // explicit NONSHIPPING F01 mutant
+#endif
             }else{
                 player_.clearCurrent();
                 loadFailed_=!restoredBank.empty();
