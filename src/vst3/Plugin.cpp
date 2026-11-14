@@ -1259,6 +1259,11 @@ private:
             }
         };
         auto closeRun=[&] {
+            // std::ofstream::operator bool remains true after a successful
+            // close(). Only is_open() makes closeRun idempotent. Without this
+            // guard, recorder teardown could create a *second* versioned
+            // .125A archive for one completed recording.
+            if(!report.is_open())return;
             // Publish only complete captures. The ZIP is created on this
             // worker thread, never in the ASIO callback. A partial ZIP is
             // removed and a failed archive never masquerades as success.
@@ -1395,7 +1400,7 @@ private:
             if(!attemptedRun || generation!=f.generation) {
                 // Close the previous generation before publishing the new
                 // generation ID to the background report and GUI.
-                if(attemptedRun && report) closeRun();
+                if(attemptedRun && report.is_open()) closeRun();
                 generation=f.generation;
                 openRun(generation);
             }
@@ -1449,7 +1454,7 @@ private:
             }
         }
         if(integrity.abandon()) reject("ABORTED");
-        if(attemptedRun && report) closeRun();
+        if(attemptedRun && report.is_open()) closeRun();
     }
     std::uint32_t sampleRate_=44100;
     SpscQueue queue_;
