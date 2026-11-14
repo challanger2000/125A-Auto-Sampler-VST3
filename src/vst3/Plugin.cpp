@@ -952,10 +952,49 @@ private:
     std::atomic<std::uint64_t> dropped_{0};
 };
 
-class Recorder final : public V::SingleComponentEffect {
+class Recorder final : public V::SingleComponentEffect,
+                       public VSTGUI::VST3EditorDelegate {
 public:
     static FUnknown* createInstance(void*) {return (V::IAudioProcessor*)new Recorder();}
     ~Recorder() override {stopWorker();}
+    Steinberg::IPlugView* PLUGIN_API createView(Steinberg::FIDString name) override {
+        if(Steinberg::FIDStringsEqual(name,V::ViewType::kEditor)){
+            auto* editor=new VSTGUI::VST3Editor(this,"recorder","recorder.uidesc");
+            editor->setDelegate(this);
+            return editor;
+        }
+        return nullptr;
+    }
+    VSTGUI::CView* verifyView(VSTGUI::CView* view,
+          const VSTGUI::UIAttributes&,const VSTGUI::IUIDescription*,
+          VSTGUI::VST3Editor*) override {
+        if(auto* label=dynamic_cast<VSTGUI::CTextLabel*>(view);
+           label && label->getText()=="RECORDER STATUS: IDLE")
+            recorderStatusLabel_=label;
+        return view;
+    }
+    void updateRecorderStatus(){
+        if(!recorderStatusLabel_)return;
+        if(!active_.load(std::memory_order_acquire)){
+            recorderStatusLabel_->setText("RECORDER STATUS: IDLE");
+            return;
+        }
+        const auto gen=session().generation.load(std::memory_order_acquire);
+        const bool captured=gen!=0 &&
+            capturedGeneration_.load(std::memory_order_acquire)==gen &&
+            session().writerFinishedGeneration.load(std::memory_order_acquire)!=gen;
+        recorderStatusLabel_->setText(
+            captured?"RECORDER STATUS: RECORDING":"RECORDER STATUS: READY");
+    }
+    void didOpen(VSTGUI::VST3Editor*) override {
+        updateRecorderStatus();
+        recorderTimer_=VSTGUI::makeOwned<VSTGUI::CVSTGUITimer>(
+            [this](VSTGUI::CVSTGUITimer*){updateRecorderStatus();},180);
+    }
+    void willClose(VSTGUI::VST3Editor*) override {
+        recorderTimer_=nullptr;
+        recorderStatusLabel_=nullptr;
+    }
     tresult PLUGIN_API initialize(FUnknown* context) override {
         if(SingleComponentEffect::initialize(context)!=Steinberg::kResultOk)
             return Steinberg::kResultFalse;
@@ -977,6 +1016,7 @@ public:
                 worker_=std::thread([this]{consume();});
             }
         } else stopWorker();
+        active_.store(active!=0,std::memory_order_release);
         return SingleComponentEffect::setActive(active);
     }
     tresult PLUGIN_API process(V::ProcessData& data) override {
@@ -1007,6 +1047,8 @@ public:
             const auto loc=a125::locateJobFrame(config,
                           static_cast<std::uint64_t>(absFrame-anchor));
             if(!loc) continue;
+            if(loc->offset==0)
+                capturedGeneration_.store(generation,std::memory_order_release);
             const auto& take=loc->take;
             const CapturedFrame frame{loc->offset,config.holdFrames+config.tailFrames,
                 left[i],right[i],generation,
@@ -1254,6 +1296,10 @@ private:
     std::atomic<bool> exit_{false};
     std::thread worker_;
     std::atomic<std::uint64_t> rejected_{0},exportErrors_{0},exported_{0},silent_{0};
+    std::atomic<bool> active_{false};
+    std::atomic<std::uint32_t> capturedGeneration_{0};
+    VSTGUI::CTextLabel* recorderStatusLabel_{nullptr};
+    VSTGUI::SharedPointer<VSTGUI::CVSTGUITimer> recorderTimer_{};
 };
 } // namespace
 
