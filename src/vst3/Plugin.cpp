@@ -101,7 +101,9 @@ struct Session {
         return name;
     }
     bool setCaptureName(const std::string& display) {
-        if(display.empty() || display.size()>192)return false;
+        if(display.empty() || display.size()>192 ||
+           std::any_of(display.begin(),display.end(),
+              [](unsigned char c){return c<32;}))return false;
         std::lock_guard<std::mutex> lock(nameMutex);
         name=display;
         return true;
@@ -1269,10 +1271,26 @@ private:
                 if(complete){
                     try {
                         const auto stem=a125::safe125AStem(recordedName);
-                        // Unique run suffix prevents overwriting an earlier
-                        // archive with the same user-facing instrument name.
-                        const auto archive=root/(stem+" ["+
-                            dir.filename().string()+"].125A");
+                        // Human-readable file name. Repeated captures get
+                        // (2), (3)... without silently overwriting old sounds.
+                        const auto filename=[&](unsigned suffix){
+                            const auto text=stem+
+                               (suffix>1?" ("+std::to_string(suffix)+")":"")+
+                               ".125A";
+                            return std::filesystem::path(
+                                std::u8string(reinterpret_cast<const char8_t*>(
+                                    text.data()),text.size()));
+                        };
+                        std::filesystem::path archive;
+                        for(unsigned suffix=1;suffix<=10000;++suffix){
+                            const auto candidate=root/filename(suffix);
+                            if(!std::filesystem::exists(candidate)){
+                                archive=candidate;
+                                break;
+                            }
+                        }
+                        if(archive.empty())
+                            throw std::runtime_error("125A archive names exhausted");
                         a125::write125AArchive(dir,archive,recordedName,
                                                recordedPlayback);
                         report<<"ARCHIVE,125A_READY,"<<archive.filename().string()<<"\n";
