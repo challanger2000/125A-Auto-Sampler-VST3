@@ -145,7 +145,7 @@ jobs:
           $report = @{
             schema='125a-autosampler-independent-multiclass-inventory-v1'
             status='P22_MULTICLASS_INVENTORY_PASS'
-            product_source_sha='61c904093180a5b79d086f3ae78302b08ebc6ea5'
+            product_source_sha=(git rev-parse HEAD).Trim()
             lab_source_sha='7213fe1f81f4036f74431cb5b2d7dbd09b73ee5c'
             plugin_sha256=(Get-FileHash -Algorithm SHA256 (Get-ChildItem $bundle[0].FullName -Recurse -File -Filter '*.vst3' | Select-Object -First 1).FullName).Hash.ToLowerInvariant()
             discovered_vst3_audio_classes=2
