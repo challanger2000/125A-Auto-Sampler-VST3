@@ -1,4 +1,4 @@
-# START HERE – 125A AutoSampler P021
+# START HERE – 125A AutoSampler P024
 
 ## Ziel: aufnehmen und mit 125A selbst spielen
 
@@ -11,7 +11,7 @@ Kein SFZ-Export oder fremder Sampler gehört zum notwendigen Workflow. Das inter
 
 ## Windows-Installation
 
-- **Aktuell:** Windows-Testbundle [`125A-AutoSampler-P018-Win64`](https://github.com/challanger2000/125A-Auto-Sampler-VST3/actions/runs/43577443699/artifacts/14107007285) aus dem zuletzt erfolgreichen P018-Workflow herunterladen. P018 erweitert P016 um portable `*.125A`-Instrumente, 0-dB-Gain, einen Namen, eine native MIDI-Tastatur und das Recorder-Statusfenster. Der [P018-Testlauf #43577443699](https://github.com/challanger2000/125A-Auto-Sampler-VST3/actions/runs/43577443699) ist vollständig **grün** – einschließlich Standard-ZIP-Extraktion der PCM24-WAVs, 94/94 Steinberg-Tests und beiden VSTGUI-Fenstern.
+- **Letzte bestandene Windows-Abnahme:** [P023-Lauf #43583118459](https://github.com/challanger2000/125A-Auto-Sampler-VST3/actions/runs/43583118459) mit 94/94 Steinberg-Tests, vollständiger PCM24-Aufnahme/Wiedergabe, Archivprüfung, beiden VSTGUI-Fenstern und sofortigem DAW-State-Speichern nach Aufnahme. Der P024-Workflow erstellt ein neues Testbundle `125A-AutoSampler-P024-Win64` nach erfolgreicher QA. **Nur ein erfolgreiches P024-Artefakt für den nachfolgenden Praxistest verwenden.**
 - Den entpackten **vollständigen** Ordner `AutosamplerVST3.vst3` nach `C:\Program Files\Common Files\VST3\` kopieren.
 - Fender Studio Pro neu starten und beide 125A-Klassen im Plugin-Browser suchen.
 
@@ -54,7 +54,7 @@ Bei aktiviertem Normalize werden gleichzeitige 125A-One-Shot-Stimmen jetzt **lin
 
 Die neue, kompakte Hardware-VSTGUI ist in drei Bereiche gegliedert: **SAMPLING**, **SAMPLE DISPLAY** (echte PCM-Wellenform der auf der Tastatur ausgewählten bzw. zuletzt per MIDI gespielten Root-Note) und **PLAYBACK** (vier silberne ADSR-Drehregler, Gain, Normalize, One Shot). Darunter ist Steinbergs MIDI-Tastatur mit goldenen Markierungen aufgenommener Grundtöne und **OCT − / OCT +**. Keine Filter, kein Sample-Map-Editor, kein Fremd-Sampler.
 
-**Projektwiederherstellung:** Die DAW speichert Plugin-Parameter, Instrumentennamen, den Archivpfad und seit P022 eine **64-Bit-Prüfkennung aus sämtlichen WAV-Einträgen und dem Manifest**. Existiert der ursprüngliche Pfad nicht mehr, sucht das Plugin nur in bekannten 125A-Ordnern (gewählter Ausgabeordner, `Dokumente/125A AutoSampler` und `Dokumente`) nach einem Archiv mit **passender Gesamtkennung**. Eine gleichnamige Bank mit anderen WAV-Daten wird abgewiesen. Das Projekt kann unmittelbar nach dem abgeschlossenen Aufnahmelauf gespeichert werden, auch wenn der automatische RAM-Import noch läuft. Bei anderen Umzügen **LOAD INSTRUMENT** wählen. Eine unbeschränkte Dateisuche oder ein im DAW-Projekt eingebettetes Sample-Archiv ist nicht implementiert.
+**Projektwiederherstellung:** Die DAW speichert Plugin-Parameter, Instrumentennamen, den Archivpfad und seit P022 eine **64-Bit-Prüfkennung aus sämtlichen WAV-Einträgen und dem Manifest**. Existiert der ursprüngliche Pfad nicht mehr, sucht das Plugin nur in bekannten 125A-Ordnern (gewählter Ausgabeordner, `Dokumente/125A AutoSampler` und `Dokumente`) nach einem Archiv mit **passender Gesamtkennung**. Eine gleichnamige Bank mit anderen WAV-Daten wird abgewiesen. Das Projekt kann unmittelbar nach dem abgeschlossenen Aufnahmelauf gespeichert werden, auch wenn der automatische RAM-Import noch läuft. Bei anderen Umzügen **LOAD INSTRUMENT** wählen. Eine unbeschränkte Dateisuche oder ein im DAW-Projekt eingebettetes Sample-Archiv ist nicht implementiert. **Für einen Rechnerwechsel die .125A-Datei zusätzlich zum DAW-Projekt sichern und mitnehmen.** Projektzustände ab P022 ohne gültige PCM-Prüfkennung laden aus Sicherheitsgründen keine gleichnamige .125A automatisch, sondern verlangen eine erneute explizite Auswahl über LOAD INSTRUMENT.
 
 ## Exportformat und Kontrolle
 

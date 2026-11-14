@@ -774,6 +774,68 @@ int run(const char* vst3path,bool matrix,bool customFolder){
                 a125::archive125AFingerprint(capturedArchive).value_or(0),
             "P023 saved audio fingerprint differs from freshly recorded bank");
     }
+    // P024: A current-format DAW state with an .125A path but no PCM
+    // fingerprint must NOT silently import an archive with that filename.
+    // This covers a save performed while the archive is inaccessible.
+    {
+        ResizableMemoryIBStream unverifiedState;
+        IBStreamer writer(&unverifiedState,kLittleEndian);
+        require(writer.writeInt32(0x125A2201),
+            "P024 cannot serialize current DAW state version");
+        const std::array<double,18> parameters{
+            60./127.,60./127.,1.,0.,0.,
+            (1.-.25)/7.75,(2.-.25)/9.75,(.1-.05)/.45,
+            99./126.,59./126.,119./126.,
+            0.,1.,0.,0.,1.,.05,.5
+        };
+        for(const double value:parameters)
+            require(writer.writeDouble(value),"P024 parameter write failed");
+        require(writer.writeInt32(0),"P024 empty export-folder write failed");
+        const auto archivePath=capturedArchive.u8string();
+        require(writer.writeInt32(static_cast<int32>(archivePath.size())),
+            "P024 archived bank path length write failed");
+        int32 written=0;
+        require(unverifiedState.write(
+            archivePath.data(),static_cast<int32>(archivePath.size()),&written)==kResultOk &&
+            written==static_cast<int32>(archivePath.size()),
+            "P024 archive path write failed");
+        const std::string name="Unverified Bank";
+        require(writer.writeInt32(static_cast<int32>(name.size())),
+            "P024 instrument name length write failed");
+        written=0;
+        require(unverifiedState.write(
+            name.data(),static_cast<int32>(name.size()),&written)==kResultOk &&
+            written==static_cast<int32>(name.size()),
+            "P024 instrument name write failed");
+        require(writer.writeInt64(0),"P024 missing fingerprint write failed");
+        unverifiedState.rewind();
+        require(generator.component->setState(&unverifiedState)==kResultOk,
+            "P024 cannot restore an unverified bank state safely");
+        // Prove failure is audible silence, not merely a successful API return.
+        (void)generator.component->activateBus(kEvent,kInput,0,true);
+        EventList note(2), outbound(2);
+        Event on{};
+        on.type=Event::kNoteOnEvent;
+        on.busIndex=0;on.sampleOffset=0;
+        on.noteOn.channel=0;on.noteOn.pitch=60;
+        on.noteOn.velocity=1.f;on.noteOn.noteId=2024;
+        require(note.addEvent(on)==kResultOk,"P024 test MIDI Note-On unavailable");
+        std::fill(genL.begin(),genL.end(),.123f);
+        std::fill(genR.begin(),genR.end(),.123f);
+        ProcessData probe{};
+        probe.processMode=kRealtime;
+        probe.symbolicSampleSize=kSample32;
+        probe.numSamples=kBlock;probe.numOutputs=1;probe.outputs=&genOut;
+        probe.inputEvents=&note;probe.outputEvents=&outbound;
+        require(generator.processor->process(probe)==kResultOk,
+            "P024 unverified-state realtime playback probe failed");
+        for(int32 i=0;i<kBlock;++i)
+            require(std::abs(genL[static_cast<std::size_t>(i)])<1.e-7f &&
+                    std::abs(genR[static_cast<std::size_t>(i)])<1.e-7f,
+                "P024 DAW state without PCM fingerprint played an unverified bank");
+        std::cout<<"[PASS] P024 unverified modern project bank fails closed; "
+                    "no wrong-name sample is audible\\n";
+    }
     // P013: the SAME 125A instrument must directly play the just-recorded
     // WAV bank. No SFZ file, second sampler, or external playback VST.
     {

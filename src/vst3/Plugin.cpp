@@ -934,9 +934,16 @@ public:
             if(const char* home=std::getenv("USERPROFILE");home && *home)
                 documents=std::filesystem::path(home)/"Documents";
 #endif
-            const auto relocated=a125::resolve125APath(
-                restoredBank,restoredFolder,documents,fingerprint,legacyIdentity);
-            if(!loadSamples(relocated)){
+            // Since v2201, an archive path without a verified PCM
+            // fingerprint is not a trustworthy identity. This can happen
+            // if the ZIP disappeared while the DAW saved the project.
+            // Fail closed instead of playing a replacement with the same name.
+            const bool unverifiedArchive=version==0x125A2201 &&
+                restoredBank.extension()==".125A" && !fingerprint;
+            const auto relocated=unverifiedArchive?std::filesystem::path{}:
+                a125::resolve125APath(
+                    restoredBank,restoredFolder,documents,fingerprint,legacyIdentity);
+            if(unverifiedArchive || !loadSamples(relocated)){
                 // Retain the *requested* filename for a future relink, but
                 // never keep an unrelated old project's samples sounding.
                 std::lock_guard<std::mutex> guard(bankMutex_);

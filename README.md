@@ -1,4 +1,4 @@
-# 125A AutoSampler VST3 – P021: 125A-Hardware-GUI, PCM-Display und portable Instrumente
+# 125A AutoSampler VST3 – P024: verifizierte Projektbank, Hardware-GUI und portable Instrumente
 
 Windows-x64-VST3 für **automatisches Sampeln eines bereits in Fender Studio Pro geladenen VST-Instruments und direktes Spielen der aufgenommenen Samples im 125A selbst**.
 
@@ -64,6 +64,12 @@ Die lange Entwickler-GUI wurde durch eine **1024 × 692 große VSTGUI-Hardware-O
 Der Projektzustand wurde um eine Kennung für das gespeicherte Archiv erweitert; beim erneuten Laden werden nur bekannte 125A-Speicherorte durchsucht und nur passende Instrumente automatisch verknüpft. Bei anderem Speicherort bleibt **LOAD INSTRUMENT** verfügbar. One Shot ist nun der explizit positive Schalter (1=AN); P015–P020-Gate-States werden beim Projektladen konvertiert, um den Klang älterer Sessions zu behalten. Die ZIP-v1-Metadaten speichern weiterhin den alten Gate-Bitwert und werden bei manueller Archivübernahme entsprechend übersetzt.
 
 **Grenze der automatisierten Prüfung:** Win32-GUI-Anhängen und MIDI-/Audio-/ZIP-Integration sind nachgewiesen. Der tatsächliche optische Eindruck und Fender-Studio-Pro-/ASIO-Ablauf müssen vor einem endgültigen Release noch an der DAW abgenommen werden.
+
+## P022–P024 – Projektzustand und Archividentität
+
+P022 speichert im DAW-Projektzustand neben dem vollständigen Archivpfad eine 64-Bit-Prüfkennung aus den ZIP-Einträgen einschließlich aller WAV-CRCs und Größen. P023 speichert direkt nach einer abgeschlossenen Aufnahme bereits das **neu erzeugte .125A-Archiv**, selbst wenn der asynchrone RAM-Import noch nicht beendet ist. P024 verhindert zusätzlich die automatische Wiedergabe eines gleichnamigen Archivs, wenn in einem modernen Projektzustand die Prüfkennung fehlt; der Sampler bleibt dann stumm, bis ein Instrument ausdrücklich gewählt wird. Ein unabhängiger ASIO-/Fender-Studio-Pro-Praxistest steht weiterhin aus.
+
+**Wichtig zur Portabilität:** Das einzelne `.125A`-Instrument enthält alle WAV-Samples; der DAW-Projektzustand dagegen enthält nur Pfad, Instrumentenname, Parameter und Prüfkennung – **nicht die Audio-Daten**. Für den Transport auf einen anderen Rechner müssen Projekt und zugehörige `.125A`-Dateien gemeinsam gesichert werden.
 
 ## Routing in Fender Studio Pro
 

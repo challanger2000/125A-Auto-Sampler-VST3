@@ -1,4 +1,4 @@
-name: P021 Windows VST3 AutoSampler Hardware GUI and Archive QA
+name: P024 Windows VST3 AutoSampler verified project bank QA
 on:
   push:
     branches: ['develop/**']
@@ -94,6 +94,6 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: 125A-AutoSampler-P021-Win64
+          name: 125A-AutoSampler-P024-Win64
           path: build-vst3/VST3/Release/*.vst3
           if-no-files-found: error
