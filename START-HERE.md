@@ -1,4 +1,4 @@
-# START HERE – 125A AutoSampler P014
+# START HERE – 125A AutoSampler P015
 
 ## Ziel: aufnehmen und mit 125A selbst spielen
 
@@ -38,6 +38,15 @@ Ein abgebrochener oder stummer Durchlauf darf nicht als erfolgreich gelten. Ein 
 4. **RUN Aus** schalten. Dann MIDI-Noten an die 125A-Instrumentenspur senden: Der 125A liefert selbst Stereo-Audio.
 
 Die interne Engine ordnet Sample-Root-Noten, Velocity und Round Robins direkt zu, transponiert auf nicht gesampelte Zwischentöne und spielt mit bis zu **32 Stimmen**. Der aufgenommene Release wird One-Shot bis zum Sampleende wiedergegeben; echte Sustain-Loops existieren noch nicht.
+
+### P015 – kurze Vintage-Sounds bearbeiten
+
+- **NORMALIZE (-1 dBFS):** standardmäßig aktiv, errechnet einen gemeinsamen Verstärkungsfaktor für die gesamte Bank. Dadurch bleiben die Lautstärkeunterschiede zwischen Velocity-Layern erhalten. Die Original-WAVs werden nicht verändert.
+- **GATE:** standardmäßig aus – One-Shot spielt das Sample bis zum Ende, auch bei MIDI Note-Off. Eingeschaltet wird die Amp-Release-Phase durch Note-Off ausgelöst.
+- **AMP ADSR:** Attack, Decay, Sustain und Release über die vier Regler im neuen Playback-Bereich. Die Grundeinstellung lässt den kurzen One-Shot nahezu unverändert.
+- **NOTE STEP:** Schrittweite 12 ergibt oktavweise Aufnahme, z. B. C1/C2/C3/C4; 3 oder 6 Halbtonschritte ergeben dichtere Multisamples.
+
+Für den ersten DAW-Test ist die bisherige VSTGUI um eine kompakte Playback-Sektion erweitert. Filter, portable Komplettpresets und eventuell Vintage-DAC-Charaktere gehören **nicht** zum bereits getesteten P015-Funktionsumfang.
 
 **Die geladene Bank bleibt nur erhalten, solange die WAV-Dateien am gespeicherten Speicherort vorhanden sind.** Das Projekt speichert den Bank-Ordnerpfad, nicht sämtliche PCM-Audiodaten. **LOAD SAMPLES** ist nur erforderlich, um einen anderen oder älteren Run-Ordner manuell auszuwählen.
 
