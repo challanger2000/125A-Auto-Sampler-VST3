@@ -241,8 +241,8 @@ int run(const char* vst3path,bool matrix,bool customFolder){
             saved.rewind();
             IBStreamer in(&saved,kLittleEndian);
             int32 version=0;
-            require(in.readInt32(version) && version==0x125A2101,
-                "P021 OneShot state must be upgraded to v2101");
+            require(in.readInt32(version) && version==0x125A2201,
+                "P021 OneShot state must be upgraded to v2201");
             for(std::size_t i=1;i<19;++i){
                 double value=-1.;
                 require(in.readDouble(value),"P021 saved VST3 state truncated");
