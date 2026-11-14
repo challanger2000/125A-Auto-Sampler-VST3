@@ -213,6 +213,48 @@ int run(const char* vst3path,bool matrix,bool customFolder){
     auto recorder=load(factory,host,"125A AutoSampler Recorder");
     smokeNativeGui(generator.component.get());
     smokeNativeGui(recorder.component.get(),true);
+    // Legacy P015 Gate=0 means OneShot ON. New P021 UI stores OneShot=1.
+    // Verify this migration on the actual loaded VST3 component, then
+    // verify that save/reload does not invert it a second time.
+    {
+        ResizableMemoryIBStream oldState;
+        IBStreamer out(&oldState,kLittleEndian);
+        require(out.writeInt32(0x125A1501),"P021 old state version");
+        const std::array<double,18> oldValues{
+            0.,60./127.,60./127.,1.,0.,0.,
+            (1.-.25)/7.75,(2.-.25)/9.75,(.10-.05)/.45,
+            99./126.,59./126.,119./126.,
+            0.,0.,0.,0.,1.,.05
+        };
+        for(std::size_t i=1;i<oldValues.size();++i)
+            require(out.writeDouble(oldValues[i]),
+                "P021 old Gate state parameter serialize");
+        require(out.writeInt32(0) && out.writeInt32(0),
+                "P021 old empty output and bank directories");
+        oldState.rewind();
+        require(generator.component->setState(&oldState)==kResultOk,
+            "P021 legacy Gate state rejected");
+        for(int cycle=0;cycle<2;++cycle){
+            ResizableMemoryIBStream saved;
+            require(generator.component->getState(&saved)==kResultOk,
+                "P021 migrated project could not be saved");
+            saved.rewind();
+            IBStreamer in(&saved,kLittleEndian);
+            int32 version=0;
+            require(in.readInt32(version) && version==0x125A2101,
+                "P021 OneShot state must be upgraded to v2101");
+            for(std::size_t i=1;i<19;++i){
+                double value=-1.;
+                require(in.readDouble(value),"P021 saved VST3 state truncated");
+                if(i==13)require(value>=.99999,
+                    "P021 Gate=0 must migrate to OneShot=1 without inversion");
+            }
+            saved.rewind();
+            require(generator.component->setState(&saved)==kResultOk,
+                "P021 migrated OneShot state rejected");
+        }
+        std::cout<<"[PASS] P021 GATE->ONE SHOT: old project and two new-state recalls preserve ON\\n";
+    }
     const auto chosenRoot=base/"Chosen Export Folder"/"Takes";
     if(customFolder){
         std::filesystem::create_directories(chosenRoot);
