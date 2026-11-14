@@ -7,6 +7,7 @@
 #include "core/RunGate.h"
 #include "core/ExportTarget.h"
 #include "core/SfzBank.h"
+#include "core/RunStatus.h"
 #include <array>
 #include <filesystem>
 #include <fstream>
@@ -302,6 +303,42 @@ void testCaptureIntegrityFailClosed() {
     }
 }
 
+void testRunDisplayTruthfulness() {
+    a125::RunDisplaySnapshot s;
+    require(a125::runDisplayStatus(s)==a125::RunDisplayStatus::Ready,
+            "fresh plugin starts ready");
+    s.generation=4;s.expected=8;s.recordingAnchorActive=true;
+    require(a125::runDisplayStatus(s)==a125::RunDisplayStatus::Recording,
+            "running job must display recording");
+    s.recordingAnchorActive=false;s.captureEndedGeneration=4;
+    require(a125::runDisplayStatus(s)==a125::RunDisplayStatus::MissingRecorder,
+            "missing audio Recorder must not say FINALIZING forever");
+    s.observed=8;
+    require(a125::runDisplayStatus(s)==a125::RunDisplayStatus::Finalizing,
+            "recorded final frame waits for writer");
+    s.writerFinishedGeneration=4;s.written=8;
+    require(a125::runDisplayStatus(s)==a125::RunDisplayStatus::Complete,
+            "fully exported samples and SFZ can be COMPLETE");
+    s.errors=1;
+    require(a125::runDisplayStatus(s)==a125::RunDisplayStatus::Partial,
+            "SFZ file error must not display COMPLETE");
+    s.errors=0;s.silent=1;s.written=7;
+    require(a125::runDisplayStatus(s)==a125::RunDisplayStatus::Partial,
+            "one missing velocity/RR WAV must display PARTIAL");
+    s.written=0;
+    require(a125::runDisplayStatus(s)==a125::RunDisplayStatus::Failed,
+            "no successful WAVs must display FAILED");
+    s.interruptedGeneration=4;
+    require(a125::runDisplayStatus(s)==a125::RunDisplayStatus::Aborted,
+            "manual Stop must display ABORTED, even with prior successful WAVs");
+    s.writerFinishedGeneration=0;
+    require(a125::runDisplayStatus(s)==a125::RunDisplayStatus::Aborted,
+            "abort UI must not wait for a missing file writer");
+    s.generation=5;s.interruptedGeneration=4;s.captureEndedGeneration=4;
+    require(a125::runDisplayStatus(s)==a125::RunDisplayStatus::Ready,
+            "previous run must not contaminate next run's status");
+}
+
 void testSfzKeyboardBank() {
     a125::JobConfig config;
     config.firstNote=60;
@@ -471,6 +508,7 @@ int main() {
         testRunNeedsExplicitRearm();
         testStopAndJumpNoteRecovery();
         testCaptureIntegrityFailClosed();
+        testRunDisplayTruthfulness();
         testSfzKeyboardBank();
         testAutomaticBatch48Wavs();
         testWavAndTrim();
