@@ -1,4 +1,4 @@
-# START HERE – 125A AutoSampler P024
+# START HERE – 125A AutoSampler · P001–P024 Reparaturzweig (NICHT FINAL)
 
 ## Ziel: aufnehmen und mit 125A selbst spielen
 
@@ -9,9 +9,11 @@
 
 Kein SFZ-Export oder fremder Sampler gehört zum notwendigen Workflow. Das interne Instrument lädt PCM24-Stereo-WAVs direkt.
 
+**WARNUNG:** Die frühere P024-Version wurde nach unabhängiger Prüfung mit 15 Auditbefunden (5 kritisch) als **NO-GO** bewertet. Der aktuelle Branch enthält technische Reparaturen, ist aber nicht freigegeben. Insbesondere ist der vollständige unabhängige Nachaudit nicht bestanden. Die endgültige GUI P025 fehlt. [Aktueller Reparatur- und Testnachweis](docs/AUDIT-REPAIR-STATUS.md).
+
 ## Windows-Installation
 
-- **Letzte bestandene Windows-Abnahme:** [P023-Lauf #43583118459](https://github.com/challanger2000/125A-Auto-Sampler-VST3/actions/runs/43583118459) mit 94/94 Steinberg-Tests, vollständiger PCM24-Aufnahme/Wiedergabe, Archivprüfung, beiden VSTGUI-Fenstern und sofortigem DAW-State-Speichern nach Aufnahme. Der P024-Workflow erstellt ein neues Testbundle `125A-AutoSampler-P024-Win64` nach erfolgreicher QA. **Nur ein erfolgreiches P024-Artefakt für den nachfolgenden Praxistest verwenden.**
+- **Entwicklertests, kein Release:** Historischer [P023-Lauf #43583118459](https://github.com/challanger2000/125A-Auto-Sampler-VST3/actions/runs/43583118459) bestand die damalige Matrix, konnte aber den tatsächlichen Save-before-import-Zeitpunkt **nicht nachweisen**. Neue Windows-Testartefakte im Draft-PR sind ausschließlich für kontrollierte technische Tests bestimmt. Nicht als kommerziell oder vollständig abgenommen ausgeben.
 - Den entpackten **vollständigen** Ordner `AutosamplerVST3.vst3` nach `C:\Program Files\Common Files\VST3\` kopieren.
 - Fender Studio Pro neu starten und beide 125A-Klassen im Plugin-Browser suchen.
 
@@ -52,9 +54,9 @@ Bei aktiviertem Normalize werden gleichzeitige 125A-One-Shot-Stimmen jetzt **lin
 - **NOTE STEP:** Schrittweite 12 ergibt oktavweise Aufnahme, z. B. C1/C2/C3/C4; 3 oder 6 Halbtonschritte ergeben dichtere Multisamples.
 - **Schnelle Werkseinstellung:** 1 Round Robin, 1 Velocity-Layer, NOTE STEP 12, Note Hold **1,0 s**, Release-Capture **2,0 s**, Pause 0,1 s. Die lange historische 8-Round-Robin-Aufnahme bleibt nur eine einstellbare Option.
 
-Die neue, kompakte Hardware-VSTGUI ist in drei Bereiche gegliedert: **SAMPLING**, **SAMPLE DISPLAY** (echte PCM-Wellenform der auf der Tastatur ausgewählten bzw. zuletzt per MIDI gespielten Root-Note) und **PLAYBACK** (vier silberne ADSR-Drehregler, Gain, Normalize, One Shot). Darunter ist Steinbergs MIDI-Tastatur mit goldenen Markierungen aufgenommener Grundtöne und **OCT − / OCT +**. Keine Filter, kein Sample-Map-Editor, kein Fremd-Sampler.
+Die derzeitige **funktionale Test-VSTGUI (nicht die endgültige P025-Oberfläche)** ist in drei Bereiche gegliedert: **SAMPLING**, **SAMPLE DISPLAY** (echte PCM-Wellenform der auf der Tastatur ausgewählten bzw. zuletzt per MIDI gespielten Root-Note) und **PLAYBACK** (vier silberne ADSR-Drehregler, Gain, Normalize, One Shot). Darunter ist Steinbergs MIDI-Tastatur mit goldenen Markierungen aufgenommener Grundtöne und **OCT − / OCT +**. Keine Filter, kein Sample-Map-Editor, kein Fremd-Sampler.
 
-**Projektwiederherstellung:** Die DAW speichert Plugin-Parameter, Instrumentennamen, den Archivpfad und seit P022 eine **64-Bit-Prüfkennung aus sämtlichen WAV-Einträgen und dem Manifest**. Existiert der ursprüngliche Pfad nicht mehr, sucht das Plugin nur in bekannten 125A-Ordnern (gewählter Ausgabeordner, `Dokumente/125A AutoSampler` und `Dokumente`) nach einem Archiv mit **passender Gesamtkennung**. Eine gleichnamige Bank mit anderen WAV-Daten wird abgewiesen. Das Projekt kann unmittelbar nach dem abgeschlossenen Aufnahmelauf gespeichert werden, auch wenn der automatische RAM-Import noch läuft. Bei anderen Umzügen **LOAD INSTRUMENT** wählen. Eine unbeschränkte Dateisuche oder ein im DAW-Projekt eingebettetes Sample-Archiv ist nicht implementiert. **Für einen Rechnerwechsel die .125A-Datei zusätzlich zum DAW-Projekt sichern und mitnehmen.** Projektzustände ab P022 ohne gültige PCM-Prüfkennung laden aus Sicherheitsgründen keine gleichnamige .125A automatisch, sondern verlangen eine erneute explizite Auswahl über LOAD INSTRUMENT.
+**Projektwiederherstellung:** Die DAW speichert Plugin-Parameter, Instrumentennamen, den Archivpfad und seit P022 eine **64-Bit-Prüfkennung aus sämtlichen WAV-Einträgen und dem Manifest**. Existiert der ursprüngliche Pfad nicht mehr, sucht das Plugin nur in bekannten 125A-Ordnern (gewählter Ausgabeordner, `Dokumente/125A AutoSampler` und `Dokumente`) nach einem Archiv mit **passender Gesamtkennung**. Eine gleichnamige Bank mit anderen WAV-Daten wird abgewiesen. Das Speichern direkt nach dem Aufnahmelauf vor abgeschlossenem RAM-Import ist konstruktiv vorgesehen, der zeitlich erzwungene native Interleaving-Nachweis bleibt jedoch **NOT RUN**. Bei anderen Umzügen **LOAD INSTRUMENT** wählen. Eine unbeschränkte Dateisuche oder ein im DAW-Projekt eingebettetes Sample-Archiv ist nicht implementiert. **Für einen Rechnerwechsel die .125A-Datei zusätzlich zum DAW-Projekt sichern und mitnehmen.** Projektzustände ab P022 ohne gültige PCM-Prüfkennung laden aus Sicherheitsgründen keine gleichnamige .125A automatisch, sondern verlangen eine erneute explizite Auswahl über LOAD INSTRUMENT.
 
 ## Exportformat und Kontrolle
 
@@ -78,5 +80,5 @@ Standard: `%USERPROFILE%\Documents\125A AutoSampler\Run_<...>\`.
 - Ein echtes Fremd-VST in Fender Studio Pro, dessen MIDI-Routing und die vollständige GUI-Interaktion sind noch nicht praktisch abgenommen.
 - Physischer ASIO-Test steht aus.
 - Pro DAW-Prozess nur ein Sampling-Generator/Recorder-Paar.
-- Automatischer Bank-Import erfolgt auf einem separaten Worker-Thread, auch bei geschlossenem Editor. Ein Instrument kann derzeit höchstens 16 verschiedene Bankversionen nacheinander übernehmen; keine Sustain-Loops.
+- Automatischer Bank-Import läuft außerhalb des Audiothreads, auch bei geschlossenem Editor. Die starre 16-Versionen-Grenze wurde durch Bank-Retirement/Speicherbudget ersetzt; umfangreiche Ressourcen-/Nebenläufigkeitsabnahme fehlt. Keine Sustain-Loops.
 - [PR #2](https://github.com/challanger2000/125A-Auto-Sampler-VST3/pull/2) bleibt bis zur Endabnahme Draft.

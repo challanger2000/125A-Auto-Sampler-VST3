@@ -1,6 +1,8 @@
-# 125A AutoSampler VST3 – P024: verifizierte Projektbank, Hardware-GUI und portable Instrumente
+# 125A AutoSampler VST3 – technischer Reparaturzweig nach P001–P024-Audit
 
 Windows-x64-VST3 für **automatisches Sampeln eines bereits in Fender Studio Pro geladenen VST-Instruments und direktes Spielen der aufgenommenen Samples im 125A selbst**.
+
+**STATUS: NO-GO / NICHT RELEASEFÄHIG.** Der unabhängige P001–P024-Audit vom 14.11.2026 dokumentierte 15 Befunde, davon 5 kritisch. Die Reparaturen werden im bestehenden Draft-PR #2 entwickelt, getestet und **müssen anschließend erneut unabhängig auditiert werden**. Erfolgreiche Eigen-Regressionen und Windows-CI sind kein FULL AUDIT. [Verbindliches Reparatur-/Nachweisregister](docs/AUDIT-REPAIR-STATUS.md).
 
 **125A IST der Sampler.** Es wird kein SFZ-Player, kein externer Sampler und kein eigener Fremd-VST-Host benötigt. Das Quell-VST bleibt in der DAW.
 
@@ -33,9 +35,9 @@ Nach dem Laden einer Bank stehen direkt im 125A-Editor zur Verfügung:
 - **NOTE STEP:** Bereits vorhanden: 1–12 Halbtöne (etwa C1/C2/C3/C4 mit Step 12); der interne Player transponiert die Lücken.
 - **Schneller Vintage-Start:** Die Werkseinstellung nimmt nur **1 Round Robin**, **1 Velocity-Layer** und pro Take **1,0 Sekunde Note + 2,0 Sekunden Ausklang + 0,1 Sekunden Pause** auf. NOTE STEP steht zunächst auf **12 Halbtönen**. Für besondere Klänge kann alles bewusst verlängert oder dichter gesampelt werden.
 
-Ein einfacher dunkel gehaltener VSTGUI-Testbereich ist angefügt. Die 19 Parameter sind DAW-automatisierbar. Die komplette Aufnahme-WAV wird ohne Sustain-Loop gespielt. Für Vintage-One-Shots bewusst kein Loop-Editor, keine Effektkette und keine komplexe Modulationsmatrix.
+Eine **funktionale VSTGUI** ist angebunden; die eigenständig gestaltete **finale GUI (P025) wurde noch nicht entwickelt**. Die 19 Parameter sind DAW-automatisierbar. Die komplette Aufnahme-WAV wird ohne Sustain-Loop gespielt. Für Vintage-One-Shots bewusst kein Loop-Editor, keine Effektkette und keine komplexe Modulationsmatrix.
 
-**Noch ausstehend:** uneingeschränkte projekt-relative Dateisuche (momentan begrenzte Pfad-Reparatur nach Manifest-Kennung) sowie erneute Fender-Studio-Pro-/ASIO-Praxisabnahme mit der vollständigen Hardware-GUI.
+**Noch ausstehend:** uneingeschränkte projekt-relative Dateisuche, erneuter unabhängiger technischer Audit samt gezielter P023-Race-Reproduktion, endgültige Hardware-GUI (P025) und Fender-Studio-Pro-/ASIO-Praxisabnahme.
 
 ## P016 – Normalize ohne harte Übersteuerung
 
@@ -57,9 +59,9 @@ Bei der DAW-Wiedergabe muss die **Quell-VST-Spur** nach der Aufnahme stummgescha
 
 **Prüfstand:** [P017 vollständiger Windows PASS](https://github.com/challanger2000/125A-Auto-Sampler-VST3/actions/runs/43576534622): 94/94 Steinberg-Validatorprüfungen, 72/72 WAVs, vier native PCM-Wiedergabetests, automatischer .125A-Export und Import, zwei VSTGUI-Win32-Fensterprüfungen. [Geprüftes Test-ZIP](https://github.com/challanger2000/125A-Auto-Sampler-VST3/actions/runs/43576534622/artifacts/14106249655). **P018/P019 Windows PASS:** [vollständiger VST3-Lauf #43577443699](https://github.com/challanger2000/125A-Auto-Sampler-VST3/actions/runs/43577443699) einschließlich 94/94 Steinberg-Tests, aller MIDI-/WAV-/ZIP-Integrationsszenarien, beiden VSTGUI-Fenstern, exakt einem Archiv je Aufnahme und unabhängiger Entnahme einer PCM24-WAV mit .NET ZIP. [Getestetes P018-Windows-x64-Paket](https://github.com/challanger2000/125A-Auto-Sampler-VST3/actions/runs/43577443699/artifacts/14107007285). Die Dateinamenhärtung und die Korrektur des doppelten Recorder-Abschlusses sind enthalten. **Kein vollständiger Praxistest in Fender Studio Pro/ASIO.**
 
-## P020/P021 – Hardware-Oberfläche und robuste Instrumentenwiederherstellung
+## P020/P021 – technische VSTGUI-Oberfläche und Projektwiederherstellung
 
-Die lange Entwickler-GUI wurde durch eine **1024 × 692 große VSTGUI-Hardware-Oberfläche** ersetzt: Sampling links, echtes PCM-Wellenformdisplay mittig und silberne ADSR-Drehregler rechts. Aufnahme- und Archivschaltflächen, Statusanzeigen und die vieroktavige Klaviatur bleiben ohne Menüs erreichbar. Alle Knöpfe behalten die native VSTGUI-Bedienlogik; die silberne Front wird als Vektorgrafik gezeichnet, ohne zusätzliche GUI-Frameworks oder bitmap-basierte Ersatzknöpfe. Die Recorder-GUI bleibt ein kleines Marken-/Statusfenster.
+Der technische Prototyp verwendet eine **1024 × 692 große VSTGUI-Oberfläche**: Sampling links, echtes PCM-Wellenformdisplay mittig und silberne ADSR-Drehregler rechts. Aufnahme- und Archivschaltflächen, Statusanzeigen und die vieroktavige Klaviatur bleiben ohne Menüs erreichbar. Alle Knöpfe behalten die native VSTGUI-Bedienlogik; die silberne Front wird als Vektorgrafik gezeichnet, ohne zusätzliche GUI-Frameworks oder bitmap-basierte Ersatzknöpfe. Die Recorder-GUI bleibt ein kleines Marken-/Statusfenster.
 
 Der Projektzustand wurde um eine Kennung für das gespeicherte Archiv erweitert; beim erneuten Laden werden nur bekannte 125A-Speicherorte durchsucht und nur passende Instrumente automatisch verknüpft. Bei anderem Speicherort bleibt **LOAD INSTRUMENT** verfügbar. One Shot ist nun der explizit positive Schalter (1=AN); P015–P020-Gate-States werden beim Projektladen konvertiert, um den Klang älterer Sessions zu behalten. Die ZIP-v1-Metadaten speichern weiterhin den alten Gate-Bitwert und werden bei manueller Archivübernahme entsprechend übersetzt.
 
@@ -67,7 +69,7 @@ Der Projektzustand wurde um eine Kennung für das gespeicherte Archiv erweitert;
 
 ## P022–P024 – Projektzustand und Archividentität
 
-P022 speichert im DAW-Projektzustand neben dem vollständigen Archivpfad eine 64-Bit-Prüfkennung aus den ZIP-Einträgen einschließlich aller WAV-CRCs und Größen. P023 speichert direkt nach einer abgeschlossenen Aufnahme bereits das **neu erzeugte .125A-Archiv**, selbst wenn der asynchrone RAM-Import noch nicht beendet ist. P024 verhindert zusätzlich die automatische Wiedergabe eines gleichnamigen Archivs, wenn in einem modernen Projektzustand die Prüfkennung fehlt; der Sampler bleibt dann stumm, bis ein Instrument ausdrücklich gewählt wird. Ein unabhängiger ASIO-/Fender-Studio-Pro-Praxistest steht weiterhin aus.
+P022 speichert im DAW-Projektzustand neben dem vollständigen Archivpfad eine 64-Bit-Prüfkennung aus den ZIP-Einträgen einschließlich aller WAV-CRCs und Größen. P023 soll das **neu erzeugte .125A-Archiv** unmittelbar nach Aufnahme und vor asynchronem RAM-Import speichern. Die vorhandenen positiven Integrationsprüfungen warteten jedoch erst auf den Autoimport: der echte *Save-before-import*-Interleaving-Fall bleibt **NOT RUN / NICHT NACHGEWIESEN**. P024 verhindert zusätzlich die automatische Wiedergabe eines gleichnamigen Archivs, wenn in einem modernen Projektzustand die Prüfkennung fehlt; der Sampler bleibt dann stumm, bis ein Instrument ausdrücklich gewählt wird. Ein unabhängiger ASIO-/Fender-Studio-Pro-Praxistest steht weiterhin aus.
 
 **Wichtig zur Portabilität:** Das einzelne `.125A`-Instrument enthält alle WAV-Samples; der DAW-Projektzustand dagegen enthält nur Pfad, Instrumentenname, Parameter und Prüfkennung – **nicht die Audio-Daten**. Für den Transport auf einen anderen Rechner müssen Projekt und zugehörige `.125A`-Dateien gemeinsam gesichert werden.
 
@@ -87,8 +89,8 @@ Das genaue MIDI-Routing, die physische ASIO-Ausgabe und das Dialogverhalten in *
 - **P001–P012:** Capture, sicherer Start/Stop, Export, Projektzustand und bisherige Windows-VST3-Integrationsfälle bestanden. Historische Prüfdokumente stehen unter [docs](docs/).
 - **P013 – Windows-Abnahme PASS:** Eingebauter WAV-Sampler, MIDI-Wiedergabe, Round-Robin-/Velocity-Mapping und Projektzustand. [Erfolgreiche vollständige Windows-VST3-Abnahme mit tatsächlicher PCM-Wiedergabe](https://github.com/challanger2000/125A-Auto-Sampler-VST3/actions/runs/43542007225): 72/72 WAVs und vier native MIDI-zu-Audio-Playback-Proben, Steinberg-Validator, GUI- und Core-Tests grün. Artefakt: `125A-AutoSampler-P013-Win64`.
 - **P014 – Windows-Abnahme PASS:** [72/72 WAVs, vier Wiedergabeproben ohne geöffneten Editor und ohne Projekt-State-Import, Steinberg-Validator 94/94, Audio-STOP/ABORT und VSTGUI](https://github.com/challanger2000/125A-Auto-Sampler-VST3/actions/runs/43564563114). Kein anderer Sampler erforderlich.
-- Noch ein Generator-/Recorder-Paar je DAW-Prozess, maximal 16 nacheinander geladene Banks pro Instrumentinstanz, keine Sustain-Loops.
+- Ein Generator-/Recorder-Paar pro DAW-Prozess wird zurzeit durch einen Fail-Closed-Instanz-Lease erzwungen; mehrere Paare werden **nicht unterstützt**. Die starre Grenze von 16 jemals geladenen Banken wurde durch alte-Bank-Retirement und ein PCM-Speicherbudget ersetzt; 110 Wechsel sind im Core getestet. Umfangreiche Langzeit-/Race-/ASIO-Tests fehlen. Keine Sustain-Loops.
 - **P015 Windows PASS:** [Kompletter Windows-Lauf #43567864929](https://github.com/challanger2000/125A-Auto-Sampler-VST3/actions/runs/43567864929) bestätigt 94/94 Steinberg-Tests, Core-Tests einschließlich Normalize/Gate-ADSR, GUI-Validierung mit 18 Parametern und 72/72 WAVs inklusive hörbarem Headless-Playback. [Hier das getestete Windows-x64-VST3-Bundle](https://github.com/challanger2000/125A-Auto-Sampler-VST3/actions/runs/43567864929/artifacts/14102478659).
-- Kein fertiges Release, solange die Tests in Fender Studio Pro und mit ASIO-Hardware ausstehen. [PR #2 bleibt Draft](https://github.com/challanger2000/125A-Auto-Sampler-VST3/pull/2).
+- **NO-GO für P025 und Release:** Alle Auditreparaturen, native Gegenproben, unabhängiger P74-/Codex-Nachaudit sowie Fender-Studio-Pro-/ASIO-Abnahme sind noch nicht vollständig belegt. [PR #2 bleibt Draft](https://github.com/challanger2000/125A-Auto-Sampler-VST3/pull/2).
 
 **Installation und Aufnahmeablauf:** [START-HERE.md](START-HERE.md).
