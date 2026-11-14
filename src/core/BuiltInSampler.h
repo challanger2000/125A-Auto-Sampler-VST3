@@ -180,6 +180,12 @@ public:
         current_.store(ptr,std::memory_order_release);
         return true;
     }
+    // State-restore failure must not leave a different project's bank
+    // playable. The audio callback retires active voices at the next block.
+    void clearCurrent() noexcept {
+        current_.store(nullptr,std::memory_order_release);
+        clearVoices_.store(true,std::memory_order_release);
+    }
     std::size_t loadedZones() const noexcept {
         const auto* bank=current_.load(std::memory_order_acquire);
         return bank?bank->zones.size():0;
@@ -214,6 +220,7 @@ public:
         return true;
     }
     void noteOn(int key,int velocity,double outputRate) noexcept {
+        clearVoicesIfRequested();
         if(key<0 || key>127 || velocity<1 || velocity>127 ||
            outputRate<8000 || outputRate>384000)return;
         const auto* bank=current_.load(std::memory_order_acquire);
@@ -287,6 +294,7 @@ public:
         }
     }
     StereoFrame renderOne() noexcept {
+        clearVoicesIfRequested();
         StereoFrame mix{};
         unsigned activeVoices=0;
         for(auto& voice:voices_) {
@@ -323,6 +331,10 @@ public:
         return mix;
     }
 private:
+    void clearVoicesIfRequested() noexcept {
+        if(clearVoices_.exchange(false,std::memory_order_acq_rel))
+            for(auto& voice:voices_)voice.zone=nullptr;
+    }
     enum class Stage:std::uint8_t {Attack,Decay,Sustain,Release};
     struct Voice {
         const SampleZone* zone=nullptr;
@@ -357,6 +369,7 @@ private:
     }
     std::vector<std::unique_ptr<SampleBank>> owned_;
     std::atomic<const SampleBank*> current_{nullptr};
+    std::atomic<bool> clearVoices_{false};
     std::array<Voice,maxVoices> voices_{};
     std::array<std::uint32_t,128*128> rrCounters_{};
     std::uint64_t timestamp_=0;
