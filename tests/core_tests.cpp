@@ -517,7 +517,9 @@ void testP017PortableArchive() {
     try {
         std::vector<a125::StereoFrame> wave(512,{.65f,-.4f});
         a125::writeWav24((root/"takes"/"N60_V100_RR01.wav").string(),44100,wave);
-        a125::writeWav24((root/"takes"/"N72_V100_RR01.wav").string(),44100,wave);
+        const std::vector<a125::StereoFrame> higherWave(512,{.15f,-.10f});
+        a125::writeWav24((root/"takes"/"N72_V100_RR01.wav").string(),
+            44100,higherWave);
         const auto archive=root/"Vintage Bass.125A";
         a125::ArchivePlayback settings;
         settings.params={1.,0.,.25,.5,.75,.1,.8};
@@ -596,9 +598,14 @@ void testP017PortableArchive() {
         require(rootMask[60] && rootMask[72] && !rootMask[71],
                 "P021 hardware keyboard must show only genuine sampled root notes");
         std::array<float,192> displayWave{};
-        require(player.waveform(displayWave) &&
+        require(player.waveform(displayWave,60) &&
                 *std::max_element(displayWave.begin(),displayWave.end())>.4f,
                 "P021 live display must show actual, nonzero PCM data");
+        std::array<float,192> higherDisplay{};
+        require(player.waveform(higherDisplay,72) &&
+                *std::max_element(higherDisplay.begin(),higherDisplay.end())<.2f &&
+                *std::max_element(higherDisplay.begin(),higherDisplay.end())>.12f,
+                "P023 waveform must change to PCM of keyboard-selected sample");
         player.noteOn(60,100,44100.);
         auto frame=player.renderOne();
         require(std::abs(frame[0]-.65f)<.00001f,
