@@ -70,7 +70,7 @@ constexpr std::size_t kParamCount=a125::ParameterCount+7;
 constexpr std::array<double,kParamCount> kDefaultParams{
     0.,60./127.,60./127.,1.,0.,0.,
     (1.-.25)/7.75,(2.-.25)/9.75,(.1-.05)/.45,
-    99./126.,59./126.,119./126., 0.,0.,0.,0.,1.,.15/3.,.5
+    99./126.,59./126.,119./126., 0.,1.,0.,0.,1.,.15/3.,.5
 };
 constexpr double kDefaultHold=(1.-0.25)/7.75;
 constexpr double kDefaultTail=(2.-0.25)/9.75;
@@ -467,6 +467,11 @@ public:
                             static_cast<V::ParamID>(kNormalizeParam+i),
                             archivePlayback.params[i]);
                     }
+                    // v1 .125A metadata stores the old Gate bit, not OneShot.
+                    const double oneShot=1.-archivePlayback.params[1];
+                    const auto index=static_cast<std::size_t>(kGateParam-kRunParam);
+                    values_[index].store(oneShot,std::memory_order_release);
+                    SingleComponentEffect::setParamNormalized(kGateParam,oneShot);
                     (void)session().setCaptureName(archiveName);
                 }
             }
@@ -601,7 +606,7 @@ public:
            V::ParameterInfo::kCanAutomate,kVelocity3Param);
         parameters.addParameter(STR16("Normalize bank (-1 dBFS)"),nullptr,1,0.,
            V::ParameterInfo::kCanAutomate,kNormalizeParam);
-        parameters.addParameter(STR16("Gate mode (off=One Shot)"),nullptr,1,0.,
+        parameters.addParameter(STR16("One Shot (On = Full Sample)"),nullptr,1,1.,
            V::ParameterInfo::kCanAutomate,kGateParam);
         parameters.addParameter(STR16("Amp Attack (0-2s)"),nullptr,0,0.,
            V::ParameterInfo::kCanAutomate,kAttackParam);
@@ -700,7 +705,7 @@ public:
     tresult PLUGIN_API getState(Steinberg::IBStream* state) override {
         if(!state) return Steinberg::kResultFalse;
         Steinberg::IBStreamer io(state,kLittleEndian);
-        if(!io.writeInt32(0x125A2001)) return Steinberg::kResultFalse;
+        if(!io.writeInt32(0x125A2101)) return Steinberg::kResultFalse;
         // The Run switch is deliberately not persisted: project reopen
         // must never create WAV files before the user explicitly starts.
         for(std::size_t i=1;i<values_.size();++i)
@@ -759,24 +764,30 @@ public:
            (version!=0x125A0301 && version!=0x125A0401 &&
             version!=0x125A1001 && version!=0x125A1301 &&
              version!=0x125A1501 && version!=0x125A1701 &&
-             version!=0x125A1801 && version!=0x125A2001))
+             version!=0x125A1801 && version!=0x125A2001 &&
+             version!=0x125A2101))
             return Steinberg::kResultFalse;
         // Older P003 files had 9 parameters. Upgrade without breaking
         // existing test projects; 3 editable velocity values get defaults.
         auto loaded=kDefaultParams;
         loaded[a125::Run]=0.;
         const std::size_t count=version==0x125A0301?9:
-            (version==0x125A1801 || version==0x125A2001)?loaded.size():
+            (version==0x125A1801 || version==0x125A2001 ||
+             version==0x125A2101)?loaded.size():
             (version==0x125A1501 || version==0x125A1701)?
                 a125::ParameterCount+6:a125::ParameterCount;
         for(std::size_t i=1;i<count;++i) {
             if(!io.readDouble(loaded[i]) || !std::isfinite(loaded[i]) ||
                loaded[i]<0. || loaded[i]>1.) return Steinberg::kResultFalse;
         }
+        if(version==0x125A1501 || version==0x125A1701 ||
+           version==0x125A1801 || version==0x125A2001)
+            loaded[static_cast<std::size_t>(kGateParam-kRunParam)]=
+                1.-loaded[static_cast<std::size_t>(kGateParam-kRunParam)];
         std::filesystem::path restoredFolder;
         if(version==0x125A1001 || version==0x125A1301 ||
            version==0x125A1501 || version==0x125A1701 ||
-           version==0x125A1801 || version==0x125A2001){
+           version==0x125A1801 || version==0x125A2001 || version==0x125A2101){
             Steinberg::int32 length=0;
             if(!io.readInt32(length) || length<0 || length>8192)
                 return Steinberg::kResultFalse;
@@ -792,7 +803,7 @@ public:
         std::filesystem::path restoredBank;
         if(version==0x125A1301 || version==0x125A1501 ||
            version==0x125A1701 || version==0x125A1801 ||
-           version==0x125A2001){
+           version==0x125A2001 || version==0x125A2101){
             Steinberg::int32 length=0;
             if(!io.readInt32(length) || length<0 || length>8192)
                 return Steinberg::kResultFalse;
@@ -807,7 +818,7 @@ public:
         }
         std::string restoredName="Untitled Instrument";
         if(version==0x125A1701 || version==0x125A1801 ||
-           version==0x125A2001){
+           version==0x125A2001 || version==0x125A2101){
             Steinberg::int32 nameLength=0;
             if(!io.readInt32(nameLength) || nameLength<=0 || nameLength>192)
                 return Steinberg::kResultFalse;
@@ -817,7 +828,7 @@ public:
                read!=nameLength)return Steinberg::kResultFalse;
         }
         std::optional<std::uint32_t> fingerprint;
-        if(version==0x125A2001){
+        if(version==0x125A2001 || version==0x125A2101){
             Steinberg::int32 savedCRC=0;
             if(!io.readInt32(savedCRC))return Steinberg::kResultFalse;
             if(savedCRC!=0)fingerprint=static_cast<std::uint32_t>(savedCRC);
@@ -921,6 +932,7 @@ public:
             for(std::size_t i=0;i<snapshot.params.size();++i)
                 snapshot.params[i]=values_[static_cast<std::size_t>(
                     kNormalizeParam-kRunParam)+i].load(std::memory_order_relaxed);
+            snapshot.params[1]=1.-snapshot.params[1]; // archive Gate bit
             session().setCapturedPlayback(snapshot);
             session().publish(config_,static_cast<int>(sampleRate_),anchor);
             activeRun_=true;
@@ -968,7 +980,7 @@ private:
         player_.setNormalize(values_[kNormalizeParam-kRunParam].load(
             std::memory_order_relaxed)>=.5);
         player_.setGate(values_[kGateParam-kRunParam].load(
-            std::memory_order_relaxed)>=.5);
+            std::memory_order_relaxed)<.5);
         player_.setEnvelope(
             static_cast<float>(values_[kAttackParam-kRunParam].load(
                 std::memory_order_relaxed)*2.),
@@ -1080,7 +1092,7 @@ private:
     }
     std::array<std::atomic<double>,kParamCount> values_{
         0.,60./127.,60./127.,1.,0.,0.,kDefaultHold,kDefaultTail,kDefaultGap,
-        99./126.,59./126.,119./126., 0.,0.,0.,0.,1.,.15/3.,.5};
+        99./126.,59./126.,119./126., 0.,1.,0.,0.,1.,.15/3.,.5};
     a125::JobConfig config_{};
     a125::BuiltInSampler player_{};
     std::mutex bankMutex_;
