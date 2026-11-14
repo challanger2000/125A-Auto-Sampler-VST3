@@ -4,6 +4,8 @@
 #include <array>
 #include <atomic>
 #include <cmath>
+#include <charconv>
+#include <string_view>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -40,12 +42,22 @@ inline std::uint32_t samplerLE32(const unsigned char* b) noexcept {
         (static_cast<std::uint32_t>(b[3])<<24);
 }
 inline bool parseSampleName(const std::string& s,int& note,int& vel,int& rr) noexcept {
-    int consumed=0;
-    const bool valid=std::sscanf(s.c_str(),"N%d_V%d_RR%d.wav%n",
-                                &note,&vel,&rr,&consumed)==3 &&
-                     consumed==static_cast<int>(s.size());
-    return valid && note>=0 && note<=127 && vel>=1 && vel<=127 &&
-           rr>=1 && rr<=16;
+    std::string_view remainder(s);
+    const auto literal=[&](std::string_view prefix) {
+        if(!remainder.starts_with(prefix))return false;
+        remainder.remove_prefix(prefix.size());
+        return true;
+    };
+    const auto number=[&](int& value) {
+        const auto* begin=remainder.data();
+        const auto [end,err]=std::from_chars(begin,begin+remainder.size(),value);
+        if(err!=std::errc{} || end==begin)return false;
+        remainder.remove_prefix(static_cast<std::size_t>(end-begin));
+        return true;
+    };
+    return literal("N") && number(note) && literal("_V") && number(vel) &&
+           literal("_RR") && number(rr) && literal(".wav") && remainder.empty() &&
+           note>=0 && note<=127 && vel>=1 && vel<=127 && rr>=1 && rr<=16;
 }
 
 // Read the exact standard 44-byte PCM24 stereo files emitted by our recorder.
