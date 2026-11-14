@@ -1141,7 +1141,7 @@ int runSequential(const char* vst3path){
         for(double value:params)
             require(io.writeDouble(value),"A02 first state parameter");
         require(io.writeInt32(0),"A02 first state no output path");
-        const auto path=archive.u8string();
+        auto path=archive.u8string();
         require(io.writeInt32(static_cast<int32>(path.size())),
                 "A02 first state instrument path length");
         int32 written=0;
