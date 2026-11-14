@@ -271,6 +271,9 @@ int run(const char* vst3path,bool matrix,bool customFolder){
                 "cannot configure VST3 parameter");
     };
     param(1000,1.); // RUN
+    // Reestablish the sample root after the real Win32 keyboard-click QA.
+    param(1001,60./127.);
+    param(1002,60./127.);
     param(1004,7./15.); // Explicitly stress 8 RRs; user default is 1.
     param(1006,(.5-.25)/7.75); // Short capture, including restored P010 projects.
     param(1007,(.5-.25)/9.75); // Short tail, not the historical 2 seconds.
