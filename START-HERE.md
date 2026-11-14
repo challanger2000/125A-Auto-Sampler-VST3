@@ -1,6 +1,6 @@
-# START HERE – 125A AutoSampler P009
+# START HERE – 125A AutoSampler P010
 
-## 1. Was bis P009 getestet ist
+## 1. Was bis P010 getestet ist
 
 - Windows-x64-VST3 mit zwei echten Klassen: MIDI-Generator und Audio-Recorder
 - VSTGUI-Editor tatsächlich über Win32-HWND geöffnet, Status-Timer gestartet und sauber geschlossen
@@ -10,6 +10,14 @@
 - Getrennte RUN-REPORT.csv-Einträge; korrupte und abgebrochene Takes werden nicht exportiert
 
 [Abgenommener Windows-Build samt VST3-Artefakt](https://github.com/challanger2000/125A-Auto-Sampler-VST3/actions/runs/43535357254) – ZIP-Name **125A-AutoSampler-P009-Win64**. Nur die VST3-Datei installieren; das Testprogramm ist nicht Bestandteil des Plugins.
+
+## P010 – Ausgabeordner wählen
+
+Im Fenster **125A AutoSampler MIDI** auf **CHOOSE FOLDER** klicken, um per Windows-Dialog einen Zielordner auszuwählen. **DEFAULT** setzt auf `%USERPROFILE%\\Documents\\125A AutoSampler` zurück. Hinter `OUTPUT:` wird die Auswahl angezeigt. Der Ordner wird mit dem Projekt gespeichert und beim nächsten Öffnen geladen; `RUN` bleibt dabei aus.
+
+Die Auswahl gilt jeweils **ab dem nächsten Sampling-Durchlauf**. Eine bereits laufende Aufnahme schreibt weiterhin in ihren bisherigen Ordner. Pro Durchlauf entsteht wie zuvor ein `Run_...`-Unterordner samt WAVs und `RUN-REPORT.csv`.
+
+Der native Windows-P010-Test prüft Pfad-Persistenz und WAV-Export per VST3-Projektzustand. Das tatsächliche Anklicken des Windows-Dialoges in Fender Studio Pro steht noch als DAW-Praxistest aus. Siehe [P010-Dokumentation](docs/P010-EXPORT-FOLDER.md).
 
 ## P008/P009 – Abschluss und manueller Abbruch
 
@@ -76,7 +84,7 @@ Bei mehreren aktiven Velocity-Layern werden ihre Werte aufsteigend angeordnet. *
 ## 6. Bekannte Grenzen
 
 - Bisher nur **ein** Generator-/Recorder-Paar je Host-Prozess
-- Zielordner noch nicht vom Benutzer in der GUI wählbar
+- Benutzerauswahl per GUI-Ordnerdialog implementiert, aber in Fender Studio Pro noch nicht praktisch getestet
 - Eigener DAW-Transportstart aus dem Plugin ist nicht garantiert; Play muss in Fender Studio Pro laufen
 - Keine bestätigte Fender-Studio-Pro-End-to-End-Abnahme mit EVM Isotope
 - Kein physischer ASIO-Hardwaretest; dieser folgt erst bei der abschließenden DAW-Praxisabnahme

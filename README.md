@@ -7,6 +7,12 @@
 - **125A AutoSampler MIDI:** generiert Note-On/Off, Notenbereiche, Velocity-Stufen und Round Robins; eigene anthrazitfarbene VSTGUI-Oberfläche mit Start/Stop und Live-Zählern.
 - **125A AutoSampler Recorder:** letzter Audio-Insert auf dem Quellinstrument, sammelt dessen echte Audiosamples und schreibt separate WAVs auf einem Hintergrundthread.
 
+## P010 – wählbarer WAV-Ausgabeordner
+
+Die MIDI-GUI besitzt jetzt **CHOOSE FOLDER** (Windows-Ordnerdialog) und **DEFAULT** (Rückkehr zum Standardverzeichnis). Der aktuell ausgewählte Ordner wird angezeigt und mit dem DAW-Projekt gespeichert. Der Recorder übernimmt die Auswahl zu Beginn jedes neuen Runs auf seinem Datei-Worker; der Audiothread bleibt frei von Dateioperationen und Sperren. Der Default bleibt `%USERPROFILE%\\Documents\\125A AutoSampler`.
+
+Ein automatisierter Windows-Test lädt den Projektzustand mit einem benutzerdefinierten Zielordner, testet Save/Reload und prüft die daraus erzeugten acht echten VST3-WAV-Dateien. Details: [P010-EXPORT-FOLDER](docs/P010-EXPORT-FOLDER.md). **Die GUI-Mausbedienung in Fender Studio Pro ist noch nicht praktisch abgenommen.**
+
 ## P008/P009 – automatischer Abschluss und sicherer Abbruch
 
 **P008 (PASS):** Der normale Sampling-Durchlauf wird nach dem letzten Ausklang automatisch abgeschlossen. Der Hintergrund-Recorder schreibt und schließt `RUN-REPORT.csv` bei laufender DAW, ohne dass das Plugin deaktiviert werden muss. Die GUI zeigt `RECORDING`, `FINALIZING` und `COMPLETE`.
@@ -52,4 +58,4 @@ Ein privater, **nicht ausgelieferter Windows-Test-Host** lädt beide **tatsächl
 - [P005: historischer Nachweis](docs/P005-VALIDATION.md)
 - [PR #2](https://github.com/challanger2000/125A-Auto-Sampler-VST3/pull/2)
 
-**Noch nicht als fertiges Produkt freigegeben.** Die vollständige Weiterleitung MIDI → Fremd-VST → Recorder innerhalb **Fender Studio Pro** sowie ASIO-Hardware und die finale Bedienung im echten Song sind noch nicht abgenommen. Der synthetische Windows-Test ist kein Klangtest mit EVM Isotope. P009 bleibt ein Entwicklungsstand.
+**Noch nicht als fertiges Produkt freigegeben.** Die vollständige Weiterleitung MIDI → Fremd-VST → Recorder innerhalb **Fender Studio Pro** sowie ASIO-Hardware und die finale Bedienung im echten Song sind noch nicht abgenommen. Der synthetische Windows-Test ist kein Klangtest mit EVM Isotope. P010 bleibt ein Entwicklungsstand.
