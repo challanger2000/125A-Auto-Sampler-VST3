@@ -868,6 +868,13 @@ public:
         }
         if(!session().setCaptureName(restoredName))
             return Steinberg::kResultFalse;
+        // A recalled DAW project must not inherit a queued GUI audition
+        // click or stuck keyboard light from the previous song/session.
+        previewOn_.store(-1,std::memory_order_release);
+        previewOff_.store(-1,std::memory_order_release);
+        mouseHeld_.store(-1,std::memory_order_release);
+        for(auto& held:midiHeld_)
+            held.store(false,std::memory_order_relaxed);
         session().exportTarget.choose(restoredFolder);
         if(!restoredBank.empty()) {
             std::filesystem::path documents;
@@ -956,6 +963,10 @@ public:
         }
         if(!activeRun_) {
             if(!startRequested) return Steinberg::kResultOk;
+            // Audition events are unrelated to the new capture and must
+            // not turn into phantom notes when this job completes.
+            previewOn_.store(-1,std::memory_order_relaxed);
+            previewOff_.store(-1,std::memory_order_relaxed);
             config_=makeConfig();
             if(!config_.valid()) return Steinberg::kResultOk;
             const auto lead=static_cast<std::int64_t>(sampleRate_/2.);
