@@ -1,0 +1,5 @@
+{
+  "product_commit": "f7d2d4f017ac37f0ed4847879f1b1205c0ea4de5",
+  "original_cpp_sha256": "16a7b2b30f7eeac53a76beb832aaa95278bb8ced23a26239716ca22f0b2b3cf3",
+  "race_changes": "Only evidence output path replaced; fixture, hook and predicates unchanged. Exit 1 now means previous oversize-acceptance predicate no longer holds."
+}

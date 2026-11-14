@@ -1,0 +1,5 @@
+stacked=0.25
+recall_first=0.25 fresh_first=0.25
+rr_before=0.25
+rr_recall=0.25 rr_fresh=0.25
+invalid_utf8_accepted=0

@@ -1,0 +1,79 @@
+[
+  {
+    "mutant": "A04_slots16",
+    "compile": 0,
+    "exit": 1,
+    "result": "KILLED",
+    "diagnostic": "P001 core tests FAILED: A04 100+ bank replacements must not exhaust lifetime slots"
+  },
+  {
+    "mutant": "A06_ignore_flush",
+    "compile": 0,
+    "exit": 1,
+    "result": "KILLED",
+    "diagnostic": "P001 core tests FAILED: A06 late stream flush error must be detected and reported"
+  },
+  {
+    "mutant": "A07_ignore_reset",
+    "compile": 0,
+    "exit": 1,
+    "result": "KILLED",
+    "diagnostic": "P001 core tests FAILED: P022 old voices must stop after project state bank is cleared"
+  },
+  {
+    "mutant": "A08_voice_count",
+    "compile": 0,
+    "exit": 1,
+    "result": "KILLED",
+    "diagnostic": "P001 core tests FAILED: A08 new silent Attack must not instantly attenuate held voice by 6dB"
+  },
+  {
+    "mutant": "A10_version10",
+    "compile": 0,
+    "exit": 1,
+    "result": "KILLED",
+    "diagnostic": "P001 core tests FAILED: A10 version 10 may not alias version 1"
+  },
+  {
+    "mutant": "A14_pitch_only",
+    "compile": 0,
+    "exit": 1,
+    "result": "KILLED",
+    "diagnostic": "P001 core tests FAILED: A14 NoteOff may not kill a separate noteId of equal pitch"
+  },
+  {
+    "mutant": "A15_device",
+    "compile": 0,
+    "exit": 1,
+    "result": "KILLED",
+    "diagnostic": "P001 core tests FAILED: P019 Windows reserved names and blank archive names must be safe"
+  },
+  {
+    "mutant": "R02_no_decoder_budget",
+    "compile": 0,
+    "exit": 1,
+    "result": "KILLED",
+    "diagnostic": "P001 core tests FAILED: R02 decoder must refuse insufficient budget before allocation"
+  },
+  {
+    "mutant": "R03_keep_old_gain",
+    "compile": 0,
+    "exit": 1,
+    "result": "KILLED",
+    "diagnostic": "P001 core tests FAILED: R03 recalled first sample must equal fresh sampler despite old normalize"
+  },
+  {
+    "mutant": "R04_invalid_unicode",
+    "compile": 0,
+    "exit": 1,
+    "result": "KILLED",
+    "diagnostic": "P001 core tests FAILED: R04 invalid raw UTF-8 must be rejected in JSON strings"
+  },
+  {
+    "mutant": "R05_keep_rr_epoch",
+    "compile": 0,
+    "exit": 0,
+    "result": "SURVIVED",
+    "diagnostic": ""
+  }
+]
