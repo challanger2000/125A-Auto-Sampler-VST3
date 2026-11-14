@@ -488,6 +488,55 @@ int run(const char* vst3path,bool matrix,bool customFolder){
             "cannot deactivate generator after STOP test");
     generator.active=false;
 
+    // P014: this test never calls setState() or opens an editor after
+    // recording. The sample bank MUST load in the real VST3 on its own
+    // background thread. GUI-timer-only import would fail this test.
+    {
+        require(generator.component->getBusCount(kEvent,kInput)==1,
+                "125A internal sampler needs a MIDI input");
+        (void)generator.component->activateBus(kEvent,kInput,0,true);
+        require(generator.component->setActive(true)==kResultOk,
+                "cannot reactivate 125A for headless auto-bank playback");
+        generator.active=true;
+        bool headlessAudible=false;
+        for(int attempt=0;attempt<80 && !headlessAudible;++attempt){
+            EventList liveMidi(2);
+            Event note{};
+            note.type=Event::kNoteOnEvent;
+            note.sampleOffset=0;note.busIndex=0;
+            note.noteOn.channel=0;
+            note.noteOn.pitch=static_cast<int16>(matrix?61:60);
+            note.noteOn.velocity=static_cast<float>(matrix?80:100)/127.f;
+            note.noteOn.noteId=100+attempt;
+            require(liveMidi.addEvent(note)==kResultOk,
+                    "cannot send headless playback MIDI note");
+            ProcessData render{};
+            render.processMode=kRealtime;
+            render.symbolicSampleSize=kSample32;
+            render.numSamples=kBlock;
+            render.numOutputs=1;render.outputs=&genOut;
+            render.inputEvents=&liveMidi;
+            require(generator.processor->process(render)==kResultOk,
+                    "headless 125A render failed");
+            int audible=0;
+            for(int32 i=0;i<kBlock;++i){
+                const auto idx=static_cast<std::size_t>(i);
+                if(std::abs(genL[idx])>0.002f && std::abs(genR[idx])>0.001f)
+                    ++audible;
+            }
+            headlessAudible=audible>kBlock/4;
+            if(!headlessAudible)
+                std::this_thread::sleep_for(std::chrono::milliseconds(40));
+        }
+        require(headlessAudible,
+                "P014: recorded WAV bank not playable without GUI or project setState");
+        require(generator.component->setActive(false)==kResultOk,
+                "cannot deactivate headless 125A player");
+        generator.active=false;
+        std::cout<<"[PASS] P014 HEADLESS AUTO BANK IMPORT: completed WAVs playable "
+                    "from same VST3 without GUI or project state\n";
+    }
+
     const auto output=customFolder?chosenRoot:base/"Documents"/"125A AutoSampler";
     require(std::filesystem::exists(output),"recorder created no run folder");
     std::size_t wavs=0,reports=0;
