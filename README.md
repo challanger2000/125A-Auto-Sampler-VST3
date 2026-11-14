@@ -11,7 +11,7 @@
 
 Die MIDI-GUI besitzt jetzt **CHOOSE FOLDER** (Windows-Ordnerdialog) und **DEFAULT** (Rückkehr zum Standardverzeichnis). Der aktuell ausgewählte Ordner wird angezeigt und mit dem DAW-Projekt gespeichert. Der Recorder übernimmt die Auswahl zu Beginn jedes neuen Runs auf seinem Datei-Worker; der Audiothread bleibt frei von Dateioperationen und Sperren. Der Default bleibt `%USERPROFILE%\\Documents\\125A AutoSampler`.
 
-Ein automatisierter Windows-Test lädt den Projektzustand mit einem benutzerdefinierten Zielordner, testet Save/Reload und prüft die daraus erzeugten acht echten VST3-WAV-Dateien. Details: [P010-EXPORT-FOLDER](docs/P010-EXPORT-FOLDER.md). **Die GUI-Mausbedienung in Fender Studio Pro ist noch nicht praktisch abgenommen.**
+**P010 Windows-Test PASS:** Nach State-Load und Save/Reload sind **8/8 echte VST3-WAVs** im gewählten Ausgabeordner entstanden; kein Export in den Default. Die bisherigen **64/64 WAV-Aufnahmen** und der STOP-/ABORTED-Test bleiben PASS. [Windows-Abnahme und P010-Artefakt](https://github.com/challanger2000/125A-Auto-Sampler-VST3/actions/runs/43538521360). Details: [P010-EXPORT-FOLDER](docs/P010-EXPORT-FOLDER.md). **Die GUI-Mausbedienung in Fender Studio Pro ist noch nicht praktisch abgenommen.**
 
 ## P008/P009 – automatischer Abschluss und sicherer Abbruch
 

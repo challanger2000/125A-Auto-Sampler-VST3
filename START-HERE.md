@@ -9,7 +9,7 @@
 - Realer Plugin-Stop mit springender Songposition sendet die passende Note-Off-ID
 - Getrennte RUN-REPORT.csv-Einträge; korrupte und abgebrochene Takes werden nicht exportiert
 
-[Abgenommener Windows-Build samt VST3-Artefakt](https://github.com/challanger2000/125A-Auto-Sampler-VST3/actions/runs/43535357254) – ZIP-Name **125A-AutoSampler-P009-Win64**. Nur die VST3-Datei installieren; das Testprogramm ist nicht Bestandteil des Plugins.
+[P010 Windows-Build samt VST3-Artefakt – PASS](https://github.com/challanger2000/125A-Auto-Sampler-VST3/actions/runs/43538521360) – ZIP-Name **125A-AutoSampler-P010-Win64**. Nur die VST3-Datei installieren; das Testprogramm ist nicht Bestandteil des Plugins.
 
 ## P010 – Ausgabeordner wählen
 
@@ -17,7 +17,7 @@ Im Fenster **125A AutoSampler MIDI** auf **CHOOSE FOLDER** klicken, um per Windo
 
 Die Auswahl gilt jeweils **ab dem nächsten Sampling-Durchlauf**. Eine bereits laufende Aufnahme schreibt weiterhin in ihren bisherigen Ordner. Pro Durchlauf entsteht wie zuvor ein `Run_...`-Unterordner samt WAVs und `RUN-REPORT.csv`.
 
-Der native Windows-P010-Test prüft Pfad-Persistenz und WAV-Export per VST3-Projektzustand. Das tatsächliche Anklicken des Windows-Dialoges in Fender Studio Pro steht noch als DAW-Praxistest aus. Siehe [P010-Dokumentation](docs/P010-EXPORT-FOLDER.md).
+Der native Windows-P010-Test hat die Pfad-Persistenz und den WAV-Export per VST3-Projektzustand mit **8 von 8 WAV-Dateien erfolgreich** geprüft. Das tatsächliche Anklicken des Windows-Dialoges in Fender Studio Pro steht noch als DAW-Praxistest aus. Siehe [P010-Dokumentation](docs/P010-EXPORT-FOLDER.md).
 
 ## P008/P009 – Abschluss und manueller Abbruch
 
