@@ -34,6 +34,7 @@
 #include <filesystem>
 #include <fstream>
 #include <limits>
+#include <mutex>
 #include <optional>
 #ifdef _WIN32
 #include <windows.h>
@@ -183,6 +184,10 @@ class MidiGenerator final : public V::SingleComponentEffect,
                             public VSTGUI::IControlListener {
 public:
     static FUnknown* createInstance(void*) {return (V::IAudioProcessor*)new MidiGenerator();}
+    ~MidiGenerator() override {
+        stopBankWorker_.store(true,std::memory_order_release);
+        if(bankWorker_.joinable())bankWorker_.join();
+    }
     Steinberg::IPlugView* PLUGIN_API createView(Steinberg::FIDString name) override {
         if(Steinberg::FIDStringsEqual(name,V::ViewType::kEditor)){
             auto* editor=new VSTGUI::VST3Editor(this,"view","autosampler.uidesc");
@@ -216,7 +221,10 @@ public:
     void valueChanged(VSTGUI::CControl* control) override {
         if(control==loadButton_){
             const auto chosen=pickOutputDirectory();
-            if(chosen)loadSamples(*chosen);
+            if(chosen) {
+                loadSamples(*chosen);
+                updateSamplerLabel();
+            }
             return;
         }
         if(control==defaultButton_){
@@ -244,19 +252,48 @@ public:
         }
     }
     void loadSamples(const std::filesystem::path& path){
-        // Disk access and memory allocation happen on the GUI/state thread.
-        auto bank=a125::loadCapturedBank(path);
-        if(!bank || !player_.publish(std::move(bank))){
-            loadFailed_=true;
-        }else{
-            loadFailed_=false;
-            bankFolder_=path;
+        // Worker/UI/state threads can all request a bank, but never ASIO.
+        // Loaded PCM stays alive so a voice can safely finish during a swap.
+        bool loaded=false;
+        try {
+            auto bank=a125::loadCapturedBank(path);
+            if(bank){
+                std::lock_guard<std::mutex> guard(bankMutex_);
+                if(player_.publish(std::move(bank))){
+                    bankFolder_=path;
+                    loadFailed_=false;
+                    loaded=true;
+                }
+            }
+        } catch(const std::exception&) {
+            // A missing/corrupt bank must never kill an audio callback.
         }
-        updateSamplerLabel();
+        if(!loaded){
+            std::lock_guard<std::mutex> guard(bankMutex_);
+            loadFailed_=true;
+        }
+    }
+    void monitorBanks() noexcept {
+        // Recorder publishes only complete banks; playback import must work
+        // without any VSTGUI editor, and must never touch process().
+        std::uint32_t attemptedGeneration=0;
+        while(!stopBankWorker_.load(std::memory_order_acquire)){
+            const auto ready=session().readyBankGeneration.load(std::memory_order_acquire);
+            const auto current=session().generation.load(std::memory_order_acquire);
+            if(ready!=0 && ready!=attemptedGeneration && ready==current){
+                const auto path=session().latestCompletedRun.chosenFolder();
+                if(!path.empty()){
+                    attemptedGeneration=ready; // one read per completed run
+                    loadSamples(path);
+                }
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(40));
+        }
     }
     void updateSamplerLabel(){
         if(!samplerLabel_)return;
         char line[104]{};
+        std::lock_guard<std::mutex> guard(bankMutex_);
         const auto count=player_.loadedZones();
         if(loadFailed_)std::snprintf(line,sizeof(line),"SAMPLER: BANK LOAD FAILED");
         else if(!count)std::snprintf(line,sizeof(line),"SAMPLER: EMPTY");
@@ -283,16 +320,9 @@ public:
         statusLabel_=nullptr;
     }
     void updateStatus() {
+        // GUI only displays status; WAV loading happens on the bank worker.
+        updateSamplerLabel();
         if(!statusLabel_)return;
-        // A successful run immediately becomes playable by THIS VST3 when
-        // its UI is open. Loading WAVs is on the UI timer, never in ASIO.
-        const auto latest=session().readyBankGeneration.load(std::memory_order_acquire);
-        const auto current=session().generation.load(std::memory_order_acquire);
-        if(latest && latest==current && autoLoadedGeneration_!=latest){
-            autoLoadedGeneration_=latest;
-            const auto folder=session().latestCompletedRun.chosenFolder();
-            if(!folder.empty())loadSamples(folder);
-        }
         const auto config=makeConfig();
         const auto seen=session().observed.load(std::memory_order_relaxed);
         const auto written=session().written.load(std::memory_order_relaxed);
@@ -348,6 +378,9 @@ public:
            V::ParameterInfo::kCanAutomate,kVelocity2Param);
         parameters.addParameter(STR16("Velocity 3 (1-127)"),nullptr,126,119./126.,
            V::ParameterInfo::kCanAutomate,kVelocity3Param);
+        // Independent of any GUI opening: register a non-realtime bank
+        // import worker for successful captures from our recorder class.
+        bankWorker_=std::thread([this]{monitorBanks();});
         return Steinberg::kResultOk;
     }
 
@@ -430,7 +463,11 @@ public:
             if(state->write(folder.data(),length,&written)!=Steinberg::kResultOk ||
                written!=length)return Steinberg::kResultFalse;
         }
-        auto savedBankPath=bankFolder_;
+        std::filesystem::path savedBankPath;
+        {
+            std::lock_guard<std::mutex> guard(bankMutex_);
+            savedBankPath=bankFolder_;
+        }
         if(savedBankPath.empty() &&
            session().generation.load(std::memory_order_acquire)!=0 &&
            session().readyBankGeneration.load(std::memory_order_acquire)==
@@ -712,8 +749,10 @@ private:
         99./126.,59./126.,119./126.};
     a125::JobConfig config_{};
     a125::BuiltInSampler player_{};
+    std::mutex bankMutex_;
     std::filesystem::path bankFolder_{};
-    std::uint32_t autoLoadedGeneration_=0; // only touched by VSTGUI UI timer
+    std::atomic<bool> stopBankWorker_{false};
+    std::thread bankWorker_;
     bool loadFailed_=false;
     a125::ActiveNote note_{};
     a125::RunGate runGate_{};
