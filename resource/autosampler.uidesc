@@ -50,7 +50,8 @@
     <view class="CTextLabel" origin="21, 382" size="644, 26" title="STATUS: READY" font="~ NormalFont" font-color="Accent" back-color="Dark" frame-color="Dark" frame-width="0" transparent="true" mouse-enabled="false" text-alignment="center"/>
     <view class="CTextLabel" origin="21, 409" size="642, 30" title="SOURCE INSTRUMENT: SET MIDI INPUT IN DAW   |   RECORDER: LAST INSERT" font="~ NormalFont" font-color="Muted" back-color="Dark" frame-color="Dark" frame-width="0" transparent="true" mouse-enabled="false" text-alignment="center"/>
     <view class="CTextButton" origin="22, 449" size="139, 34" title="CHOOSE FOLDER" font="~ NormalFont" text-color="Silver" text-color-highlighted="Dark" frame-color="Accent" frame-color-highlighted="Accent" frame-width="1" round-radius="7" gradient="Idle" gradient-highlighted="Active" kick-style="true" mouse-enabled="true" wants-focus="true"/>
-    <view class="CTextLabel" origin="172, 450" size="493, 29" title="OUTPUT: DEFAULT" font="~ NormalFont" font-color="Silver" back-color="Dark" frame-color="Dark" frame-width="0" transparent="true" mouse-enabled="false" text-alignment="left"/>
+    <view class="CTextButton" origin="168, 449" size="75, 34" title="DEFAULT" font="~ NormalFont" text-color="Silver" text-color-highlighted="Dark" frame-color="Frame" frame-color-highlighted="Accent" frame-width="1" round-radius="7" gradient="Idle" gradient-highlighted="Active" kick-style="true" mouse-enabled="true" wants-focus="true"/>
+    <view class="CTextLabel" origin="253, 450" size="411, 29" title="OUTPUT: DEFAULT" font="~ NormalFont" font-color="Silver" back-color="Dark" frame-color="Dark" frame-width="0" transparent="true" mouse-enabled="false" text-alignment="left"/>
   </template>
   <control-tags>
     <control-tag name="Run" tag="1000"/>
