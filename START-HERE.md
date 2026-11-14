@@ -1,4 +1,4 @@
-# START HERE – 125A AutoSampler P018
+# START HERE – 125A AutoSampler P021
 
 ## Ziel: aufnehmen und mit 125A selbst spielen
 
@@ -47,14 +47,14 @@ Bei aktiviertem Normalize werden gleichzeitige 125A-One-Shot-Stimmen jetzt **lin
 ### P015 – kurze Vintage-Sounds bearbeiten
 
 - **NORMALIZE (-1 dBFS):** standardmäßig **aus**, errechnet beim Einschalten einen gemeinsamen Verstärkungsfaktor für die gesamte Bank. Dadurch bleiben die Lautstärkeunterschiede zwischen Velocity-Layern erhalten. Die Original-WAVs werden nicht verändert.
-- **GATE:** standardmäßig aus – One-Shot spielt das Sample bis zum Ende, auch bei MIDI Note-Off. Eingeschaltet wird die Amp-Release-Phase durch Note-Off ausgelöst.
+- **ONE SHOT:** Standardmäßig **AN**. Das Sample spielt nach Note-Off bis zum Ende weiter. Bei **AUS** löst Note-Off die Amp-Release-Phase aus. Ältere DAW-Projekte mit GATE werden beim Laden automatisch migriert.
 - **AMP ADSR:** Attack, Decay, Sustain und Release über die vier Regler im neuen Playback-Bereich. Die Grundeinstellung lässt den kurzen One-Shot nahezu unverändert.
 - **NOTE STEP:** Schrittweite 12 ergibt oktavweise Aufnahme, z. B. C1/C2/C3/C4; 3 oder 6 Halbtonschritte ergeben dichtere Multisamples.
 - **Schnelle Werkseinstellung:** 1 Round Robin, 1 Velocity-Layer, NOTE STEP 12, Note Hold **1,0 s**, Release-Capture **2,0 s**, Pause 0,1 s. Die lange historische 8-Round-Robin-Aufnahme bleibt nur eine einstellbare Option.
 
-Der einfache Funktionseditor bietet Gain (0 dB neutral), die vorhandene Steinberg-VSTGUI-Tastatur und dauerhaft erreichbare ADSR-Werte. Keine Filter, kein Sample-Map-Editor, kein Fremd-Sampler. Die endgültige Hardware-GUI ist separat geplant.
+Die neue, kompakte Hardware-VSTGUI ist in drei Bereiche gegliedert: **SAMPLING**, **SAMPLE DISPLAY** (echte PCM-Wellenform) und **PLAYBACK** (vier silberne ADSR-Drehregler, Gain, Normalize, One Shot). Darunter ist Steinbergs MIDI-Tastatur mit goldenen Markierungen aufgenommener Grundtöne und **OCT − / OCT +**. Keine Filter, kein Sample-Map-Editor, kein Fremd-Sampler.
 
-**Projektwiederherstellung:** Die DAW speichert die Plugin-Parameter, den benutzerdefinierten Namen und den **Dateipfad der zuletzt geladenen `*.125A`**. Die WAVs sind innerhalb dieses Archivs transportabel, aber der gespeicherte Pfad ist derzeit absolut. Beim Rechnerwechsel die Datei mitnehmen und nötigenfalls über **LOAD INSTRUMENT** erneut wählen. Eine automatische Suche nach verschobenen Archiven ist noch nicht implementiert.
+**Projektwiederherstellung:** Die DAW speichert Plugin-Parameter, Instrumentennamen, den Archivpfad und eine ZIP-Manifest-Prüfkennung. Existiert der ursprüngliche Pfad nicht mehr, wird ausschließlich in bekannten 125A-Ordnern gesucht (gesondert gewählter Ausgabeordner und `Dokumente/125A AutoSampler`); nur ein Archiv mit passender Kennung wird automatisch neu zugeordnet. Bei anderen Umzügen **LOAD INSTRUMENT** wählen. Eine unbeschränkte Dateisuche oder ein im DAW-Projekt eingebettetes Sample-Archiv ist bewusst nicht implementiert.
 
 ## Exportformat und Kontrolle
 
