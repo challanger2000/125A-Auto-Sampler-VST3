@@ -1596,6 +1596,99 @@ int runRestoreRace(const char* vst3path,bool mutant){
         require(std::abs(left[0]-.4f)<.00001f &&
                 std::abs(right[0]+.2f)<.00001f,
                 "A03 stale restore killed or replaced newer PCM");
+        // Regression for independent P024 re-audit: a syntactically present,
+        // but invalid, v1701 instrument name MUST fail before bank A is
+        // published. The earlier implementation loaded A and only then
+        // discovered setCaptureName() rejected the control byte.
+        ResizableMemoryIBStream badNameState;
+        IBStreamer badNameWriter(&badNameState,kLittleEndian);
+        require(badNameWriter.writeInt32(0x125A1701),
+                "A03 invalid-name test state marker");
+        const std::array<double,17> badNameParams{
+            44./127.,44./127.,1.,0.,0.,
+            (.5-.25)/7.75,(.5-.25)/9.75,(.1-.05)/.45,
+            99./126.,59./126.,119./126.,
+            0.,1.,0.,0.,1.,.05
+        };
+        for(const double value:badNameParams)
+            require(badNameWriter.writeDouble(value),
+                    "A03 invalid-name state parameters");
+        require(badNameWriter.writeInt32(0),
+                "A03 invalid-name empty export folder");
+        const auto oldPath=oldArchive.u8string();
+        require(badNameWriter.writeInt32(static_cast<int32>(oldPath.size())),
+                "A03 invalid-name archive path length");
+        int32 written=0;
+        require(badNameState.write(oldPath.data(),
+                    static_cast<int32>(oldPath.size()),&written)==kResultOk &&
+                written==static_cast<int32>(oldPath.size()),
+                "A03 invalid-name archive path write");
+        std::string invalidName("Bad");
+        invalidName.push_back(static_cast<char>(1));
+        invalidName+="Name";
+        require(badNameWriter.writeInt32(static_cast<int32>(invalidName.size())),
+                "A03 invalid-name length");
+        written=0;
+        require(badNameState.write(invalidName.data(),
+                    static_cast<int32>(invalidName.size()),&written)==kResultOk &&
+                written==static_cast<int32>(invalidName.size()),
+                "A03 invalid-name content");
+        badNameState.rewind();
+        require(generator.component->setState(&badNameState)==kResultFalse,
+                "A03 invalid project name must be rejected");
+        ResizableMemoryIBStream afterBadName;
+        require(generator.component->getState(&afterBadName)==kResultOk,
+                "A03 state save after rejected name");
+        afterBadName.rewind();
+        IBStreamer post(&afterBadName,kLittleEndian);
+        int32 marker=0;
+        require(post.readInt32(marker) && marker==0x125A2201,
+                "A03 post-rejection state version");
+        double postFirst=0.;
+        require(post.readDouble(postFirst) &&
+                std::abs(postFirst-72./127.)<1.e-9,
+                "A03 invalid name changed newer project parameters");
+        for(int i=1;i<18;++i){
+            double ignored=0.;
+            require(post.readDouble(ignored),
+                    "A03 post-rejection parameter stream truncated");
+        }
+        int32 folderBytes=0;
+        require(post.readInt32(folderBytes) && folderBytes==0,
+                "A03 invalid name overwrote newer project export folder");
+        int32 bankBytes=0;
+        require(post.readInt32(bankBytes) &&
+                bankBytes>0 && bankBytes<=8192,
+                "A03 post-rejection bank path length");
+        std::u8string postPath(static_cast<std::size_t>(bankBytes),u8' ');
+        int32 read=0;
+        require(afterBadName.read(postPath.data(),bankBytes,&read)==kResultOk &&
+                read==bankBytes && fs::path(postPath)==newArchive,
+                "A03 invalid name switched the bank despite rejecting restore");
+        int32 savedNameBytes=0;
+        require(post.readInt32(savedNameBytes) &&
+                savedNameBytes>0 && savedNameBytes<=192,
+                "A03 post-rejection instrument name length");
+        std::string savedName(static_cast<std::size_t>(savedNameBytes),' ');
+        read=0;
+        require(afterBadName.read(savedName.data(),savedNameBytes,&read)==kResultOk &&
+                read==savedNameBytes &&
+                savedName=="Untitled Instrument",
+                "A03 invalid name changed the newer instrument name");
+        // Reset old OneShot voices before checking the first sample again.
+        require(generator.component->setActive(false)==kResultOk,
+                "A03 invalid-name playback deactivation");
+        require(generator.component->setActive(true)==kResultOk,
+                "A03 invalid-name playback reactivation");
+        std::fill(left.begin(),left.end(),0.f);
+        std::fill(right.begin(),right.end(),0.f);
+        require(generator.processor->process(playback)==kResultOk,
+                "A03 invalid-name post-rejection PCM probe");
+        require(std::abs(left[0]-.4f)<.00001f &&
+                std::abs(right[0]+.2f)<.00001f,
+                "A03 invalid name replaced newer stereo PCM");
+        std::cout<<"[PASS] A03 invalid project name rejected atomically: "
+                    "newer path, parameters, name, folder and PCM preserved\n";
     }catch(...){
         hold(0);
         if(oldRestore.joinable())oldRestore.join();

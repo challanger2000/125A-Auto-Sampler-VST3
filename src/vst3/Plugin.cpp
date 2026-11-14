@@ -206,10 +206,13 @@ struct Session {
         std::lock_guard<std::mutex> lock(nameMutex);
         return name;
     }
+    static bool validCaptureName(const std::string& display) noexcept {
+        return !display.empty() && display.size()<=192 &&
+            !std::any_of(display.begin(),display.end(),
+                [](unsigned char c){return c<32;});
+    }
     bool setCaptureName(const std::string& display) {
-        if(display.empty() || display.size()>192 ||
-           std::any_of(display.begin(),display.end(),
-              [](unsigned char c){return c<32;}))return false;
+        if(!validCaptureName(display))return false;
         std::lock_guard<std::mutex> lock(nameMutex);
         name=display;
         return true;
@@ -1151,6 +1154,11 @@ public:
             if(state->read(restoredName.data(),nameLength,&read)!=Steinberg::kResultOk ||
                read!=nameLength)return Steinberg::kResultFalse;
         }
+        // An invalid project name must be rejected BEFORE loadSamples()
+        // publishes a different bank. Use exactly the same name policy as
+        // the actual Session commit, not a weaker parser-only check.
+        if(!Session::validCaptureName(restoredName))
+            return Steinberg::kResultFalse;
         std::optional<std::uint64_t> fingerprint;
         const bool legacyIdentity=(version==0x125A2001 || version==0x125A2101);
         if(legacyIdentity){
