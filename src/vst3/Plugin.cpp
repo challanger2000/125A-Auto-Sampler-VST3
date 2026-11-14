@@ -7,7 +7,6 @@
 #include "core/RunGate.h"
 #include "core/ExportTarget.h"
 #include "core/SampleProcessing.h"
-#include "core/SfzBank.h"
 #include "core/RunStatus.h"
 #include "core/BuiltInSampler.h"
 #include "base/source/fstreamer.h"
@@ -873,8 +872,8 @@ private:
             }
         };
         auto closeRun=[&] {
-            // A playable SFZ is published only for a completely successful
-            // job. Aborted, silent, missing or failed WAVs never get a bank.
+            // Native 125A bank is ready only after all WAVs have been
+            // captured; partial/aborted takes never masquerade as complete.
             if(report){
                 const bool complete=configWasVerified && haveRun &&
                     runWritten==recordedConfig.takeCount() &&
@@ -882,14 +881,9 @@ private:
                     queue_.dropped()==droppedAtRunStart &&
                     session().interruptedGeneration.load(std::memory_order_acquire)!=generation;
                 if(complete) {
-                    if(a125::writeCompleteSfzBank(recordedConfig,dir)){
-                        report<<"BANK,SFZ_CREATED,125A AutoSampler.sfz\n";
-                    } else {
-                        ++runErrors;
-                        exportErrors_.fetch_add(1,std::memory_order_relaxed);
-                        session().errors.fetch_add(1,std::memory_order_relaxed);
-                        report<<"BANK,SFZ_ERROR\n";
-                    }
+                    // The 125A VST3 is itself the sampler. WAVs are its
+                    // native bank; no external SFZ player is necessary.
+                    report<<"BANK,125A_WAVS_READY\n";
                 } else {
                     report<<"BANK,SKIPPED_INCOMPLETE\n";
                 }
