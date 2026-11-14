@@ -1,4 +1,4 @@
-# 125A AutoSampler VST3 – P014: Aufnahme und eigenständige Wiedergabe
+# 125A AutoSampler VST3 – P015: One-Shot, Normalize und Amp ADSR
 
 Windows-x64-VST3 für **automatisches Sampeln eines bereits in Fender Studio Pro geladenen VST-Instruments und direktes Spielen der aufgenommenen Samples im 125A selbst**.
 
@@ -23,6 +23,19 @@ Windows-x64-VST3 für **automatisches Sampeln eines bereits in Fender Studio Pro
 
 **Kein SFZ nötig:** Die bisherige P011/P012-SFZ-Exportidee wird im produktiven Aufnahmeablauf nicht mehr verwendet. Die historischen SFZ-Dateien und -Core-Tests sind nicht Bestandteil der P013-Wiedergabekette.
 
+## P015 – einfache One-Shot-Instrumentensteuerung
+
+Nach dem Laden einer Bank stehen direkt im 125A-Editor zur Verfügung:
+
+- **NORMALIZE –1 dBFS:** Standardmäßig an; **ein gemeinsamer Peak-Gain über die gesamte Bank** statt einzelner WAV-Verstärkung. Dynamikunterschiede zwischen Velocity-Layern und Round Robins bleiben erhalten. Die originalen WAV-Dateien werden dabei nicht verändert.
+- **ONE SHOT / GATE:** One-Shot ist Standard und spielt die gesamte kurze Aufnahme unabhängig vom Loslassen der Taste. Gate schaltet Note-Off und die Amp-Release-Phase frei.
+- **AMP ADSR:** Attack 0–2 Sekunden, Decay 0–3 Sekunden, Sustain 0–100 %, Release 0–3 Sekunden. Ohne zusätzliches Processing bleibt der aufgezeichnete Originalklang hörbar.
+- **NOTE STEP:** Bereits vorhanden: 1–12 Halbtöne (etwa C1/C2/C3/C4 mit Step 12); der interne Player transponiert die Lücken.
+
+Ein einfacher dunkel gehaltener VSTGUI-Testbereich ist angefügt. Die 18 Parameter sind DAW-automatisierbar. Die komplette Aufnahme-WAV wird ohne Sustain-Loop gespielt. Für Vintage-One-Shots bewusst kein Loop-Editor, keine Effektkette und keine komplexe Modulationsmatrix.
+
+**Noch ausstehend:** portable, unabhängig vom absoluten WAV-Ordner verschiebbare Preset-Pakete und Fender-Studio-Pro-/ASIO-Praxistest.
+
 ## Routing in Fender Studio Pro
 
 1. Eine Instrumentenspur mit **125A AutoSampler** erstellen.
@@ -40,6 +53,7 @@ Das genaue MIDI-Routing, die physische ASIO-Ausgabe und das Dialogverhalten in *
 - **P013 – Windows-Abnahme PASS:** Eingebauter WAV-Sampler, MIDI-Wiedergabe, Round-Robin-/Velocity-Mapping und Projektzustand. [Erfolgreiche vollständige Windows-VST3-Abnahme mit tatsächlicher PCM-Wiedergabe](https://github.com/challanger2000/125A-Auto-Sampler-VST3/actions/runs/43542007225): 72/72 WAVs und vier native MIDI-zu-Audio-Playback-Proben, Steinberg-Validator, GUI- und Core-Tests grün. Artefakt: `125A-AutoSampler-P013-Win64`.
 - **P014 – Windows-Abnahme PASS:** [72/72 WAVs, vier Wiedergabeproben ohne geöffneten Editor und ohne Projekt-State-Import, Steinberg-Validator 94/94, Audio-STOP/ABORT und VSTGUI](https://github.com/challanger2000/125A-Auto-Sampler-VST3/actions/runs/43564563114). Kein anderer Sampler erforderlich.
 - Noch ein Generator-/Recorder-Paar je DAW-Prozess, maximal 16 nacheinander geladene Banks pro Instrumentinstanz, keine Sustain-Loops.
+- P015 ergänzt Normalize, ADSR/Gate und die neue einfache GUI. Der offizielle Windows-Testlauf und die praktischen DAW-Tests bestimmen die Freigabe.
 - Kein fertiges Release, solange die Tests in Fender Studio Pro und mit ASIO-Hardware ausstehen. [PR #2 bleibt Draft](https://github.com/challanger2000/125A-Auto-Sampler-VST3/pull/2).
 
 **Installation und Aufnahmeablauf:** [START-HERE.md](START-HERE.md).
