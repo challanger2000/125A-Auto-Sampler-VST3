@@ -791,7 +791,7 @@ int run(const char* vst3path,bool matrix,bool customFolder){
         for(const double value:parameters)
             require(writer.writeDouble(value),"P024 parameter write failed");
         require(writer.writeInt32(0),"P024 empty export-folder write failed");
-        const auto archivePath=capturedArchive.u8string();
+        auto archivePath=capturedArchive.u8string();
         require(writer.writeInt32(static_cast<int32>(archivePath.size())),
             "P024 archived bank path length write failed");
         int32 written=0;
@@ -799,7 +799,7 @@ int run(const char* vst3path,bool matrix,bool customFolder){
             archivePath.data(),static_cast<int32>(archivePath.size()),&written)==kResultOk &&
             written==static_cast<int32>(archivePath.size()),
             "P024 archive path write failed");
-        const std::string name="Unverified Bank";
+        std::string name="Unverified Bank";
         require(writer.writeInt32(static_cast<int32>(name.size())),
             "P024 instrument name length write failed");
         written=0;
