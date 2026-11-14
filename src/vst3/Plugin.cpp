@@ -21,6 +21,7 @@
 #include "vstgui/plugin-bindings/vst3editor.h"
 #include "vstgui/lib/cvstguitimer.h"
 #include "vstgui/lib/controls/ctextlabel.h"
+#include "vstgui/lib/controls/ctextedit.h"
 #include "vstgui/lib/controls/cbuttons.h"
 #include "vstgui/lib/controls/icontrollistener.h"
 #include <algorithm>
@@ -211,6 +212,45 @@ std::optional<std::filesystem::path> pickOutputDirectory() {
 #endif
 }
 
+// Select a self-contained .125A instrument, separately from the raw WAV folder.
+std::optional<std::filesystem::path> pick125AInstrument(){
+#ifdef _WIN32
+    const HRESULT init=CoInitializeEx(nullptr,COINIT_APARTMENTTHREADED);
+    const bool uninitialize=SUCCEEDED(init);
+    IFileOpenDialog* dialog=nullptr;
+    std::optional<std::filesystem::path> result;
+    if(SUCCEEDED(CoCreateInstance(CLSID_FileOpenDialog,nullptr,CLSCTX_INPROC_SERVER,
+                                  IID_PPV_ARGS(&dialog))) && dialog){
+        DWORD flags=0;
+        if(SUCCEEDED(dialog->GetOptions(&flags))){
+            dialog->SetOptions(flags|FOS_PATHMUSTEXIST|FOS_FILEMUSTEXIST|
+                               FOS_FORCEFILESYSTEM);
+            const COMDLG_FILTERSPEC fileType{L"125A Instruments",L"*.125A"};
+            dialog->SetFileTypes(1,&fileType);
+            dialog->SetFileTypeIndex(1);
+            dialog->SetTitle(L"125A AutoSampler - Load Instrument");
+            if(dialog->Show(nullptr)==S_OK){
+                IShellItem* item=nullptr;
+                if(SUCCEEDED(dialog->GetResult(&item)) && item){
+                    PWSTR path=nullptr;
+                    if(SUCCEEDED(item->GetDisplayName(SIGDN_FILESYSPATH,&path))
+                       && path){
+                        result=std::filesystem::path(path);
+                        CoTaskMemFree(path);
+                    }
+                    item->Release();
+                }
+            }
+        }
+        dialog->Release();
+    }
+    if(uninitialize)CoUninitialize();
+    return result;
+#else
+    return std::nullopt;
+#endif
+}
+
 class MidiGenerator final : public V::SingleComponentEffect,
                             public VSTGUI::VST3EditorDelegate,
                             public VSTGUI::IControlListener {
@@ -239,6 +279,12 @@ public:
     VSTGUI::CView* verifyView(VSTGUI::CView* view,
             const VSTGUI::UIAttributes&,const VSTGUI::IUIDescription*,
             VSTGUI::VST3Editor*) override {
+        if(auto* edit=dynamic_cast<VSTGUI::CTextEdit*>(view)){
+            if(edit->getText()=="INSTRUMENT NAME"){
+                instrumentNameEdit_=edit;
+                instrumentNameEdit_->registerControlListener(this);
+            }
+        }
         if(auto* label=dynamic_cast<VSTGUI::CTextLabel*>(view)){
             if(label->getText()=="STATUS: READY")statusLabel_=label;
             if(label->getText()=="OUTPUT: DEFAULT")folderLabel_=label;
@@ -251,6 +297,9 @@ public:
             }else if(button->getTitle()=="DEFAULT"){
                 defaultButton_=button;
                 defaultButton_->registerControlListener(this);
+            }else if(button->getTitle()=="LOAD INSTRUMENT"){
+                importButton_=button;
+                importButton_->registerControlListener(this);
             }else if(button->getTitle()=="LOAD SAMPLES"){
                 loadButton_=button;
                 loadButton_->registerControlListener(this);
@@ -259,6 +308,22 @@ public:
         return view;
     }
     void valueChanged(VSTGUI::CControl* control) override {
+        if(control==instrumentNameEdit_){
+            if(!session().setCaptureName(instrumentNameEdit_->getText().getString())){
+                instrumentNameEdit_->setText(session().captureName().c_str());
+            }
+            return;
+        }
+        if(control==importButton_){
+            const auto chosen=pick125AInstrument();
+            if(chosen){
+                loadSamples(*chosen,true);
+                updateSamplerLabel();
+                if(instrumentNameEdit_)
+                    instrumentNameEdit_->setText(session().captureName().c_str());
+            }
+            return;
+        }
         if(control==loadButton_){
             const auto chosen=pickOutputDirectory();
             if(chosen) {
@@ -361,6 +426,8 @@ public:
         samplerLabel_->setText(line);
     }
     void didOpen(VSTGUI::VST3Editor*) override {
+        if(instrumentNameEdit_)
+            instrumentNameEdit_->setText(session().captureName().c_str());
         updateFolderLabel();
         updateSamplerLabel();
         updateStatus();
@@ -372,9 +439,13 @@ public:
         if(folderButton_)folderButton_->unregisterControlListener(this);
         if(defaultButton_)defaultButton_->unregisterControlListener(this);
         if(loadButton_)loadButton_->unregisterControlListener(this);
+        if(importButton_)importButton_->unregisterControlListener(this);
+        if(instrumentNameEdit_)instrumentNameEdit_->unregisterControlListener(this);
         folderButton_=nullptr;
         defaultButton_=nullptr;
         loadButton_=nullptr;
+        importButton_=nullptr;
+        instrumentNameEdit_=nullptr;
         folderLabel_=nullptr;
         samplerLabel_=nullptr;
         statusLabel_=nullptr;
@@ -901,6 +972,8 @@ private:
     VSTGUI::CTextLabel* folderLabel_{nullptr};
     VSTGUI::CTextLabel* samplerLabel_{nullptr};
     VSTGUI::CTextButton* loadButton_{nullptr};
+    VSTGUI::CTextButton* importButton_{nullptr};
+    VSTGUI::CTextEdit* instrumentNameEdit_{nullptr};
     VSTGUI::CTextButton* folderButton_{nullptr};
     VSTGUI::CTextButton* defaultButton_{nullptr};
     VSTGUI::SharedPointer<VSTGUI::CVSTGUITimer> timer_{};
