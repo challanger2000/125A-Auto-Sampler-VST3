@@ -36,8 +36,13 @@ Ein abgebrochener oder stummer Durchlauf darf nicht als erfolgreich gelten. Ein 
 2. Zum manuellen Laden einer anderen Bank auf **LOAD SAMPLES** klicken und deren konkreten `Run_<Zeit>_G<Generation>_<Zähler>`-Ordner wählen (z. B. mit `N60_V100_RR01.wav`).
 3. Bei geöffnetem Editor bestätigt `SAMPLER: ... WAVS READY TO PLAY` die geladene Bank.
 4. **RUN Aus** schalten. Dann MIDI-Noten an die 125A-Instrumentenspur senden: Der 125A liefert selbst Stereo-Audio.
+5. **Wichtig bei der Klangkontrolle:** Die ursprüngliche Instrumentenspur B nach dem Sampling stummschalten bzw. Monitoring deaktivieren. Wenn Quell-VST und 125A gleichzeitig hörbar bleiben, addieren sich beide Signale im DAW-Mixer und können ebenfalls hörbar übersteuern. Beim nächsten Aufnahme-Durchlauf die Quellspur wieder aktivieren.
 
 Die interne Engine ordnet Sample-Root-Noten, Velocity und Round Robins direkt zu, transponiert auf nicht gesampelte Zwischentöne und spielt mit bis zu **32 Stimmen**. Der aufgenommene Release wird One-Shot bis zum Sampleende wiedergegeben; echte Sustain-Loops existieren noch nicht.
+
+### P016 – Normalize-Übersteuerung behoben
+
+Bei aktiviertem Normalize werden gleichzeitige 125A-One-Shot-Stimmen jetzt **linear mit gemeinsamem Headroom** summiert, statt ein über 0 dBFS liegendes Signal im Sampler hart abzuschneiden. Eine einzelne Stimme behält ihren Zielpegel; weitere Stimmen erhalten summensichere Reserve. Der Float-Ausgang wird nicht mehr intern abgeschnitten. Normalize beeinflusst **nur die 125A-Wiedergabe**, niemals den Recorder, den Original-Synthesizer oder dessen Insert-Signal.
 
 ### P015 – kurze Vintage-Sounds bearbeiten
 
