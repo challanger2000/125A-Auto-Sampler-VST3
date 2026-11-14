@@ -22,6 +22,7 @@
 #include <fstream>
 #include <map>
 #include <optional>
+#include <new>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -443,7 +444,8 @@ inline std::optional<std::uint64_t> archive125AFingerprint(
         if(length<22)return std::nullopt;
         const auto entries=inspect125A(in,static_cast<std::uint64_t>(length));
         return fingerprint125AEntries(entries);
-    }catch(const std::exception&){return std::nullopt;}
+    }catch(const std::bad_alloc&){throw;}
+    catch(const std::exception&){return std::nullopt;}
 }
 
 // P020/P021 state v2001/v2101 used a manifest-only CRC which cannot
@@ -462,7 +464,8 @@ inline std::optional<std::uint32_t> archive125ALegacyFingerprint(
             [](const ArchiveEntry& e){return e.name=="instrument.json";});
         if(found==entries.end())return std::nullopt;
         return legacyFingerprint125AEntries(entries);
-    }catch(const std::exception&){return std::nullopt;}
+    }catch(const std::bad_alloc&){throw;}
+    catch(const std::exception&){return std::nullopt;}
 }
 
 // Locate only known 125A folders. Relocation without a fingerprint is
@@ -670,6 +673,7 @@ inline std::unique_ptr<SampleBank> load125AArchive(
         if(legacyFingerprintOut)
             *legacyFingerprintOut=legacyFingerprint125AEntries(entries);
         return bank;
-    }catch(const std::exception&){return {};}
+    }catch(const std::bad_alloc&){throw;}
+    catch(const std::exception&){return {};}
 }
 } // namespace a125
