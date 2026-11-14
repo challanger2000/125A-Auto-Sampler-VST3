@@ -314,6 +314,47 @@ int run(const char* vst3path,bool matrix){
     require(noteOns==expectedTakes && noteOffs==expectedTakes &&
             static_cast<int>(noteIDs.size())==expectedTakes,
             "actual VST3 MIDI notes differ from configured note/velocity/RR matrix");
+
+    // P008: the real recorder must close the CSV and flush the last WAV
+    // automatically. The DAW is still playing, and BOTH plugins remain
+    // active. setActive(false) must not be required for a completed job.
+    const auto autoRoot=base/"Documents"/"125A AutoSampler";
+    bool finalizedWithoutDeactivation=false;
+    for(int attempt=0;attempt<150 && !finalizedWithoutDeactivation;++attempt){
+        if(std::filesystem::exists(autoRoot)){
+            for(const auto& file:std::filesystem::recursive_directory_iterator(autoRoot)){
+                if(!file.is_regular_file() || file.path().filename()!="RUN-REPORT.csv")
+                    continue;
+                std::ifstream reader(file.path(),std::ios::binary);
+                const std::string text((std::istreambuf_iterator<char>(reader)),{});
+                if(text.find("SUMMARY,exported,"+std::to_string(expectedTakes))!=std::string::npos &&
+                   text.find("SUMMARY,droppedFrames,0")!=std::string::npos)
+                    finalizedWithoutDeactivation=true;
+            }
+        }
+        if(!finalizedWithoutDeactivation)
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
+    require(finalizedWithoutDeactivation,
+        "last WAV and RUN-REPORT must finish without stopping/deactivating the DAW");
+    // Keep transport running past the end. No phantom notes or WAVs.
+    {
+        EventList afterEnd(8);
+        ProcessContext playing{};
+        playing.state=ProcessContext::kPlaying;
+        playing.sampleRate=kRate;
+        playing.projectTimeSamples=total+kBlock;
+        ProcessData data{};
+        data.processMode=kRealtime;
+        data.symbolicSampleSize=kSample32;
+        data.numSamples=kBlock;
+        data.numOutputs=1;data.outputs=&genOut;
+        data.outputEvents=&afterEnd;
+        data.processContext=&playing;
+        require(generator.processor->process(data)==kResultOk &&
+                afterEnd.getEventCount()==0,
+                "completed sampler must emit no phantom MIDI notes");
+    }
     require(recorder.component->setActive(false)==kResultOk,
             "cannot flush recorder on deactivation");
     recorder.active=false;
