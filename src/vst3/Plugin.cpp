@@ -23,6 +23,7 @@
 #include "vstgui/lib/controls/ctextlabel.h"
 #include "vstgui/lib/controls/ctextedit.h"
 #include "vstgui/contrib/keyboardview.h"
+#include "HardwareWidgets.h"
 #include "vstgui/lib/controls/cbuttons.h"
 #include "vstgui/lib/controls/icontrollistener.h"
 #include <algorithm>
@@ -320,6 +321,22 @@ public:
             }
         }
     }
+    VSTGUI::CView* createCustomView(VSTGUI::UTF8StringPtr name,
+            const VSTGUI::UIAttributes&,const VSTGUI::IUIDescription*,
+            VSTGUI::VST3Editor*) override {
+        if(name && std::strcmp(name,"125A Waveform")==0){
+            waveform_=new a125ui::WaveformView(
+                VSTGUI::CRect(334.,154.,696.,309.));
+            return waveform_;
+        }
+        return nullptr;
+    }
+    void updateWaveform(){
+        if(!waveform_)return;
+        std::array<float,a125ui::WaveformView::Points> wave{};
+        const bool valid=player_.waveform(wave);
+        waveform_->setWave(wave,valid);
+    }
     Steinberg::IPlugView* PLUGIN_API createView(Steinberg::FIDString name) override {
         if(Steinberg::FIDStringsEqual(name,V::ViewType::kEditor)){
             auto* editor=new VSTGUI::VST3Editor(this,"view","autosampler.uidesc");
@@ -331,6 +348,11 @@ public:
     VSTGUI::CView* verifyView(VSTGUI::CView* view,
             const VSTGUI::UIAttributes&,const VSTGUI::IUIDescription*,
             VSTGUI::VST3Editor*) override {
+        if(auto* original=dynamic_cast<VSTGUI::CKnob*>(view)){
+            auto* metal=new a125ui::SilverKnob(*original);
+            original->forget();
+            view=metal;
+        }
         if(auto* keys=dynamic_cast<VSTGUI::KeyboardView*>(view)){
             keyboard_=keys;
             keyboard_->setDelegate(this);
@@ -491,8 +513,13 @@ public:
         updateSamplerLabel();
         updateStatus();
         updateKeyboard();
+        updateWaveform();
         timer_=VSTGUI::makeOwned<VSTGUI::CVSTGUITimer>(
-            [this](VSTGUI::CVSTGUITimer*){updateStatus();updateKeyboard();},180);
+            [this](VSTGUI::CVSTGUITimer*){
+                updateStatus();
+                updateKeyboard();
+                updateWaveform();
+            },180);
     }
     void willClose(VSTGUI::VST3Editor*) override {
         timer_=nullptr;
@@ -508,6 +535,7 @@ public:
         instrumentNameEdit_=nullptr;
         if(keyboard_)keyboard_->setDelegate(nullptr);
         keyboard_=nullptr;
+        waveform_=nullptr;
         folderLabel_=nullptr;
         samplerLabel_=nullptr;
         statusLabel_=nullptr;
@@ -1070,6 +1098,7 @@ private:
     VSTGUI::CTextButton* importButton_{nullptr};
     VSTGUI::CTextEdit* instrumentNameEdit_{nullptr};
     VSTGUI::KeyboardView* keyboard_{nullptr};
+    a125ui::WaveformView* waveform_{nullptr};
     std::array<std::atomic<bool>,128> midiHeld_{};
     std::atomic<int> previewOn_{-1},previewOff_{-1};
     VSTGUI::CTextButton* folderButton_{nullptr};
