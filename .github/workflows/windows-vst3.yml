@@ -2,7 +2,7 @@ name: P024 Windows VST3 AutoSampler verified project bank QA
 on:
   push:
     branches: ['develop/**']
-    paths: ['src/**','tests/**','resource/**','CMakeLists.txt','.github/workflows/windows-vst3.yml']
+    paths: ['src/**','tests/**','resource/**','CMakeLists.txt','.github/workflows/windows-vst3.yml','.github/scripts/verify125a.ps1']
   workflow_dispatch:
 
 concurrency:
