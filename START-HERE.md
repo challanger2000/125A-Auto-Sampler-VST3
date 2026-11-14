@@ -1,4 +1,4 @@
-# START HERE – 125A AutoSampler P013
+# START HERE – 125A AutoSampler P014
 
 ## Ziel: aufnehmen und mit 125A selbst spielen
 
@@ -11,7 +11,7 @@ Kein SFZ-Export oder fremder Sampler gehört zum notwendigen Workflow. Das inter
 
 ## Windows-Installation
 
-- Auf dem [erfolgreichen P013-Windows-Testlauf](https://github.com/challanger2000/125A-Auto-Sampler-VST3/actions/runs/43542007225) unter **Artifacts** das ZIP `125A-AutoSampler-P013-Win64` herunterladen.
+- Auf dem [erfolgreichen P014-Windows-Testlauf](https://github.com/challanger2000/125A-Auto-Sampler-VST3/actions/runs/43564563114) unter **Artifacts** das ZIP `125A-AutoSampler-P013-Win64` herunterladen (enthält den P014-Code; der Artefaktname stammt noch vom bisherigen Workflow).
 - Den entpackten **vollständigen** Ordner `AutosamplerVST3.vst3` nach `C:\Program Files\Common Files\VST3\` kopieren.
 - Fender Studio Pro neu starten und beide 125A-Klassen im Plugin-Browser suchen.
 
@@ -32,10 +32,10 @@ Ein abgebrochener oder stummer Durchlauf darf nicht als erfolgreich gelten. Ein 
 
 ## Die aufgenommenen Klänge im 125A spielen
 
-1. Nach einer erfolgreichen Aufnahme wird die WAV-Bank bei geöffneter 125A-Oberfläche automatisch geladen. Bei geschlossener Oberfläche den Editor erneut öffnen. Für andere gespeicherte Runs **LOAD SAMPLES** anklicken.
-2. Den konkreten Unterordner `Run_<Zeit>_G<Generation>_<Zähler>` mit seinen WAV-Dateien auswählen, etwa `N60_V100_RR01.wav`.
-3. Die Statuszeile `SAMPLER: ... WAVS READY TO PLAY` prüfen.
-4. RUN muss **Aus** sein. Nun MIDI-Noten an die 125A-Instrumentenspur senden: Das interne Instrument liefert Stereo-Audio.
+1. Nach einem vollständig erfolgreichen Run lädt der 125A die gerade aufgenommenen WAVs **von allein**, auch bei geschlossenem Pluginfenster.
+2. Zum manuellen Laden einer anderen Bank auf **LOAD SAMPLES** klicken und deren konkreten `Run_<Zeit>_G<Generation>_<Zähler>`-Ordner wählen (z. B. mit `N60_V100_RR01.wav`).
+3. Bei geöffnetem Editor bestätigt `SAMPLER: ... WAVS READY TO PLAY` die geladene Bank.
+4. **RUN Aus** schalten. Dann MIDI-Noten an die 125A-Instrumentenspur senden: Der 125A liefert selbst Stereo-Audio.
 
 Die interne Engine ordnet Sample-Root-Noten, Velocity und Round Robins direkt zu, transponiert auf nicht gesampelte Zwischentöne und spielt mit bis zu **32 Stimmen**. Der aufgenommene Release wird One-Shot bis zum Sampleende wiedergegeben; echte Sustain-Loops existieren noch nicht.
 
@@ -51,12 +51,12 @@ Standard: `%USERPROFILE%\Documents\125A AutoSampler\Run_<...>\`.
 - Der interne Sampler lädt die WAV-Dateien direkt, **ohne** externe `.sfz`-Bank.
 - **CHOOSE FOLDER** und **DEFAULT** setzen den Aufnahme-Ausgabeordner; **LOAD SAMPLES** wählt dagegen den Ordner des abzuspielenden Instruments.
 
-**P013 Windows-PASS:** Die VST3-Regression arbeitet mit einem synthetischen Testinstrument, lädt anschließend den tatsächlich aufgenommenen WAV-Run **in die 125A-VST3 selbst** und prüft dessen hörbaren Stereo-Audioausgang in vier unabhängigen Szenarien. 72/72 WAVs sind korrekt erstellt worden. Das ist nicht mit einem musikalischen Test in Fender Studio Pro gleichzusetzen.
+**P014 Windows-PASS:** Der native Test lädt nach der automatischen MIDI-/Audio-Aufnahme **keinen** Projektzustand und öffnet **keine** VSTGUI, bevor er die Wiedergabe versucht. Trotzdem liefert der bereits laufende 125A in **allen vier Szenarien** hörbares Stereo-PCM (72/72 exportierte WAVs). Zusätzlich: 94/94 Steinberg-Validator-Prüfungen, Core-Tests und Mid-Take-STOP PASS. [Testlauf](https://github.com/challanger2000/125A-Auto-Sampler-VST3/actions/runs/43564563114). Das ist noch kein musikalischer Praxisnachweis in Fender Studio Pro.
 
 ## Offene Grenzen
 
 - Ein echtes Fremd-VST in Fender Studio Pro, dessen MIDI-Routing und die vollständige GUI-Interaktion sind noch nicht praktisch abgenommen.
 - Physischer ASIO-Test steht aus.
 - Pro DAW-Prozess nur ein Sampling-Generator/Recorder-Paar.
-- Automatische Bankübernahme erfolgt, sobald der 125A-Editor geöffnet ist; keine Sustain-Loops.
+- Automatischer Bank-Import erfolgt auf einem separaten Worker-Thread, auch bei geschlossenem Editor. Ein Instrument kann derzeit höchstens 16 verschiedene Bankversionen nacheinander übernehmen; keine Sustain-Loops.
 - [PR #2](https://github.com/challanger2000/125A-Auto-Sampler-VST3/pull/2) bleibt bis zur Endabnahme Draft.
