@@ -775,6 +775,34 @@ class FailOnFlushBuffer final:public std::stringbuf {
 public:
     int sync() override {return -1;}
 };
+void testAuditStrictManifest() {
+    const auto original=a125::instrumentManifest("Valid",2,{});
+    std::string name;
+    std::array<double,7> playback{};
+    require(a125::parse125AManifest(original,2,name,playback) && name=="Valid",
+            "A10 generated manifest must pass full JSON validation");
+    const auto altered=[&](const std::string& before,const std::string& after){
+        std::string text=original;
+        const auto index=text.find(before);
+        require(index!=std::string::npos,"A10 test manifest fixture anchor missing");
+        text.replace(index,before.size(),after);
+        return text;
+    };
+    require(!a125::parse125AManifest(altered("\"version\":1", "\"version\":10"),
+              2,name,playback),
+            "A10 version 10 may not alias version 1");
+    require(!a125::parse125AManifest(altered("\"sampleCount\":2", "\"sampleCount\":20"),
+              2,name,playback),
+            "A10 count 20 may not alias count 2");
+    require(!a125::parse125AManifest(altered("}\n",",\"version\":1}\n"),
+              2,name,playback),
+            "A10 duplicate JSON version must be rejected");
+    require(!a125::parse125AManifest(original+"garbage",2,name,playback),
+            "A10 trailing invalid JSON must be rejected");
+    require(!a125::parse125AManifest(altered("\"format\":\"125A\"",
+                "\"format\":\"125B\""),2,name,playback),
+            "A10 unrelated archive schema must be rejected");
+}
 void testAuditBankLifetimeAndWavPersistence() {
     a125::BuiltInSampler player;
     for(int n=0;n<110;++n){
@@ -880,6 +908,7 @@ int main() {
         testWavAndTrim();
         testAuditSamplerNoteIdentityAndNames();
         testAuditBankLifetimeAndWavPersistence();
+        testAuditStrictManifest();
         std::cout << "P001 core tests PASSED\n";
         return 0;
     } catch(const std::exception& e) {

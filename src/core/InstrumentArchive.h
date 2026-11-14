@@ -4,6 +4,7 @@
 // This small reader deliberately supports only the format we actually write.
 // All lengths, CRCs, offsets and file names are checked before publication.
 #include "BuiltInSampler.h"
+#include "ManifestJson.h"
 #include <array>
 #include <cstdint>
 #include <cctype>
@@ -537,15 +538,12 @@ inline std::unique_ptr<SampleBank> load125AArchive(
         if(manifestIt==entries.end())return {};
         const auto manifestBytes=read125AEntry(in,*manifestIt,centralOff);
         const std::string manifest(manifestBytes.begin(),manifestBytes.end());
-        // Readers accept only our manifest schema, never arbitrary ZIP files.
-        if(manifest.find("\"format\":\"125A\"")==std::string::npos ||
-           manifest.find("\"version\":1")==std::string::npos ||
-           manifest.find("\"sampleCount\":"+std::to_string(entries.size()-1))==
-               std::string::npos)return {};
+        // Parse the entire versioned JSON object, not matching substrings
+        // such as version:10 and sampleCount:10 against version/count 1.
         ArchivePlayback playback;
-        if(!read125APlayback(manifest,playback))return {};
         std::string decodedName;
-        if(!read125AInstrumentName(manifest,decodedName))return {};
+        if(!parse125AManifest(manifest,entries.size()-1,
+                              decodedName,playback.params))return {};
         auto bank=std::make_unique<SampleBank>();
         std::map<std::pair<int,int>,std::set<int>> groups;
         std::uint32_t sampleRate=0;
