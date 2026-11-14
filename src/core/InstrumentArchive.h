@@ -60,6 +60,21 @@ inline std::string json125Escape(std::string_view s){
     }
     return out;
 }
+// A human-readable archive basename; never allow a user name to affect paths.
+inline std::string safe125AStem(std::string_view displayName){
+    std::string stem;
+    stem.reserve(std::min<std::size_t>(displayName.size(),96));
+    for(unsigned char c:displayName){
+        if(stem.size()>=96)break;
+        if(c<32 || c==127 || c=='/' || c=='\\' || c==':' || c=='*' ||
+           c=='?' || c=='"' || c=='<' || c=='>' || c=='|') stem+='_';
+        else stem+=static_cast<char>(c);
+    }
+    while(!stem.empty() && (stem.back()==' ' || stem.back()=='.'))
+        stem.pop_back();
+    if(stem.empty() || stem=="." || stem=="..")stem="Instrument";
+    return stem;
+}
 inline bool valid125AName(const std::string& name){
     int root=0,vel=0,rr=0;
     return name=="instrument.json" || parseSampleName(name,root,vel,rr);
