@@ -523,8 +523,12 @@ public:
         unsigned failures=0;
         while(!stopBankWorker_.load(std::memory_order_acquire)){
             const auto ready=session().readyBankGeneration.load(std::memory_order_acquire);
-            const auto current=session().generation.load(std::memory_order_acquire);
-            if(ready!=0 && ready!=publishedGeneration && ready==current){
+            // A subsequent user-initiated capture increments generation
+            // immediately, but that must NOT invalidate an already-complete
+            // earlier bank still awaiting background import. readyBankGeneration
+            // is the recorder's publication token, independent of the
+            // generator's current unfinished MIDI job.
+            if(ready!=0 && ready!=publishedGeneration){
                 if(failedGeneration!=ready){
                     failedGeneration=ready;
                     failures=0;
