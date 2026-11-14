@@ -14,8 +14,10 @@ enum Parameter : std::size_t {
 };
 using ParameterValues=std::array<double,ParameterCount>;
 inline constexpr ParameterValues defaultParameters{
-    0.,60./127.,60./127.,0.,7./15.,0.,
-    (1.-.25)/7.75,(2.-.25)/9.75,(.1-.05)/.45,
+    // Vintage one-shot default: one root sample per octave, one take per
+    // velocity, short note and short recorded tail. Finer capture is optional.
+    0.,60./127.,60./127.,1.,0.,0.,
+    (.5-.25)/7.75,(.5-.25)/9.75,(.1-.05)/.45,
     99./126.,59./126.,119./126.
 };
 inline double midiNormalized(int velocity) noexcept {
