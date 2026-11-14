@@ -184,6 +184,15 @@ public:
         const auto* bank=current_.load(std::memory_order_acquire);
         return bank?bank->zones.size():0;
     }
+    std::array<bool,128> rootNotes() const noexcept {
+        std::array<bool,128> roots{};
+        const auto* bank=current_.load(std::memory_order_acquire);
+        if(bank)
+            for(const auto& z:bank->zones)
+                if(z.root>=0 && z.root<128)
+                    roots[static_cast<std::size_t>(z.root)]=true;
+        return roots;
+    }
     // A bounded non-realtime visual snapshot. A published bank stays alive
     // until plugin teardown, so the GUI can read sample data without locks.
     template<std::size_t N> bool waveform(std::array<float,N>& output) const noexcept {
