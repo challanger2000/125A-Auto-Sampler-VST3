@@ -7,6 +7,12 @@
 - **125A AutoSampler MIDI:** generiert Note-On/Off, Notenbereiche, Velocity-Stufen und Round Robins; eigene anthrazitfarbene VSTGUI-Oberfläche mit Start/Stop und Live-Zählern.
 - **125A AutoSampler Recorder:** letzter Audio-Insert auf dem Quellinstrument, sammelt dessen echte Audiosamples und schreibt separate WAVs auf einem Hintergrundthread.
 
+## P007 – sicherer Neustart
+
+Ein neuer Sampling-Durchlauf startet **nur nach einem bewusst ausgeführten RUN-Aus→RUN-Ein-Wechsel** bei laufendem DAW-Transport. Ein DAW-Stopp, Loop/Songpositionssprung oder Plugin-Deaktivierung kann keine neue WAV-Session auslösen, nur weil der Run-Schalter noch auf Ein steht. Nach einem Stopp muss der Benutzer RUN zunächst ausschalten und erneut einschalten. Die wiederholte DAW-Wiedergabe allein erzeugt keine neuen Exporte.
+
+P007 enthält dafür einen Core-Zustandsautomaten und einen Regressionstest, der die **tatsächlich gebaute VST3** deaktiviert/reaktiviert und auf unerlaubte MIDI-Ausgabe prüft. Abnahme: aktueller Windows-P007-GitHub-Actions-Lauf.
+
 ## P006 – nachweislich implementiert
 
 - MIDI-Noten 0–127, Schrittweite 1–12 Halbtöne

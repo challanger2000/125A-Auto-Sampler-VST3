@@ -11,6 +11,10 @@
 
 [Abgenommener Windows-Build samt VST3-Artefakt](https://github.com/challanger2000/125A-Auto-Sampler-VST3/actions/runs/43530522001) – ZIP-Name **125A-AutoSampler-P006-Win64**. Nur die VST3-Datei installieren; das Testprogramm ist nicht Bestandteil des Plugins.
 
+## Bedienhinweis für P007
+
+Die DAW muss bereits auf **Play** stehen, bevor RUN eingeschaltet wird. Wenn die DAW gestoppt oder das Plugin deaktiviert wird, bleibt ein eingeschalteter RUN-Schalter eventuell optisch aktiv, **löst aber keinen neuen Sampling-Job aus**. Ein neuer Job erfordert immer RUN **Aus → Ein**. Das verhindert ungewollte Mehrfachaufnahmen beim erneuten Start der DAW-Wiedergabe oder Song-Loop.
+
 ## 2. Installation für spätere Fender-Studio-Pro-Abnahme
 
 1. Unter der genannten GitHub-Action bei **Artifacts** das Windows-ZIP herunterladen.
