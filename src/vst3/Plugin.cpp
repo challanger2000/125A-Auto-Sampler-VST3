@@ -8,6 +8,7 @@
 #include "core/ExportTarget.h"
 #include "core/SampleProcessing.h"
 #include "core/SfzBank.h"
+#include "core/RunStatus.h"
 #include "base/source/fstreamer.h"
 #include "pluginterfaces/base/ibstream.h"
 #include "pluginterfaces/base/ustring.h"
@@ -256,14 +257,16 @@ public:
         const auto errors=session().errors.load(std::memory_order_relaxed);
         const auto dropped=session().dropped.load(std::memory_order_relaxed);
         const auto gen=session().generation.load(std::memory_order_acquire);
-        const bool done=gen!=0 &&
-            session().writerFinishedGeneration.load(std::memory_order_acquire)==gen;
-        const bool finishing=gen!=0 &&
-            session().captureEndedGeneration.load(std::memory_order_acquire)==gen;
-        const bool aborted=gen!=0 &&
-            session().interruptedGeneration.load(std::memory_order_acquire)==gen;
-        const char* state=done?(aborted?"ABORTED":"COMPLETE"):finishing?"FINALIZING":
-            session().anchor.load(std::memory_order_acquire)!=kDisarmed?"RECORDING":"READY/STOPPED";
+        const a125::RunDisplaySnapshot snapshot{
+            gen,
+            session().captureEndedGeneration.load(std::memory_order_acquire),
+            session().writerFinishedGeneration.load(std::memory_order_acquire),
+            session().interruptedGeneration.load(std::memory_order_acquire),
+            seen,written,rejected,silent,errors,dropped,
+            config.takeCount(),
+            session().anchor.load(std::memory_order_acquire)!=kDisarmed
+        };
+        const char* state=a125::runDisplayText(a125::runDisplayStatus(snapshot));
         char line[180]{};
         std::snprintf(line,sizeof(line),
             "%s  TAKES %u/%zu   WAV %u   REJECT %u   SILENCE %u   ERR %u   LOST %llu",
@@ -942,10 +945,10 @@ private:
 BEGIN_FACTORY_DEF("125A","https://github.com/challanger2000","")
  DEF_CLASS2(INLINE_UID_FROM_FUID(kMidiID),
   Steinberg::PClassInfo::kManyInstances,kVstAudioEffectClass,
-  "125A AutoSampler MIDI",0,"Instrument","0.11.0",kVstVersionString,
+  "125A AutoSampler MIDI",0,"Instrument","0.12.0",kVstVersionString,
   MidiGenerator::createInstance)
  DEF_CLASS2(INLINE_UID_FROM_FUID(kRecorderID),
   Steinberg::PClassInfo::kManyInstances,kVstAudioEffectClass,
-  "125A AutoSampler Recorder",0,"Fx","0.11.0",kVstVersionString,
+  "125A AutoSampler Recorder",0,"Fx","0.12.0",kVstVersionString,
   Recorder::createInstance)
 END_FACTORY
