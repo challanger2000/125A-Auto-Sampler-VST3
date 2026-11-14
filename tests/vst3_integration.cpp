@@ -637,10 +637,18 @@ int run(const char* vst3path,bool matrix,bool customFolder){
             ++reports;
         }
     }
-    require(static_cast<int>(wavs)==expectedTakes && expectedNames.empty() &&
-            reports==1 && archiveCount==1 && !capturedArchive.empty() &&
-            !capturedRunDirectory.empty(),
-            "native 125A bank must contain every requested sample WAV");
+    if(static_cast<int>(wavs)!=expectedTakes || !expectedNames.empty() ||
+       reports!=1 || archiveCount!=1 || capturedArchive.empty() ||
+       capturedRunDirectory.empty()){
+        std::cerr<<"[DIAG] output="<<output.string()<<" WAV="<<wavs
+                 <<" wanted="<<expectedTakes<<" missingNames="<<expectedNames.size()
+                 <<" reports="<<reports<<" archives="<<archiveCount
+                 <<" archivePath="<<capturedArchive.string()<<"\\n";
+        for(const auto& e:std::filesystem::recursive_directory_iterator(output))
+            if(e.is_regular_file())
+                std::cerr<<"[DIAG] FILE "<<e.path().string()<<"\\n";
+        throw std::runtime_error("P017 native bank/ZIP inventory mismatch");
+    }
     if(customFolder){
         require(!std::filesystem::exists(base/"Documents"/"125A AutoSampler"),
                 "P010 leaked custom WAVs into default Documents directory");
