@@ -755,7 +755,7 @@ public:
     tresult PLUGIN_API getState(Steinberg::IBStream* state) override {
         if(!state) return Steinberg::kResultFalse;
         Steinberg::IBStreamer io(state,kLittleEndian);
-        if(!io.writeInt32(0x125A2101)) return Steinberg::kResultFalse;
+        if(!io.writeInt32(0x125A2201)) return Steinberg::kResultFalse;
         // The Run switch is deliberately not persisted: project reopen
         // must never create WAV files before the user explicitly starts.
         for(std::size_t i=1;i<values_.size();++i)
@@ -771,7 +771,7 @@ public:
                written!=length)return Steinberg::kResultFalse;
         }
         std::filesystem::path savedBankPath;
-        std::optional<std::uint32_t> savedFingerprint;
+        std::optional<std::uint64_t> savedFingerprint;
         {
             std::lock_guard<std::mutex> guard(bankMutex_);
             savedBankPath=bankFolder_;
@@ -801,8 +801,9 @@ public:
            written!=nameLength)return Steinberg::kResultFalse;
         if(!savedFingerprint && savedBankPath.extension()==".125A")
             savedFingerprint=a125::archive125AFingerprint(savedBankPath);
-        // 0 signals no available fingerprint (legacy/missing bank).
-        if(!io.writeInt32(static_cast<Steinberg::int32>(
+        // 0 means no available archive identity. Persist every ZIP entry's
+        // CRC contribution, not just the common instrument.json manifest.
+        if(!io.writeInt64(static_cast<Steinberg::int64>(
                 savedFingerprint.value_or(0))))return Steinberg::kResultFalse;
         return Steinberg::kResultOk;
     }
@@ -815,7 +816,7 @@ public:
             version!=0x125A1001 && version!=0x125A1301 &&
              version!=0x125A1501 && version!=0x125A1701 &&
              version!=0x125A1801 && version!=0x125A2001 &&
-             version!=0x125A2101))
+             version!=0x125A2101 && version!=0x125A2201))
             return Steinberg::kResultFalse;
         // Older P003 files had 9 parameters. Upgrade without breaking
         // existing test projects; 3 editable velocity values get defaults.
@@ -823,7 +824,7 @@ public:
         loaded[a125::Run]=0.;
         const std::size_t count=version==0x125A0301?9:
             (version==0x125A1801 || version==0x125A2001 ||
-             version==0x125A2101)?loaded.size():
+             version==0x125A2101 || version==0x125A2201)?loaded.size():
             (version==0x125A1501 || version==0x125A1701)?
                 a125::ParameterCount+6:a125::ParameterCount;
         for(std::size_t i=1;i<count;++i) {
@@ -837,7 +838,8 @@ public:
         std::filesystem::path restoredFolder;
         if(version==0x125A1001 || version==0x125A1301 ||
            version==0x125A1501 || version==0x125A1701 ||
-           version==0x125A1801 || version==0x125A2001 || version==0x125A2101){
+           version==0x125A1801 || version==0x125A2001 || version==0x125A2101 ||
+           version==0x125A2201){
             Steinberg::int32 length=0;
             if(!io.readInt32(length) || length<0 || length>8192)
                 return Steinberg::kResultFalse;
@@ -853,7 +855,8 @@ public:
         std::filesystem::path restoredBank;
         if(version==0x125A1301 || version==0x125A1501 ||
            version==0x125A1701 || version==0x125A1801 ||
-           version==0x125A2001 || version==0x125A2101){
+           version==0x125A2001 || version==0x125A2101 ||
+           version==0x125A2201){
             Steinberg::int32 length=0;
             if(!io.readInt32(length) || length<0 || length>8192)
                 return Steinberg::kResultFalse;
@@ -868,7 +871,8 @@ public:
         }
         std::string restoredName="Untitled Instrument";
         if(version==0x125A1701 || version==0x125A1801 ||
-           version==0x125A2001 || version==0x125A2101){
+           version==0x125A2001 || version==0x125A2101 ||
+           version==0x125A2201){
             Steinberg::int32 nameLength=0;
             if(!io.readInt32(nameLength) || nameLength<=0 || nameLength>192)
                 return Steinberg::kResultFalse;
@@ -877,11 +881,16 @@ public:
             if(state->read(restoredName.data(),nameLength,&read)!=Steinberg::kResultOk ||
                read!=nameLength)return Steinberg::kResultFalse;
         }
-        std::optional<std::uint32_t> fingerprint;
-        if(version==0x125A2001 || version==0x125A2101){
+        std::optional<std::uint64_t> fingerprint;
+        const bool legacyIdentity=(version==0x125A2001 || version==0x125A2101);
+        if(legacyIdentity){
             Steinberg::int32 savedCRC=0;
             if(!io.readInt32(savedCRC))return Steinberg::kResultFalse;
             if(savedCRC!=0)fingerprint=static_cast<std::uint32_t>(savedCRC);
+        }else if(version==0x125A2201){
+            Steinberg::int64 stored=0;
+            if(!io.readInt64(stored))return Steinberg::kResultFalse;
+            if(stored!=0)fingerprint=static_cast<std::uint64_t>(stored);
         }
         if(!session().setCaptureName(restoredName))
             return Steinberg::kResultFalse;
@@ -900,7 +909,7 @@ public:
                 documents=std::filesystem::path(home)/"Documents";
 #endif
             const auto relocated=a125::resolve125APath(
-                restoredBank,restoredFolder,documents,fingerprint);
+                restoredBank,restoredFolder,documents,fingerprint,legacyIdentity);
             loadSamples(relocated);
         }
         // Project load may occur concurrently with audio. Never modify
@@ -1159,7 +1168,7 @@ private:
     a125::BuiltInSampler player_{};
     std::mutex bankMutex_;
     std::filesystem::path bankFolder_{};
-    std::optional<std::uint32_t> bankFingerprint_{};
+    std::optional<std::uint64_t> bankFingerprint_{};
     std::atomic<bool> stopBankWorker_{false};
     std::thread bankWorker_;
     bool loadFailed_=false;
