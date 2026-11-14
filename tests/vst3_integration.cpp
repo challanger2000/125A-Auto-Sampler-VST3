@@ -349,7 +349,7 @@ int run(const char* vst3path,bool matrix,bool customFolder){
     // P008: the real recorder must close the CSV and flush the last WAV
     // automatically. The DAW is still playing, and BOTH plugins remain
     // active. setActive(false) must not be required for a completed job.
-    const auto autoRoot=base/"Documents"/"125A AutoSampler";
+    const auto autoRoot=customFolder?chosenRoot:base/"Documents"/"125A AutoSampler";
     bool finalizedWithoutDeactivation=false;
     for(int attempt=0;attempt<150 && !finalizedWithoutDeactivation;++attempt){
         if(std::filesystem::exists(autoRoot)){
