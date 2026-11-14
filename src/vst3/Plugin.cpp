@@ -22,6 +22,7 @@
 #include "vstgui/lib/cvstguitimer.h"
 #include "vstgui/lib/controls/ctextlabel.h"
 #include "vstgui/lib/controls/ctextedit.h"
+#include "vstgui/contrib/keyboardview.h"
 #include "vstgui/lib/controls/cbuttons.h"
 #include "vstgui/lib/controls/icontrollistener.h"
 #include <algorithm>
@@ -253,7 +254,8 @@ std::optional<std::filesystem::path> pick125AInstrument(){
 
 class MidiGenerator final : public V::SingleComponentEffect,
                             public VSTGUI::VST3EditorDelegate,
-                            public VSTGUI::IControlListener {
+                            public VSTGUI::IControlListener,
+                            public VSTGUI::KeyboardViewPlayerDelegate {
 public:
     static FUnknown* createInstance(void*) {return (V::IAudioProcessor*)new MidiGenerator();}
     ~MidiGenerator() override {stopBankMonitor();}
@@ -268,6 +270,54 @@ public:
         stopBankWorker_.store(true,std::memory_order_release);
         if(bankWorker_.joinable())bankWorker_.join();
     }
+    // User clicks a key: select a single sampling note and enqueue its
+    // optional preview for the ASIO audio callback (no GUI-side DSP).
+    int32_t onNoteOn(VSTGUI::KeyboardViewBase::NoteIndex note,
+                     double,double) override {
+        if(note<0 || note>127)return -1;
+        const auto normalized=static_cast<double>(note)/127.;
+        for(const V::ParamID tag:{kFirstParam,kLastParam}){
+            const auto index=static_cast<std::size_t>(tag-kRunParam);
+            values_[index].store(normalized,std::memory_order_release);
+            SingleComponentEffect::setParamNormalized(tag,normalized);
+            beginEdit(tag);performEdit(tag,normalized);endEdit(tag);
+        }
+        previewOn_.store(note,std::memory_order_release);
+        if(keyboard_)keyboard_->setKeyPressed(note,true);
+        return note;
+    }
+    void onNoteOff(VSTGUI::KeyboardViewBase::NoteIndex note,int32_t) override {
+        if(note<0 || note>127)return;
+        previewOff_.store(note,std::memory_order_release);
+        if(keyboard_)keyboard_->setKeyPressed(note,false);
+    }
+    void onNoteModulation(int32_t,double,double) override {}
+    void updateKeyboard(){
+        if(!keyboard_)return;
+        for(int note=0;note<128;++note)
+            keyboard_->setKeyPressed(note,
+                midiHeld_[static_cast<std::size_t>(note)].load(
+                    std::memory_order_relaxed));
+    }
+    void observeIncomingMidi(const V::ProcessData& data) noexcept {
+        if(!data.inputEvents)return;
+        const auto count=data.inputEvents->getEventCount();
+        for(int32 i=0;i<count;++i){
+            V::Event e{};
+            if(data.inputEvents->getEvent(i,e)!=Steinberg::kResultOk)continue;
+            if(e.type==V::Event::kNoteOnEvent){
+                const auto note=static_cast<int>(e.noteOn.pitch);
+                if(note>=0 && note<128)
+                    midiHeld_[static_cast<std::size_t>(note)].store(
+                        e.noteOn.velocity>0.f,std::memory_order_relaxed);
+            }else if(e.type==V::Event::kNoteOffEvent){
+                const auto note=static_cast<int>(e.noteOff.pitch);
+                if(note>=0 && note<128)
+                    midiHeld_[static_cast<std::size_t>(note)].store(
+                        false,std::memory_order_relaxed);
+            }
+        }
+    }
     Steinberg::IPlugView* PLUGIN_API createView(Steinberg::FIDString name) override {
         if(Steinberg::FIDStringsEqual(name,V::ViewType::kEditor)){
             auto* editor=new VSTGUI::VST3Editor(this,"view","autosampler.uidesc");
@@ -279,6 +329,11 @@ public:
     VSTGUI::CView* verifyView(VSTGUI::CView* view,
             const VSTGUI::UIAttributes&,const VSTGUI::IUIDescription*,
             VSTGUI::VST3Editor*) override {
+        if(auto* keys=dynamic_cast<VSTGUI::KeyboardView*>(view)){
+            keyboard_=keys;
+            keyboard_->setDelegate(this);
+            updateKeyboard();
+        }
         if(auto* edit=dynamic_cast<VSTGUI::CTextEdit*>(view)){
             if(edit->getText()=="INSTRUMENT NAME"){
                 instrumentNameEdit_=edit;
@@ -431,8 +486,9 @@ public:
         updateFolderLabel();
         updateSamplerLabel();
         updateStatus();
+        updateKeyboard();
         timer_=VSTGUI::makeOwned<VSTGUI::CVSTGUITimer>(
-            [this](VSTGUI::CVSTGUITimer*){updateStatus();},250);
+            [this](VSTGUI::CVSTGUITimer*){updateStatus();updateKeyboard();},180);
     }
     void willClose(VSTGUI::VST3Editor*) override {
         timer_=nullptr;
@@ -446,6 +502,8 @@ public:
         loadButton_=nullptr;
         importButton_=nullptr;
         instrumentNameEdit_=nullptr;
+        if(keyboard_)keyboard_->setDelegate(nullptr);
+        keyboard_=nullptr;
         folderLabel_=nullptr;
         samplerLabel_=nullptr;
         statusLabel_=nullptr;
@@ -735,6 +793,9 @@ public:
         if(!active) {
             cancel();
             runGate_.disarm();
+            for(auto& held:midiHeld_)held.store(false,std::memory_order_relaxed);
+            previewOn_.store(-1,std::memory_order_relaxed);
+            previewOff_.store(-1,std::memory_order_relaxed);
         }
         return SingleComponentEffect::setActive(active);
     }
@@ -760,6 +821,7 @@ public:
                     values_[static_cast<std::size_t>(id-kRunParam)]=std::clamp(value,0.,1.);
             }
         }
+        observeIncomingMidi(data);
         run_=values_[0]>=0.5;
         if(!run_)renderSampler(data);
         const bool playing=data.processContext &&
@@ -864,6 +926,10 @@ private:
             std::memory_order_relaxed);
         const float gain=static_cast<float>(
             std::pow(10.,(-12.+24.*gainValue)/20.));
+        const auto guiOn=previewOn_.exchange(-1,std::memory_order_acq_rel);
+        const auto guiOff=previewOff_.exchange(-1,std::memory_order_acq_rel);
+        if(guiOn>=0)player_.noteOn(guiOn,100,sampleRate_);
+        if(guiOff>=0)player_.noteOff(guiOff);
         auto* events=data.inputEvents;
         const int32 total=events?events->getEventCount():0;
         int32 eventIndex=0;
@@ -974,6 +1040,9 @@ private:
     VSTGUI::CTextButton* loadButton_{nullptr};
     VSTGUI::CTextButton* importButton_{nullptr};
     VSTGUI::CTextEdit* instrumentNameEdit_{nullptr};
+    VSTGUI::KeyboardView* keyboard_{nullptr};
+    std::array<std::atomic<bool>,128> midiHeld_{};
+    std::atomic<int> previewOn_{-1},previewOff_{-1};
     VSTGUI::CTextButton* folderButton_{nullptr};
     VSTGUI::CTextButton* defaultButton_{nullptr};
     VSTGUI::SharedPointer<VSTGUI::CVSTGUITimer> timer_{};
