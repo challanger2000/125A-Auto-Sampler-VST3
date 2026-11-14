@@ -955,6 +955,108 @@ int run(const char* vst3path,bool matrix,bool customFolder){
     return 0;
 }
 
+// A13: real VST3 output events must obey *all* parameter automation
+// offsets, including multiple OFF/ON changes in one audio callback.
+int runAutomation(const char* vst3path){
+    require(kRate==44100 && kBlock==256,
+        "A13 automation fixture requires 44.1kHz and 256 samples");
+    std::string error;
+    auto module=Module::create(vst3path,error);
+    require(bool(module),"A13 cannot load real VST3 bundle");
+    HostApplication host;
+    auto factory=module->getFactory();
+    factory.setHostContext(&host);
+    auto generator=load(factory,host,"125A AutoSampler");
+    require(generator.component->activateBus(kEvent,kOutput,0,true)==kResultOk,
+        "A13 cannot enable generator event output");
+    std::vector<Sample32> l(kBlock),r(kBlock);
+    std::array<Sample32*,2> channels{l.data(),r.data()};
+    AudioBusBuffers bus{};
+    bus.numChannels=2;
+    bus.channelBuffers32=channels.data();
+    ParameterChanges automation(1);
+    int32 queueIndex=0,pointIndex=0;
+    auto* run=automation.addParameterData(1000,queueIndex);
+    require(run,"A13 cannot create Run automation queue");
+    for(const auto [offset,value]:std::array<std::pair<int32,double>,4>{
+         std::pair<int32,double>{0,0.},{120,1.},{180,0.},{210,1.}}){
+        require(run->addPoint(offset,value,pointIndex)==kResultOk,
+            "A13 unable to add multiple offset automation points");
+    }
+    const std::int64_t expected=static_cast<std::int64_t>(kRate)/2+210;
+    int onCount=0;
+    std::int64_t observed=-1;
+    std::int64_t t=0;
+    while(t<expected+3*kBlock){
+        EventList output(16);
+        ProcessContext context{};
+        context.sampleRate=kRate;
+        context.projectTimeSamples=t;
+        context.state=ProcessContext::kPlaying;
+        ProcessData data{};
+        data.processMode=kRealtime;
+        data.symbolicSampleSize=kSample32;
+        data.numSamples=kBlock;
+        data.numOutputs=1;
+        data.outputs=&bus;
+        data.outputEvents=&output;
+        data.processContext=&context;
+        if(t==0)data.inputParameterChanges=&automation;
+        require(generator.processor->process(data)==kResultOk,
+            "A13 actual VST3 segmented automation render failed");
+        for(int32 i=0;i<output.getEventCount();++i){
+            Event event{};
+            require(output.getEvent(i,event)==kResultOk,
+                "A13 emitted MIDI event unavailable");
+            if(event.type==Event::kNoteOnEvent){
+                ++onCount;
+                observed=t+event.sampleOffset;
+                require(event.noteOn.pitch==60,
+                    "A13 first default note unexpectedly changed");
+            }
+        }
+        t+=kBlock;
+    }
+    require(onCount==1 && observed==expected,
+        "A13 Run OFF/ON intra-block automation ignored exact sample offsets");
+    EventList offOutput(8);
+    ProcessContext offContext{};
+    offContext.sampleRate=kRate;
+    offContext.projectTimeSamples=t;
+    offContext.state=ProcessContext::kPlaying;
+    ParameterChanges stop(1);
+    queueIndex=0;pointIndex=0;
+    auto* q=stop.addParameterData(1000,queueIndex);
+    require(q && q->addPoint(90,0.,pointIndex)==kResultOk,
+        "A13 unable to set Run stop offset");
+    ProcessData data{};
+    data.processMode=kRealtime;
+    data.symbolicSampleSize=kSample32;
+    data.numSamples=kBlock;
+    data.numOutputs=1;
+    data.outputs=&bus;
+    data.outputEvents=&offOutput;
+    data.inputParameterChanges=&stop;
+    data.processContext=&offContext;
+    require(generator.processor->process(data)==kResultOk,
+        "A13 Run OFF with nonzero offset failed");
+    int offCount=0;
+    for(int32 i=0;i<offOutput.getEventCount();++i){
+        Event event{};
+        require(offOutput.getEvent(i,event)==kResultOk,
+            "A13 output NoteOff unavailable");
+        if(event.type==Event::kNoteOffEvent){
+            ++offCount;
+            require(event.sampleOffset==90,
+                "A13 STOP NoteOff not at automation sample offset");
+        }
+    }
+    require(offCount==1,"A13 running note must receive exact-offset NoteOff");
+    std::cout<<"[PASS] A13 actual Windows VST3: four Run points in one block, "
+                "single exact-offset NoteOn and exact-offset STOP NoteOff\\n";
+    return 0;
+}
+
 int runAbort(const char* vst3path){
     // Actual VST3 processors stay active during the entire abort test.
     const auto base=std::filesystem::absolute("p009-abort-vst3-output");
@@ -1095,6 +1197,7 @@ int main(int argc,char** argv){
                 "invalid sample rate or block size");
         const std::string mode=argc>=5?argv[4]:"";
         if(mode=="abort") return runAbort(argv[1]);
+        if(mode=="automation") return runAutomation(argv[1]);
         require(mode.empty() || mode=="matrix" || mode=="custom",
                 "invalid integration test mode");
         return run(argv[1],mode=="matrix",mode=="custom");

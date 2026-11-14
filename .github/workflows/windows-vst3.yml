@@ -81,6 +81,9 @@ jobs:
           Write-Host "Integration: 44.1kHz, block 512, 48-take velocity/RR matrix"
           & $runner $plugin.FullName 44100 512 matrix
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Write-Host "A13: real VST3 intra-block Run automation sample offsets"
+          & $runner $plugin.FullName 44100 256 automation
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Write-Host "P009: native mid-take STOP, no partial WAV, ABORTED report while active"
           & $runner $plugin.FullName 44100 256 abort
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
