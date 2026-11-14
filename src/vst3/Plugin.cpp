@@ -469,6 +469,11 @@ public:
         // Worker/UI/state threads can all request a bank, but never ASIO.
         // Loaded PCM stays alive so a voice can safely finish during a swap.
         bool loaded=false;
+        if(captureGeneration){
+            std::lock_guard<std::mutex> guard(bankMutex_);
+            if(bankCaptureGeneration_==captureGeneration)
+                return true; // explicit DAW/user bank choice already won
+        }
         try {
             a125::ArchivePlayback archivePlayback;
             std::string archiveName;
@@ -478,6 +483,10 @@ public:
                 a125::loadCapturedBank(path);
             if(bank){
                 std::lock_guard<std::mutex> guard(bankMutex_);
+                // DAW recall/import may have completed while this ZIP was
+                // being decoded. Do not let the stale worker overwrite it.
+                if(captureGeneration &&
+                   bankCaptureGeneration_==captureGeneration)return true;
                 if(player_.publish(std::move(bank))){
                     bankFolder_=path;
                     bankFingerprint_=archive?a125::archive125AFingerprint(path):std::nullopt;
@@ -513,6 +522,8 @@ public:
         }
         if(!loaded){
             std::lock_guard<std::mutex> guard(bankMutex_);
+            if(captureGeneration &&
+               bankCaptureGeneration_==captureGeneration)return true;
             loadFailed_=true;
         }
         return loaded;
