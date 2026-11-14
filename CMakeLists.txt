@@ -38,11 +38,13 @@ if(BUILD_VST3)
         "${VST3_SDK_ROOT}/public.sdk/source/vst/vstsinglecomponenteffect.cpp")
     file(RELATIVE_PATH _125A_DLLMAIN_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}"
         "${VST3_SDK_ROOT}/public.sdk/source/main/dllmain.cpp")
+    file(RELATIVE_PATH _125A_KEYBOARD_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}"
+        "${VST3_SDK_ROOT}/vstgui4/vstgui/contrib/keyboardview.cpp")
     smtg_add_vst3plugin(AutosamplerVST3
         ${_125A_SCE_SOURCE}
         ${_125A_DLLMAIN_SOURCE}
         src/vst3/Plugin.cpp
-        "${VST3_SDK_ROOT}/vstgui4/vstgui/contrib/keyboardview.cpp"
+        ${_125A_KEYBOARD_SOURCE}
         src/core/SamplingPlan.h
         src/core/SampleProcessing.h
         src/core/Timeline.h
