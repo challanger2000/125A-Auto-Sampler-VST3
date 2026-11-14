@@ -729,6 +729,51 @@ int run(const char* vst3path,bool matrix,bool customFolder){
         require(!std::filesystem::exists(base/"Documents"/"125A AutoSampler"),
                 "P010 leaked custom WAVs into default Documents directory");
     }
+    // P023: A user may save the DAW project immediately after the Recorder
+    // completes, before the asynchronous sampler bank importer has finished.
+    // Do not accept an earlier instrument or a loose Run folder in the state.
+    {
+        ResizableMemoryIBStream savedImmediately;
+        require(generator.component->getState(&savedImmediately)==kResultOk,
+            "P023 immediate VST3 project save after capture failed");
+        savedImmediately.rewind();
+        IBStreamer reader(&savedImmediately,kLittleEndian);
+        int32 version=0, length=0;
+        require(reader.readInt32(version) && version==0x125A2201,
+            "P023 DAW project-state version mismatch");
+        for(int i=1;i<19;++i){
+            double param=0.;
+            require(reader.readDouble(param),"P023 saved plugin parameters truncated");
+        }
+        require(reader.readInt32(length) && length>=0 && length<=8192,
+            "P023 output folder length invalid");
+        if(length){
+            std::vector<char> unused(static_cast<std::size_t>(length));
+            int32 read=0;
+            require(savedImmediately.read(unused.data(),length,&read)==kResultOk &&
+                read==length,"P023 output folder truncated");
+        }
+        require(reader.readInt32(length) && length>0 && length<=8192,
+            "P023 archive path absent from immediate DAW save");
+        std::u8string bytes(static_cast<std::size_t>(length),u8' ');
+        int32 read=0;
+        require(savedImmediately.read(bytes.data(),length,&read)==kResultOk &&
+            read==length,"P023 archive path truncated");
+        require(std::filesystem::path(bytes)==capturedArchive,
+            "P023 DAW saved an old bank or loose WAV path instead of new .125A");
+        require(reader.readInt32(length) && length>0 && length<193,
+            "P023 instrument name length missing");
+        std::string name(static_cast<std::size_t>(length),' ');
+        require(savedImmediately.read(name.data(),length,&read)==kResultOk &&
+            read==length && name=="Untitled Instrument",
+            "P023 instrument name not in saved project");
+        Steinberg::int64 fingerprint=0;
+        require(reader.readInt64(fingerprint) && fingerprint!=0,
+            "P023 project state must include an archive PCM fingerprint");
+        require(static_cast<std::uint64_t>(fingerprint)==
+                a125::archive125AFingerprint(capturedArchive).value_or(0),
+            "P023 saved audio fingerprint differs from freshly recorded bank");
+    }
     // P013: the SAME 125A instrument must directly play the just-recorded
     // WAV bank. No SFZ file, second sampler, or external playback VST.
     {
