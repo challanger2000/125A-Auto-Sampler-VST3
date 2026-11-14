@@ -194,14 +194,23 @@ public:
             if(label->getText()=="STATUS: READY")statusLabel_=label;
             if(label->getText()=="OUTPUT: DEFAULT")folderLabel_=label;
         }
-        if(auto* button=dynamic_cast<VSTGUI::CTextButton*>(view);
-           button && button->getTitle()=="CHOOSE FOLDER"){
-            folderButton_=button;
-            folderButton_->registerControlListener(this);
+        if(auto* button=dynamic_cast<VSTGUI::CTextButton*>(view)){
+            if(button->getTitle()=="CHOOSE FOLDER"){
+                folderButton_=button;
+                folderButton_->registerControlListener(this);
+            }else if(button->getTitle()=="DEFAULT"){
+                defaultButton_=button;
+                defaultButton_->registerControlListener(this);
+            }
         }
         return view;
     }
     void valueChanged(VSTGUI::CControl* control) override {
+        if(control==defaultButton_){
+            session().exportTarget.choose({});
+            updateFolderLabel();
+            return;
+        }
         if(control!=folderButton_)return;
         const auto chosen=pickOutputDirectory();
         if(chosen && chosen->is_absolute()){
@@ -230,7 +239,9 @@ public:
     void willClose(VSTGUI::VST3Editor*) override {
         timer_=nullptr;
         if(folderButton_)folderButton_->unregisterControlListener(this);
+        if(defaultButton_)defaultButton_->unregisterControlListener(this);
         folderButton_=nullptr;
+        defaultButton_=nullptr;
         folderLabel_=nullptr;
         statusLabel_=nullptr;
     }
@@ -586,6 +597,7 @@ private:
     VSTGUI::CTextLabel* statusLabel_{nullptr};  // owned by active editor
     VSTGUI::CTextLabel* folderLabel_{nullptr};
     VSTGUI::CTextButton* folderButton_{nullptr};
+    VSTGUI::CTextButton* defaultButton_{nullptr};
     VSTGUI::SharedPointer<VSTGUI::CVSTGUITimer> timer_{};
     double sampleRate_=44100.;
     bool run_=false,activeRun_=false;
