@@ -284,8 +284,9 @@ public:
             // currently audible voices; this is a linear gain stage, NOT
             // saturation/soft clipping, and does not touch the source WAVs.
             const float target=1.f/static_cast<float>(std::max(1u,activeVoices));
-            if(target<polyMixGain_)polyMixGain_=target; // fast safe attack
-            else polyMixGain_+= (target-polyMixGain_)*.001f; // smooth recovery
+            if(activeVoices==0)polyMixGain_=1.f; // reset in actual silence
+            else if(target<polyMixGain_)polyMixGain_=target; // fast safe attack
+            else polyMixGain_+= (target-polyMixGain_)*.005f; // smooth recovery
             for(float& x:mix)x*=polyMixGain_;
         }else polyMixGain_=1.f;
         // Never hard-clip inside a float VST3 bus. A downstream DAW gain
