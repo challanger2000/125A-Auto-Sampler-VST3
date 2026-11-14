@@ -1685,9 +1685,9 @@ private:
             // guard, recorder teardown could create a *second* versioned
             // .125A archive for one completed recording.
             if(!report.is_open())return;
-            // Publish only complete captures. The ZIP is created on this
-            // worker thread, never in the ASIO callback. A partial ZIP is
-            // removed and a failed archive never masquerades as success.
+            // Stage only complete captures. Publish bank readiness AFTER
+            // the report itself has successfully flushed AND closed.
+            std::optional<std::filesystem::path> completedArchive;
             if(report){
                 const bool complete=configWasVerified && haveRun &&
                     runWritten==recordedConfig.takeCount() &&
@@ -1723,11 +1723,8 @@ private:
                         a125::write125AArchive(dir,archive,recordedName,
                                                recordedPlayback);
                         report<<"ARCHIVE,125A_READY,"<<archive.filename().string()<<"\n";
-                        // A freed/replaced generator must never receive this bank.
-                        if(session().publishCompletedBank(
-                            archive,generation,runOwnerEpoch))
-                            report<<"BANK,125A_WAVS_READY\n";
-                        else report<<"BANK,SKIPPED_OWNER_CHANGED\n";
+                        report<<"BANK,125A_WAVS_READY\n";
+                        completedArchive=std::move(archive);
                     }catch(const std::exception&){
                         ++runErrors;
                         session().errors.fetch_add(1,std::memory_order_relaxed);
@@ -1736,7 +1733,32 @@ private:
                 }else report<<"BANK,SKIPPED_INCOMPLETE\n";
             }
             finishReport();
+            const bool reportFlushed=static_cast<bool>(report);
             report.close();
+            const bool reportClosed=reportFlushed && static_cast<bool>(report);
+            if(!reportClosed){
+                // A failed final report flush/close invalidates the capture;
+                // never publish its archived bank, even if its WAVs exist.
+                ++runErrors;
+                session().errors.fetch_add(1,std::memory_order_relaxed);
+                if(completedArchive){
+                    std::error_code error;
+                    std::filesystem::remove(*completedArchive,error);
+                }
+            }else if(completedArchive){
+                // Only a still-live capture owner may receive the complete
+                // bank. In particular no publication from the previous DAW.
+                try{
+                    if(!session().publishCompletedBank(
+                         *completedArchive,generation,runOwnerEpoch)){
+                        ++runErrors;
+                        session().errors.fetch_add(1,std::memory_order_relaxed);
+                    }
+                }catch(...){
+                    ++runErrors;
+                    session().errors.fetch_add(1,std::memory_order_relaxed);
+                }
+            }
             if(generation!=0)
                 session().writerFinishedGeneration.store(
                     generation,std::memory_order_release);
