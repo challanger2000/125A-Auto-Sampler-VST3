@@ -584,6 +584,11 @@ void testP017PortableArchive() {
                 a125::safe125AStem("lpt1.")=="lpt1_" &&
                 a125::safe125AStem("  ")=="Instrument",
             "P019 Windows reserved names and blank archive names must be safe");
+        // AUDIT-ONLY NEGATIVE CONTROL N02: Microsoft's reserved DOS devices
+        // remain reserved when followed by any extension (e.g. CON.bass).
+        // The released auto-archive stem sanitizer must not emit that prefix.
+        require(!a125::safe125AStem("CON.bass").starts_with("CON."),
+            "AUDIT N02: Windows reserved filename CON.bass escaped sanitizer");
         require(throws([&]{a125::write125AArchive(root/"takes",
                 root/"unsafe.125A",std::string("Bad\nName"));}),
             "P019 control characters in instrument names must be rejected");
