@@ -361,7 +361,7 @@ public:
         for(std::size_t i=1;i<values_.size();++i)
             if(!io.writeDouble(values_[i].load(std::memory_order_relaxed)))
                 return Steinberg::kResultFalse;
-        const auto folder=session().exportTarget.chosenFolder().u8string();
+        auto folder=session().exportTarget.chosenFolder().u8string();
         if(folder.size()>8192)return Steinberg::kResultFalse;
         const auto length=static_cast<Steinberg::int32>(folder.size());
         if(!io.writeInt32(length))return Steinberg::kResultFalse;
