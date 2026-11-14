@@ -1,0 +1,21 @@
+name: P024 GCC14 core audit (diagnostic only)
+on:
+  push:
+    branches: ['develop/**']
+    paths: ['src/core/**', 'tests/core_tests.cpp', '.github/workflows/compiler-audit.yml']
+  workflow_dispatch:
+jobs:
+  gcc14-core:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Strict GCC 14 release core compilation (not Linux VST3)
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq g++-14 ninja-build
+          g++-14 --version
+          cmake -S . -B build-gcc14 -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=g++-14 -DBUILD_VST3=OFF -DBUILD_TESTING=ON
+          cmake --build build-gcc14 --parallel 2
+          ctest --test-dir build-gcc14 --output-on-failure
