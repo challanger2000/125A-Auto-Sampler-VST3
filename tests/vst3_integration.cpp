@@ -979,6 +979,19 @@ int run(const char* vst3path,bool matrix,bool customFolder){
         saved.rewind();
         require(generator.component->setState(&saved)==kResultOk,
             "125A cannot recall recorded bank after project save/load");
+        // A04: exercise real VST3 bank retirement through DAW project state.
+        // Before the fix, after 16 recalls this loader became unusable.
+        if(!matrix && !customFolder && kRate==44100){
+            for(int cycle=0;cycle<110;++cycle){
+                ResizableMemoryIBStream repeated;
+                require(generator.component->getState(&repeated)==kResultOk,
+                    "A04 native VST3 getState failed in repeated recall");
+                repeated.rewind();
+                require(generator.component->setState(&repeated)==kResultOk,
+                    "A04 native VST3 >100 recalls exhausted bank resources");
+            }
+            std::cout<<"[PASS] A04 110 real VST3 save/recall bank replacements\\n";
+        }
         require(generator.component->getBusCount(kEvent,kInput)==1,
             "125A must accept live MIDI for native sample playback");
         (void)generator.component->activateBus(kEvent,kInput,0,true);
