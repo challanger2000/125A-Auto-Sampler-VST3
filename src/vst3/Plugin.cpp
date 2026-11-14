@@ -134,12 +134,14 @@ struct Session {
     }
     bool publishCompletedBank(const std::filesystem::path& archive,
                               std::uint32_t generation,
-                              std::uint64_t boundEpoch){
+                              std::uint64_t boundEpoch,
+                              std::uint64_t fingerprint){
         std::lock_guard<std::mutex> lock(ownerMutex);
-        if(boundEpoch==0 || !generatorOwner.load(std::memory_order_acquire) ||
+        if(boundEpoch==0 || fingerprint==0 ||
+           !generatorOwner.load(std::memory_order_acquire) ||
            ownerEpoch.load(std::memory_order_acquire)!=boundEpoch)
             return false;
-        completedBank.publish(archive,generation,boundEpoch);
+        completedBank.publish(archive,generation,boundEpoch,fingerprint);
         readyBankGeneration.store(generation,std::memory_order_release);
         return true;
     }
@@ -539,7 +541,9 @@ public:
     }
     bool loadSamples(const std::filesystem::path& path,
                      bool applyInstrumentSettings=false,
-                     std::uint32_t captureGeneration=0){
+                     std::uint32_t captureGeneration=0,
+                     std::optional<std::uint64_t> requiredFingerprint=std::nullopt,
+                     bool legacyIdentity=false){
         // Worker/UI/state threads can all request a bank, but never ASIO.
         // Loaded PCM stays alive so a voice can safely finish during a swap.
         bool loaded=false;
@@ -563,9 +567,18 @@ public:
             a125::ArchivePlayback archivePlayback;
             std::string archiveName;
             const bool archive=path.extension()==".125A";
+            std::uint64_t parsedFingerprint=0;
+            std::uint32_t parsedLegacyFingerprint=0;
             auto bank=archive?
-                a125::load125AArchive(path,&archiveName,&archivePlayback):
+                a125::load125AArchive(path,&archiveName,&archivePlayback,
+                                      &parsedFingerprint,&parsedLegacyFingerprint):
                 a125::loadCapturedBank(path);
+            if(bank && requiredFingerprint && archive &&
+               (legacyIdentity ?
+                    parsedLegacyFingerprint!=
+                        static_cast<std::uint32_t>(*requiredFingerprint) :
+                    parsedFingerprint!=*requiredFingerprint))
+                bank.reset(); // file replaced between identity check and decode
             if(bank){
                 std::lock_guard<std::mutex> guard(bankMutex_);
                 // DAW recall/import may have completed while this ZIP was
@@ -576,9 +589,18 @@ public:
                     captureGeneration<=lastExplicitGeneration_ ||
                     session().readyBankGeneration.load(std::memory_order_acquire)!=
                         captureGeneration))return true;
+                if(captureGeneration){
+                    const auto event=session().completedBank.read();
+                    if(event.generation!=captureGeneration ||
+                       event.path!=path ||
+                       event.fingerprint!=parsedFingerprint ||
+                       event.ownerEpoch!=session().ownerEpoch.load(
+                           std::memory_order_acquire))return true;
+                }
                 if(player_.publish(std::move(bank))){
                     bankFolder_=path;
-                    bankFingerprint_=archive?a125::archive125AFingerprint(path):std::nullopt;
+                    bankFingerprint_=archive?
+                        std::optional<std::uint64_t>(parsedFingerprint):std::nullopt;
                     // Explicit user selection and DAW project recall take
                     // precedence over previously completed auto captures.
                     bankCaptureGeneration_=captureGeneration?captureGeneration:
@@ -912,7 +934,7 @@ public:
                     savedBankPath=newest;
                     // Completed own capture is an authorized identity
                     // source, unlike an arbitrary failed project recall.
-                    savedFingerprint=a125::archive125AFingerprint(newest);
+                    savedFingerprint=completed.fingerprint;
                 }
             }
         }
@@ -1056,7 +1078,8 @@ public:
             const auto relocated=unverifiedArchive?std::filesystem::path{}:
                 a125::resolve125APath(
                     restoredBank,restoredFolder,documents,fingerprint,legacyIdentity);
-            if(unverifiedArchive || !loadSamples(relocated)){
+            if(unverifiedArchive || !loadSamples(
+                relocated,false,0,fingerprint,legacyIdentity)){
                 // Retain the *requested* filename for a future relink, but
                 // never keep an unrelated old project's samples sounding.
                 std::lock_guard<std::mutex> guard(bankMutex_);
@@ -1688,6 +1711,7 @@ private:
             // Stage only complete captures. Publish bank readiness AFTER
             // the report itself has successfully flushed AND closed.
             std::optional<std::filesystem::path> completedArchive;
+            std::uint64_t completedFingerprint=0;
             if(report){
                 const bool complete=configWasVerified && haveRun &&
                     runWritten==recordedConfig.takeCount() &&
@@ -1720,8 +1744,8 @@ private:
                         }
                         if(archive.empty())
                             throw std::runtime_error("125A archive names exhausted");
-                        a125::write125AArchive(dir,archive,recordedName,
-                                               recordedPlayback);
+                        completedFingerprint=a125::write125AArchive(
+                            dir,archive,recordedName,recordedPlayback);
                         report<<"ARCHIVE,125A_READY,"<<archive.filename().string()<<"\n";
                         report<<"BANK,125A_WAVS_READY\n";
                         completedArchive=std::move(archive);
@@ -1750,7 +1774,8 @@ private:
                 // bank. In particular no publication from the previous DAW.
                 try{
                     if(!session().publishCompletedBank(
-                         *completedArchive,generation,runOwnerEpoch)){
+                         *completedArchive,generation,runOwnerEpoch,
+                         completedFingerprint)){
                         ++runErrors;
                         session().errors.fetch_add(1,std::memory_order_relaxed);
                     }

@@ -39,6 +39,31 @@ struct ArchiveEntry {
     std::string name;
     std::uint32_t crc=0, size=0, offset=0;
 };
+// Source of truth for current/legacy archive identities. Hash the exact
+// entries already written or validated by a single open archive handle.
+inline std::uint64_t fingerprint125AEntries(
+        const std::vector<ArchiveEntry>& entries) noexcept {
+    std::uint64_t hash=14695981039346656037ull;
+    const auto mix=[&](unsigned char value){
+        hash^=value;
+        hash*=1099511628211ull;
+    };
+    for(const auto& e:entries){
+        for(unsigned char c:e.name)mix(c);
+        mix(0);
+        for(int i=0;i<4;++i)mix(static_cast<unsigned char>(e.crc>>(8*i)));
+        for(int i=0;i<4;++i)mix(static_cast<unsigned char>(e.size>>(8*i)));
+    }
+    return hash;
+}
+inline std::uint32_t legacyFingerprint125AEntries(
+        const std::vector<ArchiveEntry>& entries) noexcept {
+    for(const auto& e:entries)
+        if(e.name=="instrument.json")
+            return e.crc ^
+                (static_cast<std::uint32_t>(entries.size()-1)*0x9E3779B9u);
+    return 0;
+}
 inline std::uint32_t zipCRC(std::uint32_t crc,const unsigned char* data,std::size_t count) noexcept {
     for(std::size_t i=0;i<count;++i){
         crc^=data[i];
@@ -169,7 +194,7 @@ inline std::string instrumentManifest(const std::string& name,std::size_t count,
 
 // Only called after a fully successful capture; no overwriting a pre-existing
 // instrument archive. An interrupted archive is removed, never published.
-inline void write125AArchive(const std::filesystem::path& source,
+inline std::uint64_t write125AArchive(const std::filesystem::path& source,
                              const std::filesystem::path& destination,
                              const std::string& instrumentName,
                              const ArchivePlayback& playback={}){
@@ -262,6 +287,7 @@ inline void write125AArchive(const std::filesystem::path& source,
                 throw std::runtime_error("125A invalid source WAV header");
             add(path.filename().string(),bytes.data(),bytes.size());
         }
+        const auto fingerprint=fingerprint125AEntries(entries);
         const auto central=zipPos(out);
         for(const auto& e:entries){
             zip32(out,0x02014B50u);
@@ -294,6 +320,7 @@ inline void write125AArchive(const std::filesystem::path& source,
 #endif
         std::error_code cleanup;
         fs::remove(stageDir,cleanup);
+        return fingerprint;
     }catch(...){
         if(!stageDir.empty()){
             std::error_code cleanup;
@@ -415,18 +442,7 @@ inline std::optional<std::uint64_t> archive125AFingerprint(
         const auto length=in.tellg();
         if(length<22)return std::nullopt;
         const auto entries=inspect125A(in,static_cast<std::uint64_t>(length));
-        std::uint64_t hash=14695981039346656037ull;
-        const auto mix=[&](unsigned char value){
-            hash^=value;
-            hash*=1099511628211ull;
-        };
-        for(const auto& e:entries){
-            for(unsigned char c:e.name)mix(c);
-            mix(0);
-            for(int i=0;i<4;++i)mix(static_cast<unsigned char>(e.crc>>(8*i)));
-            for(int i=0;i<4;++i)mix(static_cast<unsigned char>(e.size>>(8*i)));
-        }
-        return hash;
+        return fingerprint125AEntries(entries);
     }catch(const std::exception&){return std::nullopt;}
 }
 
@@ -445,8 +461,7 @@ inline std::optional<std::uint32_t> archive125ALegacyFingerprint(
         const auto found=std::find_if(entries.begin(),entries.end(),
             [](const ArchiveEntry& e){return e.name=="instrument.json";});
         if(found==entries.end())return std::nullopt;
-        return found->crc ^
-            (static_cast<std::uint32_t>(entries.size()-1)*0x9E3779B9u);
+        return legacyFingerprint125AEntries(entries);
     }catch(const std::exception&){return std::nullopt;}
 }
 
@@ -596,7 +611,9 @@ inline bool read125AInstrumentName(const std::string& manifest,std::string& name
 }
 inline std::unique_ptr<SampleBank> load125AArchive(
        const std::filesystem::path& archive,std::string* instrumentName=nullptr,
-       ArchivePlayback* playbackOut=nullptr){
+       ArchivePlayback* playbackOut=nullptr,
+       std::uint64_t* fingerprintOut=nullptr,
+       std::uint32_t* legacyFingerprintOut=nullptr){
     try {
         std::ifstream in(archive,std::ios::binary|std::ios::ate);
         if(!in)return {};
@@ -649,6 +666,9 @@ inline std::unique_ptr<SampleBank> load125AArchive(
             bank->normalizeGain=std::pow(10.f,-1.f/20.f)/peak;
         if(instrumentName)*instrumentName=std::move(decodedName);
         if(playbackOut)*playbackOut=playback;
+        if(fingerprintOut)*fingerprintOut=fingerprint125AEntries(entries);
+        if(legacyFingerprintOut)
+            *legacyFingerprintOut=legacyFingerprint125AEntries(entries);
         return bank;
     }catch(const std::exception&){return {};}
 }

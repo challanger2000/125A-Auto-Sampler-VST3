@@ -527,7 +527,8 @@ void testP017PortableArchive() {
         const auto archive=root/"Vintage Bass.125A";
         a125::ArchivePlayback settings;
         settings.params={1.,0.,.25,.5,.75,.1,.8};
-        a125::write125AArchive(root/"takes",archive,"Vintage \"Bass\"",settings);
+        const auto writtenFingerprint=a125::write125AArchive(
+            root/"takes",archive,"Vintage \"Bass\"",settings);
         require(fs::exists(archive),"P017 archive file is missing");
         require(throws([&]{a125::write125AArchive(root/"takes",archive,"Duplicate");}),
             "P017 must not overwrite a portable instrument archive");
@@ -551,7 +552,8 @@ void testP017PortableArchive() {
         std::string name;
         a125::ArchivePlayback restoredSettings;
         const auto fingerprint=a125::archive125AFingerprint(archive);
-        require(fingerprint.has_value(),"P020 .125A manifest fingerprint missing");
+        require(fingerprint.has_value() && writtenFingerprint==*fingerprint,
+                "A01 self-contained ZIP writer fingerprint must match loaded metadata");
         const auto relocatedRoot=root/"Documents"/"125A AutoSampler";
         fs::create_directories(relocatedRoot);
         const auto moved=relocatedRoot/"Vintage Bass.125A";
@@ -592,7 +594,13 @@ void testP017PortableArchive() {
         const auto missing=root/"old-PC"/"No Such Instrument.125A";
         require(a125::resolve125APath(missing,{},root/"Documents",fingerprint)==missing,
             "P020 missing archive must remain visible as missing");
-        auto bank=a125::load125AArchive(archive,&name,&restoredSettings);
+        std::uint64_t importFingerprint=0;
+        std::uint32_t importedLegacy=0;
+        auto bank=a125::load125AArchive(archive,&name,&restoredSettings,
+                                       &importFingerprint,&importedLegacy);
+        require(importFingerprint==writtenFingerprint &&
+                importedLegacy==a125::archive125ALegacyFingerprint(archive).value_or(0),
+                "A01 one-open import identity must match writer and legacy metadata");
         require(bank && bank->zones.size()==2 && name=="Vintage \"Bass\"",
             "P017 ZIP must round-trip escaped instrument name and sample count");
         require(std::abs(restoredSettings.params[2]-.25)<.00001 &&
@@ -900,10 +908,10 @@ void testAuditCompletionSnapshotConsistency() {
             "A03 completed bank starts with no active instrument");
     for(std::uint32_t generation=1;generation<=500;++generation){
         const auto path=std::filesystem::path(std::to_string(generation)+".125A");
-        completed.publish(path,generation,42);
+        completed.publish(path,generation,42,generation);
         const auto snapshot=completed.read();
         require(snapshot.generation==generation && snapshot.ownerEpoch==42 &&
-                snapshot.path==path,
+                snapshot.path==path && snapshot.fingerprint==generation,
                 "A03 capture path and generation must remain bound");
     }
     // Writer and reader overlap intentionally: a torn pair would associate
@@ -911,12 +919,13 @@ void testAuditCompletionSnapshotConsistency() {
     std::atomic<bool> torn{false};
     std::thread writer([&]{
         for(std::uint32_t n=501;n<2501;++n)
-            completed.publish(std::to_string(n)+".125A",n,42);
+            completed.publish(std::to_string(n)+".125A",n,42,n);
     });
     std::thread reader([&]{
         for(int i=0;i<4000;++i){
             const auto snapshot=completed.read();
             if(snapshot.generation==0 || snapshot.ownerEpoch!=42 ||
+               snapshot.fingerprint!=snapshot.generation ||
                snapshot.path.filename().string()!=
                    std::to_string(snapshot.generation)+".125A"){
                 torn.store(true,std::memory_order_relaxed);

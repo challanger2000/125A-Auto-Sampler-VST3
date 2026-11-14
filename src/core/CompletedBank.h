@@ -10,11 +10,12 @@ public:
         std::uint32_t generation=0;
         std::uint64_t ownerEpoch=0;
         std::filesystem::path path{};
+        std::uint64_t fingerprint=0;
     };
     void publish(const std::filesystem::path& path,std::uint32_t generation,
-                 std::uint64_t epoch){
+                 std::uint64_t epoch,std::uint64_t fingerprint=0){
         std::lock_guard<std::mutex> guard(mutex_);
-        latest_=Snapshot{generation,epoch,path};
+        latest_=Snapshot{generation,epoch,path,fingerprint};
     }
     Snapshot read() const {
         std::lock_guard<std::mutex> guard(mutex_);
