@@ -9,6 +9,7 @@
 #include "core/SampleProcessing.h"
 #include "core/RunStatus.h"
 #include "core/BuiltInSampler.h"
+#include "core/InstrumentArchive.h"
 #include "base/source/fstreamer.h"
 #include "pluginterfaces/base/ibstream.h"
 #include "pluginterfaces/base/ustring.h"
@@ -92,6 +93,19 @@ struct Session {
     a125::ExportTarget exportTarget;
     a125::ExportTarget latestCompletedRun;
     std::atomic<std::uint32_t> readyBankGeneration{0};
+    // Controlled GUI/state/recorder threads only; never from process().
+    std::string captureName() const {
+        std::lock_guard<std::mutex> lock(nameMutex);
+        return name;
+    }
+    bool setCaptureName(const std::string& display) {
+        if(display.empty() || display.size()>192)return false;
+        std::lock_guard<std::mutex> lock(nameMutex);
+        name=display;
+        return true;
+    }
+    mutable std::mutex nameMutex;
+    std::string name="Untitled Instrument";
     std::atomic<int> firstNote{60},lastNote{60},step{12},roundRobins{1},layers{1};
     std::atomic<int> velocity0{100},velocity1{80},velocity2{120};
     std::atomic<std::uint64_t> hold{22050},tail{22050},gap{4410};
@@ -271,7 +285,8 @@ public:
         // Loaded PCM stays alive so a voice can safely finish during a swap.
         bool loaded=false;
         try {
-            auto bank=a125::loadCapturedBank(path);
+            auto bank=path.extension()==".125A"?
+                a125::load125AArchive(path):a125::loadCapturedBank(path);
             if(bank){
                 std::lock_guard<std::mutex> guard(bankMutex_);
                 if(player_.publish(std::move(bank))){
@@ -489,7 +504,7 @@ public:
     tresult PLUGIN_API getState(Steinberg::IBStream* state) override {
         if(!state) return Steinberg::kResultFalse;
         Steinberg::IBStreamer io(state,kLittleEndian);
-        if(!io.writeInt32(0x125A1501)) return Steinberg::kResultFalse;
+        if(!io.writeInt32(0x125A1701)) return Steinberg::kResultFalse;
         // The Run switch is deliberately not persisted: project reopen
         // must never create WAV files before the user explicitly starts.
         for(std::size_t i=1;i<values_.size();++i)
@@ -524,6 +539,13 @@ public:
             if(state->write(bankPath.data(),bankLength,&written)!=Steinberg::kResultOk ||
                written!=bankLength)return Steinberg::kResultFalse;
         }
+        const auto instrumentName=session().captureName();
+        const auto nameLength=static_cast<Steinberg::int32>(instrumentName.size());
+        if(nameLength<=0 || nameLength>192 || !io.writeInt32(nameLength))
+            return Steinberg::kResultFalse;
+        Steinberg::int32 written=0;
+        if(state->write(instrumentName.data(),nameLength,&written)!=Steinberg::kResultOk ||
+           written!=nameLength)return Steinberg::kResultFalse;
         return Steinberg::kResultOk;
     }
     tresult PLUGIN_API setState(Steinberg::IBStream* state) override {
@@ -533,21 +555,22 @@ public:
         if(!io.readInt32(version) ||
            (version!=0x125A0301 && version!=0x125A0401 &&
             version!=0x125A1001 && version!=0x125A1301 &&
-             version!=0x125A1501))
+             version!=0x125A1501 && version!=0x125A1701))
             return Steinberg::kResultFalse;
         // Older P003 files had 9 parameters. Upgrade without breaking
         // existing test projects; 3 editable velocity values get defaults.
         auto loaded=kDefaultParams;
         loaded[a125::Run]=0.;
         const std::size_t count=version==0x125A0301?9:
-            version==0x125A1501?loaded.size():a125::ParameterCount;
+            (version==0x125A1501 || version==0x125A1701)?
+                loaded.size():a125::ParameterCount;
         for(std::size_t i=1;i<count;++i) {
             if(!io.readDouble(loaded[i]) || !std::isfinite(loaded[i]) ||
                loaded[i]<0. || loaded[i]>1.) return Steinberg::kResultFalse;
         }
         std::filesystem::path restoredFolder;
         if(version==0x125A1001 || version==0x125A1301 ||
-           version==0x125A1501){
+           version==0x125A1501 || version==0x125A1701){
             Steinberg::int32 length=0;
             if(!io.readInt32(length) || length<0 || length>8192)
                 return Steinberg::kResultFalse;
@@ -561,7 +584,8 @@ public:
             }
         }
         std::filesystem::path restoredBank;
-        if(version==0x125A1301 || version==0x125A1501){
+        if(version==0x125A1301 || version==0x125A1501 ||
+           version==0x125A1701){
             Steinberg::int32 length=0;
             if(!io.readInt32(length) || length<0 || length>8192)
                 return Steinberg::kResultFalse;
@@ -574,6 +598,18 @@ public:
                 if(!restoredBank.is_absolute())return Steinberg::kResultFalse;
             }
         }
+        std::string restoredName="Untitled Instrument";
+        if(version==0x125A1701){
+            Steinberg::int32 nameLength=0;
+            if(!io.readInt32(nameLength) || nameLength<=0 || nameLength>192)
+                return Steinberg::kResultFalse;
+            restoredName.resize(static_cast<std::size_t>(nameLength));
+            Steinberg::int32 read=0;
+            if(state->read(restoredName.data(),nameLength,&read)!=Steinberg::kResultOk ||
+               read!=nameLength)return Steinberg::kResultFalse;
+        }
+        if(!session().setCaptureName(restoredName))
+            return Steinberg::kResultFalse;
         session().exportTarget.choose(restoredFolder);
         if(!restoredBank.empty())loadSamples(restoredBank);
         // Project load may occur concurrently with audio. Never modify
@@ -971,6 +1007,7 @@ private:
         bool haveRun=false;
         bool attemptedRun=false;
         a125::JobConfig recordedConfig{};
+        std::string recordedName="Untitled Instrument";
         bool configWasVerified=false;
         std::uint32_t closedGeneration=0;
         std::uint64_t runWritten=0,runRejected=0,runSilent=0,runErrors=0;
@@ -988,24 +1025,35 @@ private:
             }
         };
         auto closeRun=[&] {
-            // Native 125A bank is ready only after all WAVs have been
-            // captured; partial/aborted takes never masquerade as complete.
+            // Publish only complete captures. The ZIP is created on this
+            // worker thread, never in the ASIO callback. A partial ZIP is
+            // removed and a failed archive never masquerades as success.
             if(report){
                 const bool complete=configWasVerified && haveRun &&
                     runWritten==recordedConfig.takeCount() &&
                     runRejected==0 && runSilent==0 && runErrors==0 &&
                     queue_.dropped()==droppedAtRunStart &&
                     session().interruptedGeneration.load(std::memory_order_acquire)!=generation;
-                if(complete) {
-                    // Advertise only a fully captured bank, and only after
-                    // the disk writer has closed all WAV handles.
-                    session().latestCompletedRun.choose(dir);
-                    session().readyBankGeneration.store(
-                        generation,std::memory_order_release);
-                    report<<"BANK,125A_WAVS_READY\n";
-                } else {
-                    report<<"BANK,SKIPPED_INCOMPLETE\n";
-                }
+                if(complete){
+                    try {
+                        const auto stem=a125::safe125AStem(recordedName);
+                        // Unique run suffix prevents overwriting an earlier
+                        // archive with the same user-facing instrument name.
+                        const auto archive=root/(stem+" ["+
+                            dir.filename().string()+"].125A");
+                        a125::write125AArchive(dir,archive,recordedName);
+                        report<<"ARCHIVE,125A_READY,"<<archive.filename().string()<<"\n";
+                        report<<"BANK,125A_WAVS_READY\n";
+                        // Reader imports the self-contained ZIP into RAM.
+                        session().latestCompletedRun.choose(archive);
+                        session().readyBankGeneration.store(
+                            generation,std::memory_order_release);
+                    }catch(const std::exception&){
+                        ++runErrors;
+                        session().errors.fetch_add(1,std::memory_order_relaxed);
+                        report<<"ARCHIVE,FAILED\nBANK,SKIPPED_ARCHIVE_ERROR\n";
+                    }
+                }else report<<"BANK,SKIPPED_INCOMPLETE\n";
             }
             finishReport();
             report.close();
@@ -1033,6 +1081,7 @@ private:
             // Snapshot the immutable MIDI plan and user-selected folder
             // outside the audio thread, once per recorder generation.
             recordedConfig=session().read();
+            recordedName=session().captureName();
             configWasVerified=recordedConfig.valid() &&
                 session().generation.load(std::memory_order_acquire)==gen;
             root=a125::ExportTarget::resolve(
