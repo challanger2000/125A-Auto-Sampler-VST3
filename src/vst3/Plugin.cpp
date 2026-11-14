@@ -910,7 +910,21 @@ public:
 #endif
             const auto relocated=a125::resolve125APath(
                 restoredBank,restoredFolder,documents,fingerprint,legacyIdentity);
-            loadSamples(relocated);
+            if(!loadSamples(relocated)){
+                // Retain the *requested* filename for a future relink, but
+                // never keep an unrelated old project's samples sounding.
+                std::lock_guard<std::mutex> guard(bankMutex_);
+                player_.clearCurrent();
+                bankFolder_=restoredBank;
+                bankFingerprint_.reset();
+                loadFailed_=true;
+            }
+        }else{
+            std::lock_guard<std::mutex> guard(bankMutex_);
+            player_.clearCurrent();
+            bankFolder_.clear();
+            bankFingerprint_.reset();
+            loadFailed_=false;
         }
         // Project load may occur concurrently with audio. Never modify
         // activeRun_ or run_ from the state thread; process() observes
