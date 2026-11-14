@@ -154,6 +154,34 @@ jobs:
           }
           Write-Host '[PASS] S01 deferred-name-validation native mutant killed'
           exit 0
+      - name: S02 rejected newer restore and F01 fault containment (native DLL and killed mutants)
+        shell: pwsh
+        run: |
+          $bundle = @(Get-ChildItem build-vst3/VST3/Release -Directory -Filter 'AutosamplerAuditVST3.vst3')
+          if ($bundle.Count -ne 1) { throw 'S02/F01 audit bundle missing' }
+          $runner = 'build-vst3/Release/AutosamplerIntegration.exe'
+          & $runner $bundle[0].FullName 44100 256 restore-commit-race
+          if ($LASTEXITCODE -ne 0) { throw 'S02 rejected newer restore corrupted older valid transaction' }
+          & $runner $bundle[0].FullName 44100 256 restore-oom
+          if ($LASTEXITCODE -ne 0) { throw 'F01 prepublication allocation failure changed project state' }
+          $PSNativeCommandUseErrorActionPreference = $false
+          $s02 = & $runner $bundle[0].FullName 44100 256 restore-commit-race-mutant 2>&1
+          $s02code = $LASTEXITCODE
+          if ($s02code -eq 0 -or
+              (($s02 | Out-String) -notmatch 'S02 rejected newer restore prevented older valid commit')) {
+            $s02 | Out-Host
+            throw 'S02 rejection-preemption mutant survived native test'
+          }
+          Write-Host '[PASS] S02 rejected-newer-request mutation killed by full state + PCM assertions'
+          $f01 = & $runner $bundle[0].FullName 44100 256 restore-oom-mutant 2>&1
+          $f01code = $LASTEXITCODE
+          if ($f01code -eq 0 -or
+              (($f01 | Out-String) -notmatch 'F01 allocation failure left partially committed bank')) {
+            $f01 | Out-Host
+            throw 'F01 postpublication-allocation mutation survived native test'
+          }
+          Write-Host '[PASS] F01 postpublication allocation mutation killed'
+          exit 0
       - name: Independent .125A ZIP/PCM24 compatibility
         shell: pwsh
         run: ./.github/scripts/verify125a.ps1
