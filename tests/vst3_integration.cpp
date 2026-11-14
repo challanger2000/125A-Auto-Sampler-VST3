@@ -1444,6 +1444,169 @@ int runSequential(const char* vst3path){
     return 0;
 }
 
+int runRestoreRace(const char* vst3path,bool mutant){
+    // The real, QA-compiled Windows DLL runs two overlapping VST3 setState
+    // calls. Old A stops after reserving its intent and before ZIP decode.
+    // B publishes a newer bank and project state; A must not clear B or
+    // restore stale metadata after returning.
+    require(kRate==44100 && kBlock==256,
+            "A03 restore race fixture requires 44.1kHz/256");
+    namespace fs=std::filesystem;
+    const auto root=fs::absolute("p005-a03-concurrent-restores");
+    fs::remove_all(root);
+    fs::create_directories(root/"old");
+    fs::create_directories(root/"new");
+    const auto oldArchive=root/"Old Bank.125A";
+    const auto newArchive=root/"New Bank.125A";
+    std::vector<a125::StereoFrame> oldFrames(4096,{.2f,-.1f});
+    std::vector<a125::StereoFrame> newFrames(4096,{.4f,-.2f});
+    a125::writeWav24((root/"old"/"N60_V100_RR01.wav").string(),
+                     44100,oldFrames);
+    a125::writeWav24((root/"new"/"N60_V100_RR01.wav").string(),
+                     44100,newFrames);
+    a125::write125AArchive(root/"old",oldArchive,"Old Bank");
+    a125::write125AArchive(root/"new",newArchive,"New Bank");
+    auto makeState=[](ResizableMemoryIBStream& state,
+                      const fs::path& bank,int firstNote){
+        IBStreamer writer(&state,kLittleEndian);
+        require(writer.writeInt32(0x125A1301),"A03 race legacy marker");
+        const std::array<double,11> params{
+            static_cast<double>(firstNote)/127.,
+            static_cast<double>(firstNote)/127.,
+            1.,0.,0.,
+            (.5-.25)/7.75,(.5-.25)/9.75,(.1-.05)/.45,
+            99./126.,59./126.,119./126.
+        };
+        for(double value:params)
+            require(writer.writeDouble(value),"A03 race params");
+        require(writer.writeInt32(0),"A03 race empty output folder");
+        auto path=bank.u8string();
+        require(writer.writeInt32(static_cast<int32>(path.size())),
+                "A03 race instrument path length");
+        int32 written=0;
+        require(state.write(path.data(),static_cast<int32>(path.size()),&written)
+                    ==kResultOk && written==static_cast<int32>(path.size()),
+                "A03 race instrument path write");
+        state.rewind();
+    };
+    ResizableMemoryIBStream oldState,newState;
+    makeState(oldState,oldArchive,44);
+    makeState(newState,newArchive,72);
+    std::string error;
+    auto module=Module::create(vst3path,error);
+    require(bool(module),"A03 race module load failed");
+    fs::path dll;
+    for(const auto& entry:regularFilesSnapshot(vst3path))
+        if(entry.extension()==".vst3"){
+            require(dll.empty(),"A03 race ambiguous native module");
+            dll=entry;
+        }
+    require(!dll.empty(),"A03 race test-only DLL missing");
+    const auto handle=GetModuleHandleW(dll.c_str());
+    require(handle!=nullptr,"A03 race module not loaded");
+    using Setter=void (__cdecl*)(int);
+    using Getter=int (__cdecl*)();
+    const auto hold=reinterpret_cast<Setter>(
+        GetProcAddress(handle,"A125_AuditHoldRestore"));
+    const auto entered=reinterpret_cast<Getter>(
+        GetProcAddress(handle,"A125_AuditRestoreEntered"));
+    const auto ignoreStale=reinterpret_cast<Setter>(
+        GetProcAddress(handle,"A125_AuditIgnoreStaleRestore"));
+    require(hold && entered && ignoreStale,
+            "A03 nonshipping restore-race barrier exports missing");
+    HostApplication host;
+    auto factory=module->getFactory();
+    factory.setHostContext(&host);
+    auto generator=load(factory,host,"125A AutoSampler");
+    std::atomic<int> oldResult{-999};
+    hold(1);
+    ignoreStale(mutant?1:0);
+    std::thread oldRestore([&]{
+        oldResult.store(generator.component->setState(&oldState),
+                        std::memory_order_release);
+    });
+    try{
+        bool reached=false;
+        for(int i=0;i<1500 && !reached;++i){
+            reached=entered()!=0;
+            if(!reached)
+                std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        }
+        require(reached,"A03 older restore never reached decode barrier");
+        require(generator.component->setState(&newState)==kResultOk,
+                "A03 newer restore rejected");
+        hold(0);
+        oldRestore.join();
+        require(oldResult.load(std::memory_order_acquire)==kResultOk,
+                "A03 superseded restore returned unexpected VST3 error");
+        ResizableMemoryIBStream persisted;
+        require(generator.component->getState(&persisted)==kResultOk,
+                "A03 final host save failed");
+        persisted.rewind();
+        IBStreamer reader(&persisted,kLittleEndian);
+        int32 version=0;
+        require(reader.readInt32(version) && version==0x125A2201,
+                "A03 concurrent restore state version");
+        double first=0.;
+        require(reader.readDouble(first),"A03 selected key missing");
+        require(std::abs(first-72./127.)<1.e-9,
+                "A03 stale restore overwrote newer bank parameters");
+        for(int i=1;i<18;++i){
+            double ignored=0.;
+            require(reader.readDouble(ignored),
+                    "A03 host saved truncated remaining parameters");
+        }
+        int32 length=0;
+        require(reader.readInt32(length) && length>=0 && length<=8192,
+                "A03 folder length invalid");
+        if(length){
+            std::vector<char> skip(static_cast<std::size_t>(length));
+            int32 read=0;
+            require(persisted.read(skip.data(),length,&read)==kResultOk &&
+                    read==length,"A03 folder read");
+        }
+        require(reader.readInt32(length) && length>0 && length<=8192,
+                "A03 saved instrument bank missing");
+        std::u8string bytes(static_cast<std::size_t>(length),u8' ');
+        int32 read=0;
+        require(persisted.read(bytes.data(),length,&read)==kResultOk &&
+                read==length &&
+                fs::path(bytes)==newArchive,
+                "A03 stale restore overwrote newer bank");
+        std::vector<Sample32> left(kBlock),right(kBlock);
+        std::array<Sample32*,2> channels{left.data(),right.data()};
+        AudioBusBuffers output{};
+        output.numChannels=2;
+        output.channelBuffers32=channels.data();
+        EventList notes(2);
+        Event on{};
+        on.busIndex=0;on.sampleOffset=0;
+        on.type=Event::kNoteOnEvent;
+        on.noteOn.channel=0;on.noteOn.pitch=60;
+        on.noteOn.velocity=100.f/127.f;on.noteOn.noteId=9901;
+        require(notes.addEvent(on)==kResultOk,"A03 race MIDI note");
+        ProcessData playback{};
+        playback.processMode=kRealtime;
+        playback.symbolicSampleSize=kSample32;
+        playback.numSamples=kBlock;playback.numOutputs=1;
+        playback.outputs=&output;
+        playback.inputEvents=&notes;
+        require(generator.processor->process(playback)==kResultOk,
+                "A03 race real VST3 playback failed");
+        require(std::abs(left[0]-.4f)<.00001f &&
+                std::abs(right[0]+.2f)<.00001f,
+                "A03 stale restore killed or replaced newer PCM");
+    }catch(...){
+        hold(0);
+        if(oldRestore.joinable())oldRestore.join();
+        throw;
+    }
+    fs::remove_all(root);
+    std::cout<<"[PASS] A03 native Windows concurrent setState: "
+             <<"later intent survives older delayed restore in state, parameters and PCM\n";
+    return 0;
+}
+
 int runAutomation(const char* vst3path){
     require(kRate==44100 && kBlock==256,
         "A13 automation fixture requires 44.1kHz and 256 samples");
@@ -1685,6 +1848,8 @@ int main(int argc,char** argv){
         if(mode=="abort") return runAbort(argv[1]);
         if(mode=="automation") return runAutomation(argv[1]);
         if(mode=="sequential") return runSequential(argv[1]);
+        if(mode=="restore-race") return runRestoreRace(argv[1],false);
+        if(mode=="restore-race-mutant") return runRestoreRace(argv[1],true);
         require(mode.empty() || mode=="matrix" || mode=="custom" ||
                 mode=="pending" || mode=="priority" || mode=="pending-mutant" ||
                 mode=="priority-no-replay",
