@@ -9,10 +9,10 @@
     <color name="Silver" rgba="#E4E5E7FF"/>
     <color name="Muted" rgba="#9FAAB5FF"/>
   </colors>
-  <template name="view" class="CViewContainer" origin="0, 0" size="686, 506" background-color="Dark" background-color-draw-style="filled" mouse-enabled="true" transparent="false">
+  <template name="view" class="CViewContainer" origin="0, 0" size="686, 565" background-color="Dark" background-color-draw-style="filled" mouse-enabled="true" transparent="false">
     <view class="CViewContainer" origin="14, 16" size="656, 78" background-color="Panel" background-color-draw-style="filled" transparent="false" mouse-enabled="false"/>
     <view class="CTextLabel" origin="29, 22" size="435, 34" title="125A   AUTO SAMPLER" font="~ NormalFontVeryBig" font-color="Silver" back-color="Panel" frame-color="Panel" frame-width="0" transparent="true" mouse-enabled="false" text-alignment="left"/>
-    <view class="CTextLabel" origin="31, 56" size="447, 26" title="MIDI GENERATOR  /  WINDOWS VST3" font="~ NormalFont" font-color="Muted" back-color="Panel" frame-color="Panel" frame-width="0" transparent="true" mouse-enabled="false" text-alignment="left"/>
+    <view class="CTextLabel" origin="31, 56" size="447, 26" title="CAPTURE  +  PLAYBACK  /  WINDOWS VST3" font="~ NormalFont" font-color="Muted" back-color="Panel" frame-color="Panel" frame-width="0" transparent="true" mouse-enabled="false" text-alignment="left"/>
     <view class="CTextButton" control-tag="Run" origin="516, 31" size="135, 48" title="START / STOP" font="~ NormalFont" text-color="Silver" text-color-highlighted="Dark" frame-color="Accent" frame-color-highlighted="Accent" frame-width="1" round-radius="7" gradient="Idle" gradient-highlighted="Active" kick-style="false" mouse-enabled="true" wants-focus="true" />
     <view class="CTextLabel" origin="22, 111" size="190, 18" title="FIRST MIDI NOTE" font="~ NormalFont" font-color="Muted" back-color="Dark" frame-color="Dark" frame-width="0" transparent="true" mouse-enabled="false" text-alignment="left"/>
     <view class="CSlider" control-tag="P1001" origin="22, 135" size="151, 22" orientation="horizontal" mode="free click" draw-back="true" draw-back-color="Track" draw-frame="true" draw-frame-color="Panel" draw-value="true" draw-value-color="Accent" draw-value-from-center="false" max-value="1" min-value="0" default-value="0" mouse-enabled="true" transparent="false" wheel-inc-value="0.01" zoom-factor="10" />
@@ -52,6 +52,8 @@
     <view class="CTextButton" origin="22, 449" size="139, 34" title="CHOOSE FOLDER" font="~ NormalFont" text-color="Silver" text-color-highlighted="Dark" frame-color="Accent" frame-color-highlighted="Accent" frame-width="1" round-radius="7" gradient="Idle" gradient-highlighted="Active" kick-style="true" mouse-enabled="true" wants-focus="true"/>
     <view class="CTextButton" origin="168, 449" size="75, 34" title="DEFAULT" font="~ NormalFont" text-color="Silver" text-color-highlighted="Dark" frame-color="Frame" frame-color-highlighted="Accent" frame-width="1" round-radius="7" gradient="Idle" gradient-highlighted="Active" kick-style="true" mouse-enabled="true" wants-focus="true"/>
     <view class="CTextLabel" origin="253, 450" size="411, 29" title="OUTPUT: DEFAULT" font="~ NormalFont" font-color="Silver" back-color="Dark" frame-color="Dark" frame-width="0" transparent="true" mouse-enabled="false" text-alignment="left"/>
+    <view class="CTextButton" origin="22, 504" size="139, 36" title="LOAD SAMPLES" font="~ NormalFont" text-color="Silver" text-color-highlighted="Dark" frame-color="Accent" frame-color-highlighted="Accent" frame-width="1" round-radius="7" gradient="Idle" gradient-highlighted="Active" kick-style="true" mouse-enabled="true" wants-focus="true"/>
+    <view class="CTextLabel" origin="177, 505" size="487, 33" title="SAMPLER: EMPTY" font="~ NormalFont" font-color="Silver" back-color="Dark" frame-color="Dark" frame-width="0" transparent="true" mouse-enabled="false" text-alignment="left"/>
   </template>
   <control-tags>
     <control-tag name="Run" tag="1000"/>
