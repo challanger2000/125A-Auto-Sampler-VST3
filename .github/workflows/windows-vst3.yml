@@ -1,4 +1,4 @@
-name: P010 Windows VST3 Export Directory QA
+name: P011 Windows VST3 SFZ Bank QA
 on:
   push:
     branches: ['develop/**']
@@ -54,7 +54,7 @@ jobs:
       - name: Core regression tests
         run: cmake --build build-vst3 --config Release --target autosampler_core_tests --parallel && ctest --test-dir build-vst3 -C Release --output-on-failure
         shell: bash
-      - name: Actual VST3 MIDI to WAV integration
+      - name: Actual VST3 MIDI to WAV and SFZ bank integration
         shell: pwsh
         run: |
           $plugin = Get-ChildItem -Path "build-vst3/VST3/Release" -Directory -Filter "AutosamplerVST3.vst3" | Select-Object -First 1
@@ -81,6 +81,6 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: 125A-AutoSampler-P010-Win64
+          name: 125A-AutoSampler-P011-Win64
           path: build-vst3/VST3/Release/*.vst3
           if-no-files-found: error
