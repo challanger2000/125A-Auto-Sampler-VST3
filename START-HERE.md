@@ -45,6 +45,7 @@ Die interne Engine ordnet Sample-Root-Noten, Velocity und Round Robins direkt zu
 - **GATE:** standardmäßig aus – One-Shot spielt das Sample bis zum Ende, auch bei MIDI Note-Off. Eingeschaltet wird die Amp-Release-Phase durch Note-Off ausgelöst.
 - **AMP ADSR:** Attack, Decay, Sustain und Release über die vier Regler im neuen Playback-Bereich. Die Grundeinstellung lässt den kurzen One-Shot nahezu unverändert.
 - **NOTE STEP:** Schrittweite 12 ergibt oktavweise Aufnahme, z. B. C1/C2/C3/C4; 3 oder 6 Halbtonschritte ergeben dichtere Multisamples.
+- **Schnelle Werkseinstellung:** 1 Round Robin, 1 Velocity-Layer, NOTE STEP 12, Note Hold 0,5 s, Release-Capture 0,5 s, Pause 0,1 s. Die lange historische 8-Round-Robin-Aufnahme bleibt nur eine einstellbare Option.
 
 Für den ersten DAW-Test ist die bisherige VSTGUI um eine kompakte Playback-Sektion erweitert. Filter, portable Komplettpresets und eventuell Vintage-DAC-Charaktere gehören **nicht** zum bereits getesteten P015-Funktionsumfang.
 
