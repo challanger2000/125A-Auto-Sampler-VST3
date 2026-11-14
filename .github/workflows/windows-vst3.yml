@@ -1,4 +1,4 @@
-name: P006 Windows VST3 Integration Matrix
+name: P008 Windows VST3 Completion QA
 on:
   push:
     branches: ['develop/**']
@@ -75,6 +75,6 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: 125A-AutoSampler-P006-Win64
+          name: 125A-AutoSampler-P008-Win64
           path: build-vst3/VST3/Release/*.vst3
           if-no-files-found: error
