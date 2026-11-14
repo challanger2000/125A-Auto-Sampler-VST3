@@ -1615,7 +1615,7 @@ int runRestoreRace(const char* vst3path,bool mutant){
                     "A03 invalid-name state parameters");
         require(badNameWriter.writeInt32(0),
                 "A03 invalid-name empty export folder");
-        const auto oldPath=oldArchive.u8string();
+        auto oldPath=oldArchive.u8string();
         require(badNameWriter.writeInt32(static_cast<int32>(oldPath.size())),
                 "A03 invalid-name archive path length");
         int32 written=0;
