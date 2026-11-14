@@ -1661,7 +1661,7 @@ int runRestoreRace(const char* vst3path,bool mutant){
                 bankBytes>0 && bankBytes<=8192,
                 "A03 post-rejection bank path length");
         std::u8string postPath(static_cast<std::size_t>(bankBytes),u8' ');
-        int32 read=0;
+        read=0;
         require(afterBadName.read(postPath.data(),bankBytes,&read)==kResultOk &&
                 read==bankBytes && fs::path(postPath)==newArchive,
                 "A03 invalid name switched the bank despite rejecting restore");
