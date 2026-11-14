@@ -175,6 +175,10 @@ Instance load(PluginFactory& factory,HostApplication& host,const std::string& ta
         require(plug.component->setActive(true)==kResultOk,
                 "VST3 setActive(true) failed");
         plug.active=true;
+        // AUDIT-ONLY NEGATIVE CONTROL: a real host calls this VST3 lifecycle
+        // transition. The old integration host skipped it entirely.
+        require(plug.processor->setProcessing(true)==kResultOk,
+                "AUDIT N01: setProcessing(true) did not succeed");
         return plug;
     }
     throw std::runtime_error("expected 125A plugin class missing");
