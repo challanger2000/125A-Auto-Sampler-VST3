@@ -11,7 +11,7 @@ Kein SFZ-Export oder fremder Sampler gehört zum notwendigen Workflow. Das inter
 
 ## Windows-Installation
 
-- Auf dem [erfolgreichen P014-Windows-Testlauf](https://github.com/challanger2000/125A-Auto-Sampler-VST3/actions/runs/43564563114) unter **Artifacts** das ZIP `125A-AutoSampler-P013-Win64` herunterladen (enthält den P014-Code; der Artefaktname stammt noch vom bisherigen Workflow).
+- Auf dem [erfolgreichen P015-Windows-Testlauf](https://github.com/challanger2000/125A-Auto-Sampler-VST3/actions/runs/43567864929) unter **Artifacts** das ZIP `125A-AutoSampler-P015-Win64` herunterladen (P015 mit kurzen Werkseinstellungen, Normalize, One-Shot/Gate, Amp ADSR und einfacher GUI).
 - Den entpackten **vollständigen** Ordner `AutosamplerVST3.vst3` nach `C:\Program Files\Common Files\VST3\` kopieren.
 - Fender Studio Pro neu starten und beide 125A-Klassen im Plugin-Browser suchen.
 
@@ -60,6 +60,8 @@ Standard: `%USERPROFILE%\Documents\125A AutoSampler\Run_<...>\`.
 - Bei vollständigem Run mit acht Round Robins sind acht hörbare WAVs und `SUMMARY,exported,8` zu erwarten.
 - Der interne Sampler lädt die WAV-Dateien direkt, **ohne** externe `.sfz`-Bank.
 - **CHOOSE FOLDER** und **DEFAULT** setzen den Aufnahme-Ausgabeordner; **LOAD SAMPLES** wählt dagegen den Ordner des abzuspielenden Instruments.
+
+**P015 Windows-PASS:** [GitHub Actions #43567864929](https://github.com/challanger2000/125A-Auto-Sampler-VST3/actions/runs/43567864929) bestätigt den vollständigen Build und die simple GUI mit 18 Parametern, 94/94 Steinberg-Tests, die P015-Core-Tests für Normalize und ADSR und 72/72 WAVs mit erfolgreichem integriertem Playback. Ein vollständiger Fender-Studio-Pro-/ASIO-Praxistest steht weiterhin aus.
 
 **P014 Windows-PASS:** Der native Test lädt nach der automatischen MIDI-/Audio-Aufnahme **keinen** Projektzustand und öffnet **keine** VSTGUI, bevor er die Wiedergabe versucht. Trotzdem liefert der bereits laufende 125A in **allen vier Szenarien** hörbares Stereo-PCM (72/72 exportierte WAVs). Zusätzlich: 94/94 Steinberg-Validator-Prüfungen, Core-Tests und Mid-Take-STOP PASS. [Testlauf](https://github.com/challanger2000/125A-Auto-Sampler-VST3/actions/runs/43564563114). Das ist noch kein musikalischer Praxisnachweis in Fender Studio Pro.
 
