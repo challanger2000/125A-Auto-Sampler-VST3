@@ -21,6 +21,7 @@
 #include "pluginterfaces/vst/vsttypes.h"
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
@@ -44,6 +45,37 @@ int kBlock=256;
 constexpr double kTau=6.28318530717958647692;
 void require(bool value,const char* what) {
     if(!value)throw std::runtime_error(what);
+}
+// Recorder staging directories are renamed/deleted concurrently with host
+// status polling. Collect a filesystem snapshot with nonthrowing iteration;
+// retry transient ENOENT rather than misreporting an unrelated plugin fault.
+std::vector<std::filesystem::path> regularFilesSnapshot(
+        const std::filesystem::path& root){
+    namespace fs=std::filesystem;
+    for(int retry=0;retry<10;++retry){
+        std::error_code ec;
+        if(!fs::exists(root,ec)){
+            if(!ec)return {};
+        }else if(!ec){
+            std::vector<fs::path> found;
+            fs::recursive_directory_iterator it(
+                root,fs::directory_options::skip_permission_denied,ec),end;
+            while(!ec && it!=end){
+                std::error_code fileError;
+                if(it->is_regular_file(fileError) && !fileError)
+                    found.push_back(it->path());
+                it.increment(ec);
+            }
+            if(!ec)return found;
+        }
+        if(ec!=std::errc::no_such_file_or_directory &&
+           ec!=std::errc::path_not_found)
+            throw fs::filesystem_error(
+                "125A QA directory walk failed",root,ec);
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    throw std::runtime_error(
+        "125A QA filesystem never stabilized for directory inspection");
 }
 class RejectingOffEvents final : public EventList {
 public:
@@ -521,10 +553,9 @@ int run(const char* vst3path,bool matrix,bool customFolder,
     bool finalizedWithoutDeactivation=false;
     for(int attempt=0;attempt<150 && !finalizedWithoutDeactivation;++attempt){
         if(std::filesystem::exists(autoRoot)){
-            for(const auto& file:std::filesystem::recursive_directory_iterator(autoRoot)){
-                if(!file.is_regular_file() || file.path().filename()!="RUN-REPORT.csv")
-                    continue;
-                std::ifstream reader(file.path(),std::ios::binary);
+            for(const auto& file:regularFilesSnapshot(autoRoot)){
+                if(file.filename()!="RUN-REPORT.csv")continue;
+                std::ifstream reader(file,std::ios::binary);
                 const std::string text((std::istreambuf_iterator<char>(reader)),{});
                 if(text.find("SUMMARY,exported,"+std::to_string(expectedTakes))!=std::string::npos &&
                    text.find("SUMMARY,droppedFrames,0")!=std::string::npos)
@@ -721,9 +752,8 @@ int run(const char* vst3path,bool matrix,bool customFolder,
                       <<" mode="<<(matrix?"matrix":customFolder?"custom":"single")
                       <<", files=";
             if(std::filesystem::exists(probeRoot))
-                for(const auto& item:std::filesystem::recursive_directory_iterator(probeRoot))
-                    if(item.is_regular_file())
-                        std::cerr<<item.path().filename().string()<<";";
+                for(const auto& item:regularFilesSnapshot(probeRoot))
+                    std::cerr<<item.filename().string()<<";";
             std::cerr<<"\\n";
         }
         require(headlessAudible,
@@ -787,26 +817,25 @@ int run(const char* vst3path,bool matrix,bool customFolder,
             for(int rr=1;rr<=8;++rr)
                 expectedNames.insert("N"+std::to_string(note)+"_V"+std::to_string(vel)+
                     "_RR"+(rr<10?"0":"")+std::to_string(rr)+".wav");
-    for(const auto& entry:std::filesystem::recursive_directory_iterator(output)){
-        if(!entry.is_regular_file())continue;
-        require(entry.path().extension()!=".sfz",
+    for(const auto& entry:regularFilesSnapshot(output)){
+        require(entry.extension()!=".sfz",
                 "125A is the sampler: automatic third-party SFZ export is unnecessary");
-        if(entry.path().extension()==".wav"){
-            (void)nonzeroWav(entry.path());
-            require(expectedNames.erase(entry.path().filename().string())==1,
+        if(entry.extension()==".wav"){
+            (void)nonzeroWav(entry);
+            require(expectedNames.erase(entry.filename().string())==1,
                 "wrong, duplicated or unexpected note/velocity/RR WAV filename");
             ++wavs;
-            capturedRunDirectory=entry.path().parent_path();
-        } else if(entry.path().extension()==".125A"){
-            capturedArchive=entry.path();
+            capturedRunDirectory=entry.parent_path();
+        } else if(entry.extension()==".125A"){
+            capturedArchive=entry;
             ++archiveCount;
             std::string instrumentName;
             auto bank=a125::load125AArchive(capturedArchive,&instrumentName);
             require(bank && bank->zones.size()==static_cast<std::size_t>(expectedTakes) &&
                     instrumentName=="Untitled Instrument",
                 "P017 captured .125A is not a playable, self-contained ZIP");
-        } else if(entry.path().filename()=="RUN-REPORT.csv"){
-            std::ifstream in(entry.path());
+        } else if(entry.filename()=="RUN-REPORT.csv"){
+            std::ifstream in(entry);
             const std::string report((std::istreambuf_iterator<char>(in)),{});
             require(report.find("SUMMARY,exported,"+
                 std::to_string(expectedTakes))!=std::string::npos,
@@ -827,9 +856,8 @@ int run(const char* vst3path,bool matrix,bool customFolder,
                  <<" wanted="<<expectedTakes<<" missingNames="<<expectedNames.size()
                  <<" reports="<<reports<<" archives="<<archiveCount
                  <<" archivePath="<<capturedArchive.string()<<"\\n";
-        for(const auto& e:std::filesystem::recursive_directory_iterator(output))
-            if(e.is_regular_file())
-                std::cerr<<"[DIAG] FILE "<<e.path().string()<<"\\n";
+        for(const auto& e:regularFilesSnapshot(output))
+            std::cerr<<"[DIAG] FILE "<<e.string()<<"\\n";
         throw std::runtime_error("P017 native bank/ZIP inventory mismatch");
     }
     if(customFolder){
@@ -1607,13 +1635,12 @@ int runAbort(const char* vst3path){
     const auto root=base/"Documents"/"125A AutoSampler";
     for(int attempt=0;attempt<150 && !closed;++attempt){
         if(std::filesystem::exists(root)){
-            for(const auto& entry:std::filesystem::recursive_directory_iterator(root)){
-                if(!entry.is_regular_file())continue;
-                if(entry.path().extension()==".wav")wavFound=true;
-                require(entry.path().extension()!=".sfz",
+            for(const auto& entry:regularFilesSnapshot(root)){
+                if(entry.extension()==".wav")wavFound=true;
+                require(entry.extension()!=".sfz",
                         "P011 must not publish a playable bank after STOP");
-                if(entry.path().filename()=="RUN-REPORT.csv"){
-                    std::ifstream reader(entry.path(),std::ios::binary);
+                if(entry.filename()=="RUN-REPORT.csv"){
+                    std::ifstream reader(entry,std::ios::binary);
                     const std::string report((std::istreambuf_iterator<char>(reader)),{});
                     if(report.find("SUMMARY,exported,0")!=std::string::npos &&
                        report.find("SUMMARY,rejected,1")!=std::string::npos &&
