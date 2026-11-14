@@ -32,7 +32,7 @@ Ein abgebrochener oder stummer Durchlauf darf nicht als erfolgreich gelten. Ein 
 
 ## Die aufgenommenen Klänge im 125A spielen
 
-1. Nach einem vollständig erfolgreichen Run erzeugt der Recorder die PCM24-WAVs und zusätzlich ein ZIP-basiertes Instrument `<Instrumentenname> [Run_...].125A` im gewählten Ausgabeordner. Der Sampler lädt die fertige `.125A` **von allein**, auch bei geschlossenem Pluginfenster.
+1. Nach einem vollständig erfolgreichen Run erzeugt der Recorder die PCM24-WAVs und zusätzlich ein ZIP-basiertes Instrument `<Instrumentenname>.125A` (bei erneuter Aufnahme automatisch `<Instrumentenname> (2).125A` usw.) im gewählten Ausgabeordner. Der Sampler lädt die fertige `.125A` **von allein**, auch bei geschlossenem Pluginfenster.
 2. Zum manuellen Laden eines kompletten Instruments auf **LOAD INSTRUMENT** klicken und die `*.125A` auswählen. **LOAD SAMPLES** bleibt für ältere Run-Ordner mit `N60_V100_RR01.wav` usw. vorhanden.
 3. Bei geöffnetem Editor bestätigt `SAMPLER: ... WAVS READY TO PLAY` die geladene Bank.
 4. **RUN Aus** schalten. Dann MIDI-Noten an die 125A-Instrumentenspur senden: Der 125A liefert selbst Stereo-Audio.
