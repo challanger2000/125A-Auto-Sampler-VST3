@@ -326,8 +326,42 @@ int run(const char* vst3path,bool matrix){
     require(generator.component->setActive(true)==kResultOk,
             "cannot reactivate MIDI generator for stop regression");
     generator.active=true;
+    // Regression: a DAW transport stop and plugin reactivation must NOT
+    // silently restart sampling when Run is still ON from the previous job.
+    auto callGenerator=[&](std::int64_t at,ParameterChanges* changes){
+        EventList events(8);
+        ProcessContext context{};
+        context.state=ProcessContext::kPlaying;
+        context.sampleRate=kRate;
+        context.projectTimeSamples=at;
+        ProcessData data{};
+        data.processMode=kRealtime;
+        data.symbolicSampleSize=kSample32;
+        data.numSamples=kBlock;
+        data.numOutputs=1;data.outputs=&genOut;
+        data.outputEvents=&events;
+        data.inputParameterChanges=changes;
+        data.processContext=&context;
+        require(generator.processor->process(data)==kResultOk,
+                "MIDI generator rearm callback failed");
+        require(events.getEventCount()==0,
+                "unarmed generator must not emit unexpected MIDI events");
+    };
+    callGenerator(0,nullptr); // no explicit restart: zero events
+    ParameterChanges rearmOff(1);
+    int32 offQueueIndex=0,offPointIndex=0;
+    auto* rearmOffQueue=rearmOff.addParameterData(1000,offQueueIndex);
+    require(rearmOffQueue && rearmOffQueue->addPoint(0,0.,offPointIndex)==kResultOk,
+            "cannot rearm Run OFF");
+    callGenerator(kBlock,&rearmOff);
+    ParameterChanges rearmOn(1);
+    int32 onQueueIndex=0,onPointIndex=0;
+    auto* rearmOnQueue=rearmOn.addParameterData(1000,onQueueIndex);
+    require(rearmOnQueue && rearmOnQueue->addPoint(0,1.,onPointIndex)==kResultOk,
+            "cannot restart with explicit Run ON");
+    callGenerator(2*kBlock,&rearmOn);
     bool recovered=false;
-    for(std::int64_t at=0;at<kRate+kBlock && !recovered;at+=kBlock) {
+    for(std::int64_t at=3*kBlock;at<kRate+3*kBlock && !recovered;at+=kBlock) {
         EventList outEvents(8);
         ProcessContext running{};
         running.state=ProcessContext::kPlaying;
