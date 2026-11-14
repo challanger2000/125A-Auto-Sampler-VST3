@@ -105,6 +105,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'A03 paused worker override test failed' }
           # A deliberate test-only mutation suppresses getState's pending
           # completion fallback. Same real VST3 fixture must KILL this mutant.
+          $PSNativeCommandUseErrorActionPreference = $false
           $negative = & $runner $bundle[0].FullName 44100 256 pending-mutant 2>&1
           $negativeCode = $LASTEXITCODE
           if ($negativeCode -eq 0 -or
@@ -113,6 +114,9 @@ jobs:
             throw 'P023 negative control did not detect the real missing bank'
           }
           Write-Host '[PASS] P023 negative mutant killed by missing archive in pre-import getState'
+          # Preserve the intentional failing mutant as evidence, but the
+          # verified positive+negative suite itself has succeeded.
+          exit 0
       - name: Independent .125A ZIP/PCM24 compatibility
         shell: pwsh
         run: ./.github/scripts/verify125a.ps1
@@ -184,10 +188,25 @@ jobs:
           name: 125A-AutoSampler-P22-Independent-MultiClass-Inventory
           path: build-independent-evidence/p22/
           if-no-files-found: warn
+      - name: Isolate shipping VST3 from audit-only mutation bundle
+        if: success()
+        shell: pwsh
+        run: |
+          $shipping = 'build-vst3/VST3/Release/AutosamplerVST3.vst3'
+          $mutant = 'build-vst3/VST3/Release/AutosamplerAuditVST3.vst3'
+          if (!(Test-Path $shipping) -or !(Test-Path $mutant)) {
+            throw 'Expected separate shipping and test-only VST3 bundles'
+          }
+          New-Item -ItemType Directory -Force 'build-vst3/ship-only' | Out-Null
+          Copy-Item -LiteralPath $shipping -Destination 'build-vst3/ship-only/AutosamplerVST3.vst3' -Recurse -ErrorAction Stop
+          if (!(Test-Path 'build-vst3/ship-only/AutosamplerVST3.vst3/Contents') -or
+              (Test-Path 'build-vst3/ship-only/AutosamplerAuditVST3.vst3')) {
+            throw 'Shipping artifact staging incomplete or contains QA mutation bundle'
+          }
       - name: Upload VST3 test binary
         if: success()
         uses: actions/upload-artifact@v4
         with:
           name: 125A-AutoSampler-P024-Win64
-          path: build-vst3/VST3/Release/*.vst3
+          path: build-vst3/ship-only/*.vst3
           if-no-files-found: error
