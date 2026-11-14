@@ -9,6 +9,8 @@
 #include "pluginterfaces/gui/iplugview.h"
 #include "pluginterfaces/vst/ivsteditcontroller.h"
 #include "public.sdk/source/vst/hosting/module.h"
+#include "public.sdk/source/vst/utility/memoryibstream.h"
+#include "base/source/fstreamer.h"
 #include "public.sdk/source/vst/hosting/hostclasses.h"
 #include "public.sdk/source/vst/hosting/eventlist.h"
 #include "public.sdk/source/vst/hosting/parameterchanges.h"
@@ -173,7 +175,7 @@ std::size_t nonzeroWav(const std::filesystem::path& path) {
     require(count>12000,"WAV must contain genuinely audible synthetic signal");
     return bytes.size();
 }
-int run(const char* vst3path,bool matrix){
+int run(const char* vst3path,bool matrix,bool customFolder){
     const auto base=std::filesystem::absolute("p005-real-vst3-output");
     std::filesystem::remove_all(base);
     std::filesystem::create_directories(base/"Documents");
@@ -189,6 +191,35 @@ int run(const char* vst3path,bool matrix){
     auto generator=load(factory,host,"125A AutoSampler MIDI");
     auto recorder=load(factory,host,"125A AutoSampler Recorder");
     smokeNativeGui(generator.component.get());
+    const auto chosenRoot=base/"Chosen Export Folder"/"Takes";
+    if(customFolder){
+        std::filesystem::create_directories(chosenRoot);
+        ResizableMemoryIBStream memory;
+        IBStreamer io(&memory,kLittleEndian);
+        require(io.writeInt32(0x125A1001),"P010 state version serialize");
+        const std::array<double,11> oldParameters{
+            60./127.,60./127.,0.,7./15.,0.,
+            (1.-.25)/7.75,(2.-.25)/9.75,(.1-.05)/.45,
+            99./126.,59./126.,119./126.
+        };
+        for(const auto value:oldParameters)
+            require(io.writeDouble(value),"P010 parameter serialize");
+        auto name=chosenRoot.u8string();
+        require(io.writeInt32(static_cast<int32>(name.size())),
+                "P010 folder length serialize");
+        int32 bytes=0;
+        require(memory.write(name.data(),static_cast<int32>(name.size()),&bytes)==kResultOk &&
+                bytes==static_cast<int32>(name.size()),"P010 export directory serialize");
+        memory.rewind();
+        require(generator.component->setState(&memory)==kResultOk,
+                "P010 cannot restore custom output folder");
+        ResizableMemoryIBStream saved;
+        require(generator.component->getState(&saved)==kResultOk,
+                "P010 folder not saved into project state");
+        saved.rewind();
+        require(generator.component->setState(&saved)==kResultOk,
+                "P010 export directory failed project save/reload");
+    }
     require(generator.component->getBusCount(kEvent,kOutput)==1,
             "MIDI generator must expose an event output bus");
     require(recorder.component->getBusCount(kAudio,kInput)==1 &&
@@ -457,7 +488,7 @@ int run(const char* vst3path,bool matrix){
             "cannot deactivate generator after STOP test");
     generator.active=false;
 
-    const auto output=base/"Documents"/"125A AutoSampler";
+    const auto output=customFolder?chosenRoot:base/"Documents"/"125A AutoSampler";
     require(std::filesystem::exists(output),"recorder created no run folder");
     std::size_t wavs=0,reports=0;
     std::set<std::string> expectedNames;
@@ -488,6 +519,10 @@ int run(const char* vst3path,bool matrix){
     }
     require(static_cast<int>(wavs)==expectedTakes && expectedNames.empty() &&
             reports==1,"real recorder failed full note/velocity/RR WAV matrix");
+    if(customFolder){
+        require(!std::filesystem::exists(base/"Documents"/"125A AutoSampler"),
+                "P010 leaked custom WAVs into default Documents directory");
+    }
     std::cout<<"[PASS] REAL VST3 MIDI->synthetic synth->REAL VST3 Recorder: "
              <<noteOns<<" NoteOns, "<<noteOffs<<" NoteOffs, "<<wavs
              <<" 24-bit stereo WAVs at "<<kRate<<" Hz, block "<<kBlock
@@ -628,8 +663,9 @@ int main(int argc,char** argv){
                 "invalid sample rate or block size");
         const std::string mode=argc>=5?argv[4]:"";
         if(mode=="abort") return runAbort(argv[1]);
-        require(mode.empty() || mode=="matrix","invalid integration test mode");
-        return run(argv[1],mode=="matrix");
+        require(mode.empty() || mode=="matrix" || mode=="custom",
+                "invalid integration test mode");
+        return run(argv[1],mode=="matrix",mode=="custom");
     }catch(const std::exception& e){
         std::cerr<<"[FAIL] P005 REAL VST3 integration: "<<e.what()<<"\n";
         return 1;
