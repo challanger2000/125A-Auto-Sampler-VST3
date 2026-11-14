@@ -1,4 +1,4 @@
-# 125A AutoSampler VST3 – P015: One-Shot, Normalize und Amp ADSR
+# 125A AutoSampler VST3 – P018: Portable Instrumente und funktionale VSTGUI
 
 Windows-x64-VST3 für **automatisches Sampeln eines bereits in Fender Studio Pro geladenen VST-Instruments und direktes Spielen der aufgenommenen Samples im 125A selbst**.
 
@@ -6,8 +6,8 @@ Windows-x64-VST3 für **automatisches Sampeln eines bereits in Fender Studio Pro
 
 ## Bestandteile desselben VST3-Bundles
 
-- **125A AutoSampler (Instrument):** Gibt den automatischen Note-On-/Note-Off-Plan an die DAW weiter, nimmt gesampelte WAV-Bänke per **LOAD SAMPLES** in den eigenen internen Sampler auf und spielt sie anschließend bei eingehenden MIDI-Noten als Stereo-Audio.
-- **125A AutoSampler Recorder (Effekt):** Steht als letzter Audio-Insert hinter dem zu samplenden Fremd-VST und schreibt echte Stereo-PCM24-WAVs auf einem separaten Writer-Thread.
+- **125A AutoSampler (Instrument):** Erzeugt den MIDI-Aufnahmeplan, importiert eigene `*.125A`-Instrumentarchive oder ältere WAV-Banken und spielt sie als eigenständiger Stereo-Sampler. Mit **INSTRUMENT NAME**, **LOAD INSTRUMENT**, Gain, ADSR, Normalize, One-Shot und MIDI-reaktiver Steinberg-VSTGUI-Tastatur.
+- **125A AutoSampler Recorder (Effekt):** Letzter Audio-Insert hinter dem Fremd-VST; schreibt Stereo-PCM24-WAVs und erzeugt anschließend selbständig das fertige `*.125A`-Archiv. Sein kleines Logo-/Statusfenster zeigt **IDLE**, **READY** oder **RECORDING**, ohne weitere Bedienelemente.
 - Noten 0–127, 1–12 Halbtonschritte, 1–3 frei einstellbare Velocity-Layer, 1–16 Round Robins, konfigurierbare Noten- und Release-Dauern.
 - Zuverlässiger Aufnahmeabschluss: ungültige, lückenhafte, stumme und abgebrochene Takes werden nicht als erfolgreiche WAV-Exporte ausgegeben. Jede Aufnahme erzeugt einen eigenen `Run_...`-Ordner mit `RUN-REPORT.csv`.
 
@@ -27,15 +27,15 @@ Windows-x64-VST3 für **automatisches Sampeln eines bereits in Fender Studio Pro
 
 Nach dem Laden einer Bank stehen direkt im 125A-Editor zur Verfügung:
 
-- **NORMALIZE –1 dBFS:** Standardmäßig an; **ein gemeinsamer Peak-Gain über die gesamte Bank** statt einzelner WAV-Verstärkung. Dynamikunterschiede zwischen Velocity-Layern und Round Robins bleiben erhalten. Die originalen WAV-Dateien werden dabei nicht verändert.
+- **NORMALIZE –1 dBFS:** Standardmäßig **aus**; **ein gemeinsamer Peak-Gain über die gesamte Bank** statt einzelner WAV-Verstärkung. Dynamikunterschiede zwischen Velocity-Layern und Round Robins bleiben erhalten. Die originalen WAV-Dateien werden dabei nicht verändert.
 - **ONE SHOT / GATE:** One-Shot ist Standard und spielt die gesamte kurze Aufnahme unabhängig vom Loslassen der Taste. Gate schaltet Note-Off und die Amp-Release-Phase frei.
 - **AMP ADSR:** Attack 0–2 Sekunden, Decay 0–3 Sekunden, Sustain 0–100 %, Release 0–3 Sekunden. Ohne zusätzliches Processing bleibt der aufgezeichnete Originalklang hörbar.
 - **NOTE STEP:** Bereits vorhanden: 1–12 Halbtöne (etwa C1/C2/C3/C4 mit Step 12); der interne Player transponiert die Lücken.
-- **Schneller Vintage-Start:** Die Werkseinstellung nimmt nur **1 Round Robin**, **1 Velocity-Layer** und pro Take **0,5 Sekunden Note + 0,5 Sekunden Ausklang + 0,1 Sekunden Pause** auf. NOTE STEP steht zunächst auf **12 Halbtönen**. Für besondere Klänge kann alles bewusst verlängert oder dichter gesampelt werden.
+- **Schneller Vintage-Start:** Die Werkseinstellung nimmt nur **1 Round Robin**, **1 Velocity-Layer** und pro Take **1,0 Sekunde Note + 2,0 Sekunden Ausklang + 0,1 Sekunden Pause** auf. NOTE STEP steht zunächst auf **12 Halbtönen**. Für besondere Klänge kann alles bewusst verlängert oder dichter gesampelt werden.
 
-Ein einfacher dunkel gehaltener VSTGUI-Testbereich ist angefügt. Die 18 Parameter sind DAW-automatisierbar. Die komplette Aufnahme-WAV wird ohne Sustain-Loop gespielt. Für Vintage-One-Shots bewusst kein Loop-Editor, keine Effektkette und keine komplexe Modulationsmatrix.
+Ein einfacher dunkel gehaltener VSTGUI-Testbereich ist angefügt. Die 19 Parameter sind DAW-automatisierbar. Die komplette Aufnahme-WAV wird ohne Sustain-Loop gespielt. Für Vintage-One-Shots bewusst kein Loop-Editor, keine Effektkette und keine komplexe Modulationsmatrix.
 
-**Noch ausstehend:** portable, unabhängig vom absoluten WAV-Ordner verschiebbare Preset-Pakete und Fender-Studio-Pro-/ASIO-Praxistest.
+**Noch ausstehend:** DAW-unabhängige automatische Wiederverknüpfung bei verschobenen Archiven, vollständig gestaltete Hardware-GUI und erneute Fender-Studio-Pro-/ASIO-Praxisabnahme.
 
 ## P016 – Normalize ohne harte Übersteuerung
 
@@ -44,6 +44,18 @@ Ein einfacher dunkel gehaltener VSTGUI-Testbereich ist angefügt. Die 18 Paramet
 **Regression:** Acht gleichzeitig klingende, normalisierte Stimmen; zusätzlich wurde dieselbe Belastung im echten Windows-x64-VST3 nach dem automatischen PCM-Bankimport geprüft. [P016 Windows PASS: 94/94 Steinberg-Validator, alle Core-Tests, vier echte VST3-Integrationsläufe mit 72 WAVs](https://github.com/challanger2000/125A-Auto-Sampler-VST3/actions/runs/43570184894). [Aktuelles P016-Test-Bundle](https://github.com/challanger2000/125A-Auto-Sampler-VST3/actions/runs/43570184894/artifacts/14104102675).
 
 Bei der DAW-Wiedergabe muss die **Quell-VST-Spur** nach der Aufnahme stummgeschaltet bzw. ihr Monitoring ausgeschaltet sein, sonst klingen Quell-VST und 125A gegebenenfalls gleichzeitig; diese externe Summierung kann weiterhin den DAW-Ausgang übersteuern. Normalize verarbeitet ausschließlich das Audio der internen 125A-Sampler-Engine, nicht das Quell-VST.
+
+## P017/P018 – Portable 125A-Instrumente und die ersten eigenen GUI-Bedienelemente
+
+- **Eigenständige `*.125A`-Datei:** Der Recorder erstellt nach vollständig erfolgreichem Run im gewählten Ausgabeordner automatisch `<Instrumentenname>.125A`. Bei gleichem Namen werden bestehende Archive nicht überschrieben, sondern `<Instrumentenname> (2).125A`, `(3)` usw. angelegt.
+- **Offen verwendbares ZIP:** Eine `.125A` ist ein unverschlüsseltes, ZIP32-kompatibles Archiv mit STORE-Einträgen (`instrument.json` und unveränderten einzelnen 24-Bit-Stereo-WAVs). Unter Windows `.125A` in `.zip` umbenennen und die gewünschte WAV für einen anderen Sampler extrahieren. CRC und Eintragsnamen werden beim Laden geprüft.
+- **Keine Sample-Map-Editor-Seite:** Root-Noten, Velocity-Stufen und Round Robins werden aus eindeutigen Dateinamen automatisch erkannt. Der interne Player lädt die Samples direkt aus dem Archiv, ohne Drittanbieter.
+- **Instrumentenname und Archivimport:** Name in der Test-VSTGUI eingeben. **LOAD INSTRUMENT** öffnet einen Windows-Dateidialog; **LOAD SAMPLES** lädt nur ältere lose WAV-Run-Ordner. Die DaW speichert derzeit den absoluten Archivpfad; bei Umzug kann das Archiv über **LOAD INSTRUMENT** neu zugeordnet werden.
+- **Wiedergabe:** Gain −12 bis +12 dB, Standard 0 dB; Normalize standardmäßig **aus**. Dauerhaft sichtbare ADSR-Parameter.
+- **Tastatur:** Die vorhandene Steinberg-`VSTGUI::KeyboardView` (kein JUCE) zeigt gehaltene MIDI-Noten, ermöglicht Vorschau und Auswahl einer einzelnen Aufnahmenote. Gegenwärtig 49 Tasten als einfache Testgrafik; endgültige Hardware-Optik folgt separat.
+- **Recorder:** Eigenes statisches 125A-Branding plus lebende IDLE/READY/RECORDING-Anzeige, ohne Regler und ohne Leere im DAW-Fenster.
+
+**Prüfstand:** [P017 vollständiger Windows PASS](https://github.com/challanger2000/125A-Auto-Sampler-VST3/actions/runs/43576534622): 94/94 Steinberg-Validatorprüfungen, 72/72 WAVs, vier native PCM-Wiedergabetests, automatischer .125A-Export und Import, zwei VSTGUI-Win32-Fensterprüfungen. [Geprüftes Test-ZIP](https://github.com/challanger2000/125A-Auto-Sampler-VST3/actions/runs/43576534622/artifacts/14106249655). Neuere Sicherheitsprüfungen (unabhängiger .NET-ZIP-Leser und Windows-Dateinamen) laufen zusätzlich. **Kein vollständiger Praxistest in Fender Studio Pro/ASIO.**
 
 ## Routing in Fender Studio Pro
 
