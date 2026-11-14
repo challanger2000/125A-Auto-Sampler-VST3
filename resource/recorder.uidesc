@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<vstgui-ui-description version="1">
+  <colors>
+    <color name="RecorderDark" rgba="#1D2025FF"/>
+    <color name="RecorderPanel" rgba="#2C3137FF"/>
+    <color name="RecorderGold" rgba="#D0B37AFF"/>
+    <color name="RecorderText" rgba="#E5E7EAFF"/>
+    <color name="RecorderMuted" rgba="#AAB2BCFF"/>
+  </colors>
+  <template name="recorder" class="CViewContainer" origin="0, 0" size="500, 178" background-color="RecorderDark" background-color-draw-style="filled" mouse-enabled="true" transparent="false">
+    <view class="CViewContainer" origin="15, 15" size="470, 148" background-color="RecorderPanel" background-color-draw-style="filled" transparent="false" mouse-enabled="false"/>
+    <view class="CTextLabel" origin="30, 25" size="137, 57" title="125A" font="~ NormalFontVeryBig" font-color="RecorderGold" back-color="RecorderPanel" frame-color="RecorderPanel" frame-width="0" transparent="true" mouse-enabled="false"/>
+    <view class="CTextLabel" origin="172, 28" size="298, 27" title="AUTO SAMPLER RECORDER" font="~ NormalFont" font-color="RecorderText" back-color="RecorderPanel" frame-color="RecorderPanel" frame-width="0" transparent="true" mouse-enabled="false"/>
+    <view class="CTextLabel" origin="172, 56" size="298, 24" title="Audio capture / controlled by 125A" font="~ NormalFont" font-color="RecorderMuted" back-color="RecorderPanel" frame-color="RecorderPanel" frame-width="0" transparent="true" mouse-enabled="false"/>
+    <view class="CTextLabel" origin="31, 99" size="437, 35" title="RECORDER STATUS: IDLE" font="~ NormalFont" font-color="RecorderGold" back-color="RecorderPanel" frame-color="RecorderPanel" frame-width="0" transparent="true" mouse-enabled="false" text-alignment="center"/>
+    <view class="CTextLabel" origin="31, 137" size="437, 18" title="No controls here. Set sampling options in the main 125A instrument." font="~ NormalFont" font-color="RecorderMuted" back-color="RecorderPanel" frame-color="RecorderPanel" frame-width="0" transparent="true" mouse-enabled="false" text-alignment="center"/>
+  </template>
+</vstgui-ui-description>
