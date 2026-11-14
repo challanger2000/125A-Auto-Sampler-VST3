@@ -67,7 +67,7 @@ void smokeNativeGui(IComponent* component){
     require(component->queryInterface(IEditController::iid,
               reinterpret_cast<void**>(&controller))==kResultOk && controller,
             "MIDI VST3 combined edit controller not available");
-    require(controller->getParameterCount()==12,
+    require(controller->getParameterCount()==18,
             "native MIDI editor must expose 12 VST3 parameters");
     IPlugView* view=controller->createView(ViewType::kEditor);
     require(view,"MIDI VST3 supplies no real editor");
@@ -112,7 +112,7 @@ void smokeNativeGui(IComponent* component){
     controller->release();
     DestroyWindow(hwnd);
     CoUninitialize();
-    std::cout<<"[PASS] REAL VSTGUI editor: 12 parameters, Win32 HWND attach, "
+    std::cout<<"[PASS] REAL VSTGUI editor: 18 parameters, Win32 HWND attach, "
                 "live timer and clean detach\\n";
 }
 struct Instance {
