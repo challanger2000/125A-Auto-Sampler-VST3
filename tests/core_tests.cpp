@@ -566,6 +566,13 @@ void testP017PortableArchive() {
             "P017 archive PCM must be bit-preserving through ZIP STORE");
         a125::BuiltInSampler player;
         require(player.publish(std::move(bank)),"P017 archive bank publication");
+        const auto rootMask=player.rootNotes();
+        require(rootMask[60] && rootMask[72] && !rootMask[71],
+                "P021 hardware keyboard must show only genuine sampled root notes");
+        std::array<float,192> displayWave{};
+        require(player.waveform(displayWave) &&
+                *std::max_element(displayWave.begin(),displayWave.end())>.4f,
+                "P021 live display must show actual, nonzero PCM data");
         player.noteOn(60,100,44100.);
         auto frame=player.renderOne();
         require(std::abs(frame[0]-.65f)<.00001f,
