@@ -114,6 +114,14 @@ jobs:
             throw 'P023 negative control did not detect the real missing bank'
           }
           Write-Host '[PASS] P023 negative mutant killed by missing archive in pre-import getState'
+          $replayNegative = & $runner $bundle[0].FullName 44100 256 priority-no-replay 2>&1
+          $replayCode = $LASTEXITCODE
+          if ($replayCode -eq 0 -or
+              (($replayNegative | Out-String) -notmatch 'A03 worker failed to resume import after release of barrier')) {
+            $replayNegative | Out-Host
+            throw 'A03 worker-progress negative control was not detected'
+          }
+          Write-Host '[PASS] A03 negative worker-replay mutant killed by progress assertion'
           # Preserve the intentional failing mutant as evidence, but the
           # verified positive+negative suite itself has succeeded.
           exit 0

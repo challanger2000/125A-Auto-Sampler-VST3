@@ -54,14 +54,25 @@
 namespace {
 std::atomic<bool> a125AuditHoldImport{false};
 std::atomic<bool> a125AuditEnteredImport{false};
+std::atomic<std::uint32_t> a125AuditImportReturned{0};
+std::atomic<bool> a125AuditDropImportReplay{false};
 std::atomic<bool> a125AuditNegatePendingSave{false};
 }
 extern "C" __declspec(dllexport) void __cdecl A125_AuditHoldImport(int enabled) noexcept {
-    if(enabled)a125AuditEnteredImport.store(false,std::memory_order_release);
+    if(enabled){
+        a125AuditEnteredImport.store(false,std::memory_order_release);
+        a125AuditImportReturned.store(0,std::memory_order_release);
+    }
     a125AuditHoldImport.store(enabled!=0,std::memory_order_release);
 }
 extern "C" __declspec(dllexport) int __cdecl A125_AuditImportEntered() noexcept {
     return a125AuditEnteredImport.load(std::memory_order_acquire)?1:0;
+}
+extern "C" __declspec(dllexport) std::uint32_t __cdecl A125_AuditImportReturned() noexcept {
+    return a125AuditImportReturned.load(std::memory_order_acquire);
+}
+extern "C" __declspec(dllexport) void __cdecl A125_AuditDropImportReplay(int enabled) noexcept {
+    a125AuditDropImportReplay.store(enabled!=0,std::memory_order_release);
 }
 extern "C" __declspec(dllexport) void __cdecl A125_AuditNegatePendingSave(int enabled) noexcept {
     a125AuditNegatePendingSave.store(enabled!=0,std::memory_order_release);
@@ -601,9 +612,12 @@ public:
                 std::lock_guard<std::mutex> guard(bankMutex_);
                 // DAW recall/import may have completed while this ZIP was
                 // being decoded. Do not let the stale worker overwrite it.
+                // An earlier explicit load can also finish after a newer
+                // explicit selection. Do not let the older decode commit.
+                if(expectedSelection!=selectionEpoch_)
+                    return captureGeneration!=0;
                 if(captureGeneration &&
-                   (expectedSelection!=selectionEpoch_ ||
-                    captureGeneration<=bankCaptureGeneration_ ||
+                   (captureGeneration<=bankCaptureGeneration_ ||
                     captureGeneration<=lastExplicitGeneration_ ||
                     session().readyBankGeneration.load(std::memory_order_acquire)!=
                         captureGeneration))return true;
@@ -651,9 +665,10 @@ public:
         }
         if(!loaded){
             std::lock_guard<std::mutex> guard(bankMutex_);
+            if(expectedSelection!=selectionEpoch_)
+                return captureGeneration!=0;
             if(captureGeneration &&
-               (expectedSelection!=selectionEpoch_ ||
-                captureGeneration<=bankCaptureGeneration_ ||
+               (captureGeneration<=bankCaptureGeneration_ ||
                 captureGeneration<=lastExplicitGeneration_ ||
                 session().readyBankGeneration.load(std::memory_order_acquire)!=
                     captureGeneration))return true;
@@ -699,7 +714,21 @@ public:
                                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
                         }
 #endif
-                        if(loadSamples(completed.path,false,ready)){
+                        bool accepted=false;
+#ifdef A125_ENABLE_AUDIT_HOOKS
+                        // Independent negative control: emulate a worker
+                        // that stays alive but never replays the old event.
+                        if(!a125AuditDropImportReplay.load(std::memory_order_acquire))
+#endif
+                        {
+                            accepted=loadSamples(completed.path,false,ready);
+#ifdef A125_ENABLE_AUDIT_HOOKS
+                            // Completion acknowledgement AFTER loadSamples,
+                            // never on release from the hold barrier alone.
+                            a125AuditImportReturned.fetch_add(1,std::memory_order_release);
+#endif
+                        }
+                        if(accepted){
                             publishedGeneration=ready;
                             failures=0;
                         }else ++failures;

@@ -246,12 +246,15 @@ int run(const char* vst3path,bool matrix,bool customFolder,
         const std::string& auditMode=""){
     const bool auditPending=(auditMode=="pending" ||
                               auditMode=="priority" ||
-                              auditMode=="pending-mutant");
-    const bool auditPriority=auditMode=="priority";
+                              auditMode=="pending-mutant" ||
+                              auditMode=="priority-no-replay");
+    const bool auditPriority=(auditMode=="priority" ||
+                              auditMode=="priority-no-replay");
     using AuditHold=void (__cdecl*)(int);
     using AuditEntered=int (__cdecl*)();
     AuditHold auditHold=nullptr;
     AuditEntered auditEntered=nullptr;
+    AuditEntered auditReturned=nullptr;
     const auto base=std::filesystem::absolute("p005-real-vst3-output");
     std::filesystem::remove_all(base);
     std::filesystem::create_directories(base/"Documents");
@@ -274,12 +277,18 @@ int run(const char* vst3path,bool matrix,bool customFolder,
             GetProcAddress(loaded,"A125_AuditHoldImport"));
         auditEntered=reinterpret_cast<AuditEntered>(
             GetProcAddress(loaded,"A125_AuditImportEntered"));
+        auditReturned=reinterpret_cast<AuditEntered>(
+            GetProcAddress(loaded,"A125_AuditImportReturned"));
         const auto mutate=reinterpret_cast<AuditHold>(
             GetProcAddress(loaded,"A125_AuditNegatePendingSave"));
-        require(auditHold && auditEntered && mutate,
-                "nonshipping audit barrier exports missing");
+        const auto dropReplay=reinterpret_cast<AuditHold>(
+            GetProcAddress(loaded,"A125_AuditDropImportReplay"));
+        require(auditHold && auditEntered && auditReturned &&
+                mutate && dropReplay,
+                "nonshipping audit barrier/progress exports missing");
         auditHold(1);
         mutate(auditMode=="pending-mutant"?1:0);
+        dropReplay(auditMode=="priority-no-replay"?1:0);
     }
     HostApplication host;
     auto factory=module->getFactory();
@@ -948,7 +957,19 @@ int run(const char* vst3path,bool matrix,bool customFolder,
                         "P023 early DAW save cannot restore the pending bank");
             }
             auditHold(0);
-            std::this_thread::sleep_for(std::chrono::milliseconds(350));
+            // A state/PCM check alone can pass even if the import worker
+            // NEVER resumes. Wait for the actual call to loadSamples()
+            // to return after the barrier. In the test-only replay-drop
+            // mutation, the previous version's test falsely passed.
+            bool replayed=false;
+            for(int poll=0;poll<150 && !replayed;++poll){
+                replayed=auditReturned()>0;
+                if(!replayed)
+                    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            }
+            require(replayed,
+                "A03 worker failed to resume import after release of barrier");
+            std::this_thread::sleep_for(std::chrono::milliseconds(80));
             ResizableMemoryIBStream persisted;
             require(generator.component->getState(&persisted)==kResultOk,
                     "A03/P023 final project state save failed");
@@ -1638,7 +1659,8 @@ int main(int argc,char** argv){
         if(mode=="automation") return runAutomation(argv[1]);
         if(mode=="sequential") return runSequential(argv[1]);
         require(mode.empty() || mode=="matrix" || mode=="custom" ||
-                mode=="pending" || mode=="priority" || mode=="pending-mutant",
+                mode=="pending" || mode=="priority" || mode=="pending-mutant" ||
+                mode=="priority-no-replay",
                 "invalid integration test mode");
         return run(argv[1],mode=="matrix",mode=="custom",mode);
     }catch(const std::exception& e){
