@@ -8,6 +8,7 @@
 #include "core/ExportTarget.h"
 #include "core/SfzBank.h"
 #include "core/BuiltInSampler.h"
+#include "core/InstrumentArchive.h"
 #include "core/RunStatus.h"
 #include <array>
 #include <filesystem>
@@ -508,6 +509,52 @@ void testP016NormalizePolyphonicHeadroom() {
     fs::remove_all(dir);
 }
 
+void testP017PortableArchive() {
+    namespace fs=std::filesystem;
+    const auto root=fs::temp_directory_path()/"125a_p017_portable_archive";
+    fs::remove_all(root);
+    fs::create_directories(root/"takes");
+    try {
+        std::vector<a125::StereoFrame> wave(512,{.65f,-.4f});
+        a125::writeWav24((root/"takes"/"N60_V100_RR01.wav").string(),44100,wave);
+        a125::writeWav24((root/"takes"/"N72_V100_RR01.wav").string(),44100,wave);
+        const auto archive=root/"Vintage Bass.125A";
+        a125::write125AArchive(root/"takes",archive,"Vintage Bass");
+        require(fs::exists(archive),"P017 archive file is missing");
+        require(throws([&]{a125::write125AArchive(root/"takes",archive,"Duplicate");}),
+            "P017 must not overwrite a portable instrument archive");
+        std::string name;
+        auto bank=a125::load125AArchive(archive,&name);
+        require(bank && bank->zones.size()==2 && name=="Vintage Bass",
+            "P017 ZIP must round-trip instrument identity and sample count");
+        require(bank->zones[0].root==60 && bank->zones[1].root==72 &&
+                bank->zones[0].pcm.size()==wave.size(),
+            "P017 source WAVs must retain root mapping and frame count");
+        require(std::abs(bank->zones[0].pcm[13][0]-.65f)<.00001f,
+            "P017 archive PCM must be bit-preserving through ZIP STORE");
+        a125::BuiltInSampler player;
+        require(player.publish(std::move(bank)),"P017 archive bank publication");
+        player.noteOn(60,100,44100.);
+        auto frame=player.renderOne();
+        require(std::abs(frame[0]-.65f)<.00001f,
+            "P017 loaded archive must directly play as 125A instrument");
+        // A single corrupt PCM byte is caught by the ZIP CRC, rather than
+        // being loaded as a changed sample.
+        {
+            std::fstream io(archive,std::ios::binary|std::ios::in|std::ios::out);
+            require(static_cast<bool>(io),"P017 cannot open ZIP for fault injection");
+            io.seekg(45);char c=0;io.read(&c,1);
+            require(static_cast<bool>(io),"P017 cannot read ZIP fault target");
+            io.seekp(45);c^=1;io.write(&c,1);
+            require(static_cast<bool>(io),"P017 cannot corrupt ZIP payload");
+        }
+        require(!a125::load125AArchive(archive),
+            "P017 tampered archive must fail closed on manifest CRC mismatch");
+        std::cout<<"[PASS] P017 .125A ZIP STORE manifest, WAV mapping, playback, CRC and no-overwrite\n";
+    }catch(...){fs::remove_all(root);throw;}
+    fs::remove_all(root);
+}
+
 void testSfzKeyboardBank() {
     a125::JobConfig config;
     config.firstNote=60;
@@ -681,6 +728,7 @@ int main() {
         testNativeSamplerPlayback();
         testP015DynamicsAndGate();
         testP016NormalizePolyphonicHeadroom();
+        testP017PortableArchive();
         testSfzKeyboardBank();
         testAutomaticBatch48Wavs();
         testWavAndTrim();
