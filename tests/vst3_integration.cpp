@@ -1444,54 +1444,86 @@ int runSequential(const char* vst3path){
     return 0;
 }
 
-int runRestoreRace(const char* vst3path,bool mutant){
-    // The real, QA-compiled Windows DLL runs two overlapping VST3 setState
-    // calls. Old A stops after reserving its intent and before ZIP decode.
-    // B publishes a newer bank and project state; A must not clear B or
-    // restore stale metadata after returning.
+int runRestoreRace(const char* vst3path,bool mutant,bool invalidNameMutant=false){
+    // Exercise the actual Windows test-only VST3: modern, fingerprinted
+    // project states with distinct names, folders and all 18 parameter values.
     require(kRate==44100 && kBlock==256,
             "A03 restore race fixture requires 44.1kHz/256");
     namespace fs=std::filesystem;
     const auto root=fs::absolute("p005-a03-concurrent-restores");
     fs::remove_all(root);
-    fs::create_directories(root/"old");
-    fs::create_directories(root/"new");
+    const auto oldDir=root/"old";
+    const auto newDir=root/"new";
+    const auto oldFolder=root/"old-export";
+    const auto newFolder=root/"new-export";
+    for(const auto& folder:{oldDir,newDir,oldFolder,newFolder})
+        fs::create_directories(folder);
     const auto oldArchive=root/"Old Bank.125A";
     const auto newArchive=root/"New Bank.125A";
     std::vector<a125::StereoFrame> oldFrames(4096,{.2f,-.1f});
     std::vector<a125::StereoFrame> newFrames(4096,{.4f,-.2f});
-    a125::writeWav24((root/"old"/"N60_V100_RR01.wav").string(),
-                     44100,oldFrames);
-    a125::writeWav24((root/"new"/"N60_V100_RR01.wav").string(),
-                     44100,newFrames);
-    a125::write125AArchive(root/"old",oldArchive,"Old Bank");
-    a125::write125AArchive(root/"new",newArchive,"New Bank");
-    auto makeState=[](ResizableMemoryIBStream& state,
-                      const fs::path& bank,int firstNote){
+    require(a125::writeWav24((oldDir/"N60_V100_RR01.wav").string(),44100,oldFrames),
+            "A03 old sample WAV unavailable");
+    require(a125::writeWav24((newDir/"N60_V100_RR01.wav").string(),44100,newFrames),
+            "A03 new sample WAV unavailable");
+    require(a125::write125AArchive(oldDir,oldArchive,"Old Bank"),
+            "A03 old .125A fixture unavailable");
+    require(a125::write125AArchive(newDir,newArchive,"New Bank"),
+            "A03 new .125A fixture unavailable");
+    constexpr std::array<double,18> oldParams{
+        44./127.,44./127.,0.,1./15.,0.,
+        (.75-.25)/7.75,(1.-.25)/9.75,(.2-.05)/.45,
+        60./126.,61./126.,62./126.,
+        1.,0.,.2,.1,.4,.2,.7
+    };
+    constexpr std::array<double,18> newParams{
+        72./127.,72./127.,1.,0.,0.,
+        (.5-.25)/7.75,(.5-.25)/9.75,(.1-.05)/.45,
+        99./126.,59./126.,119./126.,
+        0.,1.,0.,0.,1.,.05,.5
+    };
+    // Modern v2201 includes 18 persisted doubles, both folder/path, name
+    // and a matching 64-bit ZIP/PCM fingerprint. A malformed fixture must
+    // not be mistaken for a successful invalid-name regression.
+    auto makeState=[&](ResizableMemoryIBStream& state,const fs::path& bank,
+                       const fs::path& folder,const std::string& name,
+                       const std::array<double,18>& params){
         IBStreamer writer(&state,kLittleEndian);
-        require(writer.writeInt32(0x125A1301),"A03 race legacy marker");
-        const std::array<double,11> params{
-            static_cast<double>(firstNote)/127.,
-            static_cast<double>(firstNote)/127.,
-            1.,0.,0.,
-            (.5-.25)/7.75,(.5-.25)/9.75,(.1-.05)/.45,
-            99./126.,59./126.,119./126.
-        };
+        require(writer.writeInt32(0x125A2201),"A03 modern state marker");
         for(double value:params)
-            require(writer.writeDouble(value),"A03 race params");
-        require(writer.writeInt32(0),"A03 race empty output folder");
-        auto path=bank.u8string();
-        require(writer.writeInt32(static_cast<int32>(path.size())),
-                "A03 race instrument path length");
+            require(writer.writeDouble(value),"A03 modern state params");
+        const auto writeUtf8=[&](const std::u8string& value){
+            require(writer.writeInt32(static_cast<int32>(value.size())),
+                    "A03 state string length");
+            if(!value.empty()){
+                int32 written=0;
+                // The Steinberg IBStream API takes non-const void*.
+                auto bytes=value;
+                require(state.write(bytes.data(),static_cast<int32>(bytes.size()),
+                            &written)==kResultOk &&
+                        written==static_cast<int32>(bytes.size()),
+                        "A03 state string bytes");
+            }
+        };
+        writeUtf8(folder.u8string());
+        writeUtf8(bank.u8string());
+        require(writer.writeInt32(static_cast<int32>(name.size())),
+                "A03 modern instrument-name length");
+        auto nameBytes=name;
         int32 written=0;
-        require(state.write(path.data(),static_cast<int32>(path.size()),&written)
-                    ==kResultOk && written==static_cast<int32>(path.size()),
-                "A03 race instrument path write");
+        require(state.write(nameBytes.data(),static_cast<int32>(nameBytes.size()),
+                    &written)==kResultOk &&
+                written==static_cast<int32>(nameBytes.size()),
+                "A03 modern instrument-name bytes");
+        const auto fingerprint=a125::archive125AFingerprint(bank).value_or(0);
+        require(fingerprint!=0,"A03 modern archive fingerprint unavailable");
+        require(writer.writeInt64(static_cast<Steinberg::int64>(fingerprint)),
+                "A03 modern archive fingerprint bytes");
         state.rewind();
     };
     ResizableMemoryIBStream oldState,newState;
-    makeState(oldState,oldArchive,44);
-    makeState(newState,newArchive,72);
+    makeState(oldState,oldArchive,oldFolder,"Earlier Project",oldParams);
+    makeState(newState,newArchive,newFolder,"Newer Project",newParams);
     std::string error;
     auto module=Module::create(vst3path,error);
     require(bool(module),"A03 race module load failed");
@@ -1501,7 +1533,7 @@ int runRestoreRace(const char* vst3path,bool mutant){
             require(dll.empty(),"A03 race ambiguous native module");
             dll=entry;
         }
-    require(!dll.empty(),"A03 race test-only DLL missing");
+    require(!dll.empty(),"A03 test-only DLL missing");
     const auto handle=GetModuleHandleW(dll.c_str());
     require(handle!=nullptr,"A03 race module not loaded");
     using Setter=void (__cdecl*)(int);
@@ -1512,8 +1544,10 @@ int runRestoreRace(const char* vst3path,bool mutant){
         GetProcAddress(handle,"A125_AuditRestoreEntered"));
     const auto ignoreStale=reinterpret_cast<Setter>(
         GetProcAddress(handle,"A125_AuditIgnoreStaleRestore"));
-    require(hold && entered && ignoreStale,
-            "A03 nonshipping restore-race barrier exports missing");
+    const auto skipName=reinterpret_cast<Setter>(
+        GetProcAddress(handle,"A125_AuditSkipNamePreflight"));
+    require(hold && entered && ignoreStale && skipName,
+            "A03 required nonshipping race/mutation exports missing");
     HostApplication host;
     auto factory=module->getFactory();
     factory.setHostContext(&host);
@@ -1521,6 +1555,7 @@ int runRestoreRace(const char* vst3path,bool mutant){
     std::atomic<int> oldResult{-999};
     hold(1);
     ignoreStale(mutant?1:0);
+    skipName(0);
     std::thread oldRestore([&]{
         oldResult.store(generator.component->setState(&oldState),
                         std::memory_order_release);
@@ -1534,45 +1569,57 @@ int runRestoreRace(const char* vst3path,bool mutant){
         }
         require(reached,"A03 older restore never reached decode barrier");
         require(generator.component->setState(&newState)==kResultOk,
-                "A03 newer restore rejected");
+                "A03 newer modern restore rejected");
         hold(0);
         oldRestore.join();
         require(oldResult.load(std::memory_order_acquire)==kResultOk,
                 "A03 superseded restore returned unexpected VST3 error");
-        ResizableMemoryIBStream persisted;
-        require(generator.component->getState(&persisted)==kResultOk,
-                "A03 final host save failed");
-        persisted.rewind();
-        IBStreamer reader(&persisted,kLittleEndian);
-        int32 version=0;
-        require(reader.readInt32(version) && version==0x125A2201,
-                "A03 concurrent restore state version");
-        double first=0.;
-        require(reader.readDouble(first),"A03 selected key missing");
-        require(std::abs(first-72./127.)<1.e-9,
-                "A03 stale restore overwrote newer bank parameters");
-        for(int i=1;i<18;++i){
-            double ignored=0.;
-            require(reader.readDouble(ignored),
-                    "A03 host saved truncated remaining parameters");
-        }
-        int32 length=0;
-        require(reader.readInt32(length) && length>=0 && length<=8192,
-                "A03 folder length invalid");
-        if(length){
-            std::vector<char> skip(static_cast<std::size_t>(length));
+        // Compare every persisted parameter plus distinct name/folder/path.
+        // These are intentionally different in the source states.
+        const auto verifyState=[&](const char* failureMessage){
+            ResizableMemoryIBStream persisted;
+            require(generator.component->getState(&persisted)==kResultOk,
+                    "A03 final host save failed");
+            persisted.rewind();
+            IBStreamer reader(&persisted,kLittleEndian);
+            int32 version=0;
+            require(reader.readInt32(version) && version==0x125A2201,
+                    "A03 concurrent restore state version");
+            for(int i=0;i<18;++i){
+                double actual=0.;
+                require(reader.readDouble(actual),"A03 saved parameter truncated");
+                require(std::abs(actual-newParams[static_cast<std::size_t>(i)])<1.e-9,
+                        failureMessage);
+            }
+            const auto checkPath=[&](const fs::path& expected,const char* what){
+                int32 length=0;
+                require(reader.readInt32(length) &&
+                        length>=0 && length<=8192,what);
+                std::u8string bytes(static_cast<std::size_t>(length),u8' ');
+                int32 read=0;
+                if(length)
+                    require(persisted.read(bytes.data(),length,&read)==kResultOk &&
+                            read==length,what);
+                require(fs::path(bytes)==expected,what);
+            };
+            checkPath(newFolder,"A03 stale restore overwrote newer export folder");
+            checkPath(newArchive,failureMessage);
+            int32 nameLength=0;
+            require(reader.readInt32(nameLength) &&
+                    nameLength>0 && nameLength<=192,
+                    "A03 saved instrument-name length invalid");
+            std::string name(static_cast<std::size_t>(nameLength),' ');
             int32 read=0;
-            require(persisted.read(skip.data(),length,&read)==kResultOk &&
-                    read==length,"A03 folder read");
-        }
-        require(reader.readInt32(length) && length>0 && length<=8192,
-                "A03 saved instrument bank missing");
-        std::u8string bytes(static_cast<std::size_t>(length),u8' ');
-        int32 read=0;
-        require(persisted.read(bytes.data(),length,&read)==kResultOk &&
-                read==length &&
-                fs::path(bytes)==newArchive,
-                "A03 stale restore overwrote newer bank");
+            require(persisted.read(name.data(),nameLength,&read)==kResultOk &&
+                    read==nameLength && name=="Newer Project",
+                    "A03 stale restore overwrote newer instrument name");
+            Steinberg::int64 identity=0;
+            require(reader.readInt64(identity) &&
+                    static_cast<std::uint64_t>(identity)==
+                        a125::archive125AFingerprint(newArchive).value_or(0),
+                    "A03 stale restore overwrote newer bank identity");
+        };
+        verifyState("A03 stale restore overwrote newer bank");
         std::vector<Sample32> left(kBlock),right(kBlock);
         std::array<Sample32*,2> channels{left.data(),right.data()};
         AudioBusBuffers output{};
@@ -1596,107 +1643,43 @@ int runRestoreRace(const char* vst3path,bool mutant){
         require(std::abs(left[0]-.4f)<.00001f &&
                 std::abs(right[0]+.2f)<.00001f,
                 "A03 stale restore killed or replaced newer PCM");
-        // Regression for independent P024 re-audit: a syntactically present,
-        // but invalid, v1701 instrument name MUST fail before bank A is
-        // published. The earlier implementation loaded A and only then
-        // discovered setCaptureName() rejected the control byte.
-        ResizableMemoryIBStream badNameState;
-        IBStreamer badNameWriter(&badNameState,kLittleEndian);
-        require(badNameWriter.writeInt32(0x125A1701),
-                "A03 invalid-name test state marker");
-        const std::array<double,17> badNameParams{
-            44./127.,44./127.,1.,0.,0.,
-            (.5-.25)/7.75,(.5-.25)/9.75,(.1-.05)/.45,
-            99./126.,59./126.,119./126.,
-            0.,1.,0.,0.,1.,.05
-        };
-        for(const double value:badNameParams)
-            require(badNameWriter.writeDouble(value),
-                    "A03 invalid-name state parameters");
-        require(badNameWriter.writeInt32(0),
-                "A03 invalid-name empty export folder");
-        auto oldPath=oldArchive.u8string();
-        require(badNameWriter.writeInt32(static_cast<int32>(oldPath.size())),
-                "A03 invalid-name archive path length");
-        int32 written=0;
-        require(badNameState.write(oldPath.data(),
-                    static_cast<int32>(oldPath.size()),&written)==kResultOk &&
-                written==static_cast<int32>(oldPath.size()),
-                "A03 invalid-name archive path write");
-        std::string invalidName("Bad");
+
+        // S01: otherwise fully valid current-format state A contains a
+        // control character. It must fail BEFORE any bank publication.
+        ResizableMemoryIBStream rejectedState;
+        std::string invalidName="Bad";
         invalidName.push_back(static_cast<char>(1));
         invalidName+="Name";
-        require(badNameWriter.writeInt32(static_cast<int32>(invalidName.size())),
-                "A03 invalid-name length");
-        written=0;
-        require(badNameState.write(invalidName.data(),
-                    static_cast<int32>(invalidName.size()),&written)==kResultOk &&
-                written==static_cast<int32>(invalidName.size()),
-                "A03 invalid-name content");
-        badNameState.rewind();
-        require(generator.component->setState(&badNameState)==kResultFalse,
-                "A03 invalid project name must be rejected");
-        ResizableMemoryIBStream afterBadName;
-        require(generator.component->getState(&afterBadName)==kResultOk,
-                "A03 state save after rejected name");
-        afterBadName.rewind();
-        IBStreamer post(&afterBadName,kLittleEndian);
-        int32 marker=0;
-        require(post.readInt32(marker) && marker==0x125A2201,
-                "A03 post-rejection state version");
-        double postFirst=0.;
-        require(post.readDouble(postFirst) &&
-                std::abs(postFirst-72./127.)<1.e-9,
-                "A03 invalid name changed newer project parameters");
-        for(int i=1;i<18;++i){
-            double ignored=0.;
-            require(post.readDouble(ignored),
-                    "A03 post-rejection parameter stream truncated");
-        }
-        int32 folderBytes=0;
-        require(post.readInt32(folderBytes) && folderBytes==0,
-                "A03 invalid name overwrote newer project export folder");
-        int32 bankBytes=0;
-        require(post.readInt32(bankBytes) &&
-                bankBytes>0 && bankBytes<=8192,
-                "A03 post-rejection bank path length");
-        std::u8string postPath(static_cast<std::size_t>(bankBytes),u8' ');
-        read=0;
-        require(afterBadName.read(postPath.data(),bankBytes,&read)==kResultOk &&
-                read==bankBytes && fs::path(postPath)==newArchive,
-                "A03 invalid name switched the bank despite rejecting restore");
-        int32 savedNameBytes=0;
-        require(post.readInt32(savedNameBytes) &&
-                savedNameBytes>0 && savedNameBytes<=192,
-                "A03 post-rejection instrument name length");
-        std::string savedName(static_cast<std::size_t>(savedNameBytes),' ');
-        read=0;
-        require(afterBadName.read(savedName.data(),savedNameBytes,&read)==kResultOk &&
-                read==savedNameBytes &&
-                savedName=="Untitled Instrument",
-                "A03 invalid name changed the newer instrument name");
-        // Reset old OneShot voices before checking the first sample again.
+        makeState(rejectedState,oldArchive,oldFolder,invalidName,oldParams);
+        if(invalidNameMutant)skipName(1);
+        require(generator.component->setState(&rejectedState)==kResultFalse,
+                "S01 invalid name unexpectedly accepted");
+        skipName(0);
+        verifyState("S01 invalid name switched bank despite rejected restore");
+        // Reuse a brand-new MIDI note after resetting OneShot voices.
         require(generator.component->setActive(false)==kResultOk,
-                "A03 invalid-name playback deactivation");
+                "S01 post-rejection playback deactivation");
         require(generator.component->setActive(true)==kResultOk,
-                "A03 invalid-name playback reactivation");
+                "S01 post-rejection playback reactivation");
         std::fill(left.begin(),left.end(),0.f);
         std::fill(right.begin(),right.end(),0.f);
         require(generator.processor->process(playback)==kResultOk,
-                "A03 invalid-name post-rejection PCM probe");
+                "S01 post-rejection PCM probe");
         require(std::abs(left[0]-.4f)<.00001f &&
                 std::abs(right[0]+.2f)<.00001f,
-                "A03 invalid name replaced newer stereo PCM");
-        std::cout<<"[PASS] A03 invalid project name rejected atomically: "
-                    "newer path, parameters, name, folder and PCM preserved\n";
+                "S01 invalid name replaced newer stereo PCM");
+        std::cout<<"[PASS] S01 native Windows VST3 valid v2201 stream, "
+                    "rejected invalid name preserves all 18 params, "
+                    "archive identity, bank path, folder, name and PCM\n";
     }catch(...){
         hold(0);
+        skipName(0);
         if(oldRestore.joinable())oldRestore.join();
         throw;
     }
     fs::remove_all(root);
-    std::cout<<"[PASS] A03 native Windows concurrent setState: "
-             <<"later intent survives older delayed restore in state, parameters and PCM\n";
+    std::cout<<"[PASS] A03 native Windows concurrent modern setState: "
+                "later project wins all state fields and PCM\n";
     return 0;
 }
 
@@ -1943,6 +1926,7 @@ int main(int argc,char** argv){
         if(mode=="sequential") return runSequential(argv[1]);
         if(mode=="restore-race") return runRestoreRace(argv[1],false);
         if(mode=="restore-race-mutant") return runRestoreRace(argv[1],true);
+        if(mode=="invalid-name-mutant") return runRestoreRace(argv[1],false,true);
         require(mode.empty() || mode=="matrix" || mode=="custom" ||
                 mode=="pending" || mode=="priority" || mode=="pending-mutant" ||
                 mode=="priority-no-replay",

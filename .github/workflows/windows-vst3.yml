@@ -142,6 +142,17 @@ jobs:
             throw 'A03 stale-restore mutation survived native regression'
           }
           Write-Host '[PASS] A03 stale-restore mutation killed, newer intent preserved'
+          # S01 mutation bypasses ONLY the preflight name check in the
+          # QA-DLL. setCaptureName still rejects the name after bank publish.
+          # Original native assertions must detect that bank/path changed.
+          $invalid = & $runner $bundle[0].FullName 44100 256 invalid-name-mutant 2>&1
+          $invalidCode = $LASTEXITCODE
+          if ($invalidCode -eq 0 -or
+              (($invalid | Out-String) -notmatch 'S01 invalid name switched bank despite rejected restore')) {
+            $invalid | Out-Host
+            throw 'S01 deferred-name-validation mutation survived native VST3 test'
+          }
+          Write-Host '[PASS] S01 deferred-name-validation native mutant killed'
           exit 0
       - name: Independent .125A ZIP/PCM24 compatibility
         shell: pwsh

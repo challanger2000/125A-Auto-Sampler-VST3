@@ -60,6 +60,7 @@ std::atomic<bool> a125AuditNegatePendingSave{false};
 std::atomic<bool> a125AuditHoldRestore{false};
 std::atomic<bool> a125AuditRestoreEntered{false};
 std::atomic<bool> a125AuditIgnoreStaleRestore{false};
+std::atomic<bool> a125AuditSkipNamePreflight{false};
 }
 extern "C" __declspec(dllexport) void __cdecl A125_AuditHoldImport(int enabled) noexcept {
     if(enabled){
@@ -89,6 +90,9 @@ extern "C" __declspec(dllexport) int __cdecl A125_AuditRestoreEntered() noexcept
 }
 extern "C" __declspec(dllexport) void __cdecl A125_AuditIgnoreStaleRestore(int enabled) noexcept {
     a125AuditIgnoreStaleRestore.store(enabled!=0,std::memory_order_release);
+}
+extern "C" __declspec(dllexport) void __cdecl A125_AuditSkipNamePreflight(int enabled) noexcept {
+    a125AuditSkipNamePreflight.store(enabled!=0,std::memory_order_release);
 }
 #endif
 
@@ -1157,7 +1161,14 @@ public:
         // An invalid project name must be rejected BEFORE loadSamples()
         // publishes a different bank. Use exactly the same name policy as
         // the actual Session commit, not a weaker parser-only check.
-        if(!Session::validCaptureName(restoredName))
+        bool checkRestoreName=true;
+#ifdef A125_ENABLE_AUDIT_HOOKS
+        // Deliberate NONSHIPPING S01 mutation: postpone validation until
+        // after bank publication, as in the old broken implementation.
+        checkRestoreName=!a125AuditSkipNamePreflight.load(
+            std::memory_order_acquire);
+#endif
+        if(checkRestoreName && !Session::validCaptureName(restoredName))
             return Steinberg::kResultFalse;
         std::optional<std::uint64_t> fingerprint;
         const bool legacyIdentity=(version==0x125A2001 || version==0x125A2101);
