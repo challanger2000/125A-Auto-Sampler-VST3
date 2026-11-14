@@ -283,10 +283,39 @@ inline std::vector<ArchiveEntry> inspect125A(
         throw std::runtime_error("125A ZIP missing manifest or unexpected data");
     return entries;
 }
-// Read only the ZIP central directory (no WAV allocations) for stable
-// project-state identification. CRC32 is a relocation consistency check,
-// not a cryptographic signature. The full archive is still verified on load.
-inline std::optional<std::uint32_t> archive125AFingerprint(
+// Read only ZIP central directory metadata, no WAV allocations. The new
+// 64-bit fingerprint covers every WAV CRC/length/name as well as the manifest.
+// Two sounds with the same instrument name and settings therefore do NOT
+// silently match when their PCM content differs. It is an identity heuristic,
+// not a cryptographic signature.
+inline std::optional<std::uint64_t> archive125AFingerprint(
+        const std::filesystem::path& path) {
+    try {
+        if(path.extension()!=".125A")return std::nullopt;
+        std::ifstream in(path,std::ios::binary|std::ios::ate);
+        if(!in)return std::nullopt;
+        const auto length=in.tellg();
+        if(length<22)return std::nullopt;
+        const auto entries=inspect125A(in,static_cast<std::uint64_t>(length));
+        std::uint64_t hash=14695981039346656037ull;
+        const auto mix=[&](unsigned char value){
+            hash^=value;
+            hash*=1099511628211ull;
+        };
+        for(const auto& e:entries){
+            for(unsigned char c:e.name)mix(c);
+            mix(0);
+            for(int i=0;i<4;++i)mix(static_cast<unsigned char>(e.crc>>(8*i)));
+            for(int i=0;i<4;++i)mix(static_cast<unsigned char>(e.size>>(8*i)));
+        }
+        return hash;
+    }catch(const std::exception&){return std::nullopt;}
+}
+
+// P020/P021 state v2001/v2101 used a manifest-only CRC which cannot
+// distinguish different PCM recordings with the same name and setup.
+// Retain it solely to read existing beta project-state references.
+inline std::optional<std::uint32_t> archive125ALegacyFingerprint(
         const std::filesystem::path& path) {
     try {
         if(path.extension()!=".125A")return std::nullopt;
@@ -298,27 +327,36 @@ inline std::optional<std::uint32_t> archive125AFingerprint(
         const auto found=std::find_if(entries.begin(),entries.end(),
             [](const ArchiveEntry& e){return e.name=="instrument.json";});
         if(found==entries.end())return std::nullopt;
-        // Mix manifest CRC and WAV count, so identically named instruments
-        // in different directories cannot be selected merely by basename.
-        return found->crc ^ (static_cast<std::uint32_t>(entries.size()-1)*0x9E3779B9u);
+        return found->crc ^
+            (static_cast<std::uint32_t>(entries.size()-1)*0x9E3779B9u);
     }catch(const std::exception&){return std::nullopt;}
 }
 
-// Locate only known, user-owned 125A folders. Never recursively crawl a
-// computer, load arbitrary names, or substitute an unrelated bank.
+// Locate only known 125A folders. Relocation without a fingerprint is
+// deliberately refused: same filename is NOT enough to identify a bank.
+// If an existing original file has the wrong fingerprint, return {} so
+// the caller can surface BANK LOAD FAILED rather than play a wrong sound.
 inline std::filesystem::path resolve125APath(
         const std::filesystem::path& saved,
         const std::filesystem::path& selectedExportFolder,
         const std::filesystem::path& userDocumentsFolder,
-        std::optional<std::uint32_t> fingerprint=std::nullopt){
+        std::optional<std::uint64_t> fingerprint=std::nullopt,
+        bool legacy=false){
     if(saved.empty())return {};
     if(saved.extension()!=".125A")return saved;
     const auto acceptable=[&](const std::filesystem::path& p){
-        if(!std::filesystem::is_regular_file(p))return false;
+        std::error_code ec;
+        if(!std::filesystem::is_regular_file(p,ec)||ec)return false;
+        if(!fingerprint)return true;
+        if(legacy){
+            const auto old=archive125ALegacyFingerprint(p);
+            return old && *old==static_cast<std::uint32_t>(*fingerprint);
+        }
         const auto fp=archive125AFingerprint(p);
-        return fp && (!fingerprint || *fingerprint==*fp);
+        return fp && *fingerprint==*fp;
     };
     if(acceptable(saved))return saved;
+    if(!fingerprint)return saved; // no unverified relocation
     const auto basename=saved.filename();
     const std::array<std::filesystem::path,3> roots{
         selectedExportFolder, userDocumentsFolder/"125A AutoSampler",
@@ -329,7 +367,9 @@ inline std::filesystem::path resolve125APath(
         const auto candidate=root/basename;
         if(candidate!=saved && acceptable(candidate))return candidate;
     }
-    return saved; // retains an honest missing-file warning in the GUI
+    std::error_code ec;
+    if(std::filesystem::is_regular_file(saved,ec) && !ec)return {};
+    return saved; // original is missing; load path reports failure
 }
 
 inline std::vector<unsigned char> read125AEntry(
