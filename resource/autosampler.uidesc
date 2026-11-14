@@ -9,7 +9,7 @@
     <color name="Silver" rgba="#E4E5E7FF"/>
     <color name="Muted" rgba="#9FAAB5FF"/>
   </colors>
-  <template name="view" class="CViewContainer" origin="0, 0" size="686, 772" background-color="Dark" background-color-draw-style="filled" mouse-enabled="true" transparent="false">
+  <template name="view" class="CViewContainer" origin="0, 0" size="686, 935" background-color="Dark" background-color-draw-style="filled" mouse-enabled="true" transparent="false">
     <view class="CViewContainer" origin="14, 16" size="656, 78" background-color="Panel" background-color-draw-style="filled" transparent="false" mouse-enabled="false"/>
     <view class="CTextLabel" origin="29, 22" size="435, 34" title="125A   AUTO SAMPLER" font="~ NormalFontVeryBig" font-color="Silver" back-color="Panel" frame-color="Panel" frame-width="0" transparent="true" mouse-enabled="false" text-alignment="left"/>
     <view class="CTextLabel" origin="31, 56" size="235, 26" title="WINDOWS VST3 / CAPTURE + PLAYBACK" font="~ NormalFont" font-color="Muted" back-color="Panel" frame-color="Panel" frame-width="0" transparent="true" mouse-enabled="false" text-alignment="left"/>
@@ -78,6 +78,10 @@
     <view class="CTextLabel" origin="29, 709" size="104, 18" title="GAIN  dB" font="~ NormalFont" font-color="Muted" back-color="Panel" frame-color="Panel" frame-width="0" transparent="true" mouse-enabled="false"/>
     <view class="CSlider" control-tag="P1018" origin="141, 711" size="350, 22" orientation="horizontal" mode="free click" draw-back="true" draw-back-color="Track" draw-frame="true" draw-frame-color="Panel" draw-value="true" draw-value-color="Accent" max-value="1" min-value="0" default-value="0.5" mouse-enabled="true" transparent="false"/>
     <view class="CTextEdit" control-tag="P1018" origin="514, 708" size="85, 28" font="~ NormalFont" font-color="Silver" back-color="Panel" frame-color="Frame" frame-width="1" text-alignment="center" transparent="false" mouse-enabled="true" min-value="0" max-value="1" value-precision="2"/>
+    <view class="CViewContainer" origin="14, 759" size="656, 157" background-color="Panel" background-color-draw-style="filled" transparent="false" mouse-enabled="false"/>
+    <view class="CTextLabel" origin="29, 767" size="424, 21" title="MIDI KEYBOARD  /  CLICK A KEY TO SELECT AND PREVIEW" font="~ NormalFont" font-color="Accent" back-color="Panel" frame-color="Panel" frame-width="0" transparent="true" mouse-enabled="false"/>
+    <view class="CTextLabel" origin="485, 767" size="161, 21" title="C1 - C5 / 49 KEYS" font="~ NormalFont" font-color="Muted" back-color="Panel" frame-color="Panel" frame-width="0" transparent="true" mouse-enabled="false"/>
+    <view class="KeyboardView" origin="29, 797" size="626, 102" start-note="36" num-keys="49" white-key-width="21" black-key-width="14" black-key-height="65" draw-note-text="false" white-key-color="#E0E2E6FF" black-key-color="#20252CFF" white-key-pressed-color="#D0B37AFF" black-key-pressed-color="#D0B37AFF" frame-color="#454A52FF" font-color="Silver" frame-width="1" mouse-enabled="true" transparent="false" />
   </template>
   <control-tags>
     <control-tag name="Run" tag="1000"/>
