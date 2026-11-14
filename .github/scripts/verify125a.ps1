@@ -2,7 +2,14 @@
 # Exercises .NET's standard ZIP reader rather than our C++ archive loader.
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.IO.Compression
-$archives = @(Get-ChildItem -Path 'p005-real-vst3-output' -Recurse -File |
+# Inspect the RECORDER's own output, not unrelated manually imported
+# .125A banks created during A03 independent selection regression. The
+# latter is intentionally placed next to p005-real-vst3-output/Documents.
+$recordedOutput = 'p005-real-vst3-output/Documents/125A AutoSampler'
+if (!(Test-Path -LiteralPath $recordedOutput -PathType Container)) {
+    throw "Recorder output missing: $recordedOutput"
+}
+$archives = @(Get-ChildItem -LiteralPath $recordedOutput -Recurse -File |
     Where-Object { $_.Extension -ceq '.125A' })
 if ($archives.Count -ne 1) {
     throw "Expected exactly one finished .125A, found $($archives.Count)"
