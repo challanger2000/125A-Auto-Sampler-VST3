@@ -775,6 +775,21 @@ class FailOnFlushBuffer final:public std::stringbuf {
 public:
     int sync() override {return -1;}
 };
+void testAuditSafeUnicodeStems() {
+    const std::string many(95,'a');
+    const auto stem=a125::safe125AStem(many+"\\xC3\\xBC");
+    require(stem==many,
+            "A15 must never split a two-byte UTF-8 codepoint at 96-byte cap");
+    const auto multi=a125::safe125AStem(std::string(93,'a')+"\\xF0\\x9F\\x8E\\xB5");
+    require(multi==std::string(93,'a'),
+            "A15 must never split a four-byte Unicode codepoint");
+    const auto valid=a125::safe125AStem("B\\xC3\\xA4sse \\xF0\\x9F\\x8E\\xB5");
+    require(valid=="B\\xC3\\xA4sse \\xF0\\x9F\\x8E\\xB5",
+            "A15 valid Unicode must survive filename sanitization");
+    const auto invalid=a125::safe125AStem(std::string("bad\\x80name"));
+    require(invalid=="bad_name",
+            "A15 malformed UTF-8 must be made into valid filename bytes");
+}
 void testAuditStrictManifest() {
     const auto original=a125::instrumentManifest("Valid",2,{});
     std::string name;
@@ -909,6 +924,7 @@ int main() {
         testAuditSamplerNoteIdentityAndNames();
         testAuditBankLifetimeAndWavPersistence();
         testAuditStrictManifest();
+        testAuditSafeUnicodeStems();
         std::cout << "P001 core tests PASSED\n";
         return 0;
     } catch(const std::exception& e) {

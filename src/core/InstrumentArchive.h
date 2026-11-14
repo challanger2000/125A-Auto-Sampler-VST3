@@ -73,11 +73,39 @@ inline std::string json125Escape(std::string_view s){
 inline std::string safe125AStem(std::string_view displayName){
     std::string stem;
     stem.reserve(std::min<std::size_t>(displayName.size(),96));
-    for(unsigned char c:displayName){
-        if(stem.size()>=96)break;
-        if(c<32 || c==127 || c=='/' || c=='\\' || c==':' || c=='*' ||
-           c=='?' || c=='"' || c=='<' || c=='>' || c=='|') stem+='_';
+    for(std::size_t i=0;i<displayName.size();){
+        const auto c=static_cast<unsigned char>(displayName[i]);
+        std::size_t width=1;
+        if(c>=0xC2 && c<=0xDF)width=2;
+        else if(c>=0xE0 && c<=0xEF)width=3;
+        else if(c>=0xF0 && c<=0xF4)width=4;
+        if(width>1){
+            bool valid=i+width<=displayName.size();
+            if(valid){
+                for(std::size_t k=1;k<width;++k){
+                    const auto part=static_cast<unsigned char>(displayName[i+k]);
+                    if((part&0xC0)!=0x80){valid=false;break;}
+                }
+                if(valid){
+                    const auto second=static_cast<unsigned char>(displayName[i+1]);
+                    if((c==0xE0 && second<0xA0) ||
+                       (c==0xED && second>=0xA0) ||
+                       (c==0xF0 && second<0x90) ||
+                       (c==0xF4 && second>=0x90))valid=false;
+                }
+            }
+            if(valid){
+                if(stem.size()+width>96)break; // never split a UTF-8 character
+                stem.append(displayName.substr(i,width));
+                i+=width;
+                continue;
+            }
+        }
+        if(stem.size()+1>96)break;
+        if(c>=0x80 || c<32 || c==127 || c=='/' || c=='\\' || c==':' ||
+           c=='*' || c=='?' || c=='"' || c=='<' || c=='>' || c=='|')stem+='_';
         else stem+=static_cast<char>(c);
+        ++i;
     }
     while(!stem.empty() && (stem.back()==' ' || stem.back()=='.'))
         stem.pop_back();

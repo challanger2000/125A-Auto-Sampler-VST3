@@ -534,9 +534,15 @@ public:
         std::uint64_t expectedSelection=0;
         {
             std::lock_guard<std::mutex> guard(bankMutex_);
-            if(captureGeneration && captureGeneration<=bankCaptureGeneration_)
-                return true; // captured completion is already superseded
-            if(!captureGeneration)++selectionEpoch_; // explicit user/recall intent
+            if(captureGeneration &&
+               (captureGeneration<=bankCaptureGeneration_ ||
+                captureGeneration<=lastExplicitGeneration_))
+                return true; // already completed or superseded by user
+            if(!captureGeneration){
+                ++selectionEpoch_; // explicit user/recall intent
+                lastExplicitGeneration_=session().generation.load(
+                    std::memory_order_acquire);
+            }
             expectedSelection=selectionEpoch_;
         }
         try {
@@ -552,7 +558,8 @@ public:
                 // being decoded. Do not let the stale worker overwrite it.
                 if(captureGeneration &&
                    (expectedSelection!=selectionEpoch_ ||
-                    captureGeneration<=bankCaptureGeneration_))return true;
+                    captureGeneration<=bankCaptureGeneration_ ||
+                    captureGeneration<=lastExplicitGeneration_))return true;
                 if(player_.publish(std::move(bank))){
                     bankFolder_=path;
                     bankFingerprint_=archive?a125::archive125AFingerprint(path):std::nullopt;
@@ -590,7 +597,8 @@ public:
             std::lock_guard<std::mutex> guard(bankMutex_);
             if(captureGeneration &&
                (expectedSelection!=selectionEpoch_ ||
-                captureGeneration<=bankCaptureGeneration_))return true;
+                captureGeneration<=bankCaptureGeneration_ ||
+                captureGeneration<=lastExplicitGeneration_))return true;
             loadFailed_=true;
         }
         return loaded;
@@ -871,7 +879,10 @@ public:
             // Save the just-completed archive even if the background bank
             // worker has not yet published it. A previous bank must never
             // silently become the new recorded instrument in DAW state.
-            if(ready!=0 && ready!=bankCaptureGeneration_){
+            // An explicit user/DAW selection must never be replaced by a
+            // completed worker from its own or an older capture generation.
+            if(ready!=0 && ready!=bankCaptureGeneration_ &&
+               ready>lastExplicitGeneration_){
                 const auto newest=session().latestCompletedRun.chosenFolder();
                 if(newest.extension()==".125A"){
                     savedBankPath=newest;
@@ -995,6 +1006,8 @@ public:
         {
             std::lock_guard<std::mutex> guard(bankMutex_);
             ++selectionEpoch_; // invalidate in-flight older autoimports
+            lastExplicitGeneration_=session().generation.load(
+                std::memory_order_acquire);
         }
         // A recalled DAW project must not inherit a queued GUI audition
         // click or stuck keyboard light from the previous song/session.
@@ -1331,6 +1344,7 @@ private:
     std::optional<std::uint64_t> bankFingerprint_{};
     std::uint32_t bankCaptureGeneration_=0; // guarded by bankMutex_
     std::uint64_t selectionEpoch_=0; // manual/recall commands supersede workers
+    std::uint32_t lastExplicitGeneration_=0; // don't resurrect stale completion
     std::atomic<bool> stopBankWorker_{false};
     std::thread bankWorker_;
     bool loadFailed_=false;
