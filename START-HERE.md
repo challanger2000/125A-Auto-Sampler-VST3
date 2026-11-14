@@ -11,7 +11,7 @@ Kein SFZ-Export oder fremder Sampler gehört zum notwendigen Workflow. Das inter
 
 ## Windows-Installation
 
-- **Aktuell:** Windows-Testbundle [`125A-AutoSampler-P018-Win64`](https://github.com/challanger2000/125A-Auto-Sampler-VST3/actions) aus dem zuletzt erfolgreichen P018-Workflow herunterladen. P018 erweitert P016 um portable `*.125A`-Instrumente, 0-dB-Gain, einen Namen, eine native MIDI-Tastatur und das Recorder-Statusfenster. Auf der Actions-Seite ausschließlich ein **grünes** Build-Artifact verwenden.
+- **Aktuell:** Windows-Testbundle [`125A-AutoSampler-P018-Win64`](https://github.com/challanger2000/125A-Auto-Sampler-VST3/actions/runs/43577443699/artifacts/14107007285) aus dem zuletzt erfolgreichen P018-Workflow herunterladen. P018 erweitert P016 um portable `*.125A`-Instrumente, 0-dB-Gain, einen Namen, eine native MIDI-Tastatur und das Recorder-Statusfenster. Der [P018-Testlauf #43577443699](https://github.com/challanger2000/125A-Auto-Sampler-VST3/actions/runs/43577443699) ist vollständig **grün** – einschließlich Standard-ZIP-Extraktion der PCM24-WAVs, 94/94 Steinberg-Tests und beiden VSTGUI-Fenstern.
 - Den entpackten **vollständigen** Ordner `AutosamplerVST3.vst3` nach `C:\Program Files\Common Files\VST3\` kopieren.
 - Fender Studio Pro neu starten und beide 125A-Klassen im Plugin-Browser suchen.
 
@@ -71,7 +71,7 @@ Standard: `%USERPROFILE%\Documents\125A AutoSampler\Run_<...>\`.
 
 **P014 Windows-PASS:** Der native Test lädt nach der automatischen MIDI-/Audio-Aufnahme **keinen** Projektzustand und öffnet **keine** VSTGUI, bevor er die Wiedergabe versucht. Trotzdem liefert der bereits laufende 125A in **allen vier Szenarien** hörbares Stereo-PCM (72/72 exportierte WAVs). Zusätzlich: 94/94 Steinberg-Validator-Prüfungen, Core-Tests und Mid-Take-STOP PASS. [Testlauf](https://github.com/challanger2000/125A-Auto-Sampler-VST3/actions/runs/43564563114). Das ist noch kein musikalischer Praxisnachweis in Fender Studio Pro.
 
-**P018 Windows-Prüfung:** Für den neuen Stand läuft zusätzlich ein unabhängiger ZIP-Kompatibilitätstest mit dem .NET-Standard-ZIP-Leser. Das vorhandene Windows-Testlabor bestätigt die native Recorder-GUI (IDLE/READY/RECORDING), die Main-VSTGUI und die MIDI-/Audio-Integration. Bei einem realen Fender-Studio-Pro-DAW-Test muss insbesondere das Anklicken und MIDI-Leuchten der Tastatur noch überprüft werden.
+**P018 Windows-PASS:** Der neue Stand besteht den unabhängigen ZIP-Kompatibilitätstest mit dem .NET-Standard-ZIP-Leser; ein einzelnes PCM24-Sample wird aus der `.125A` tatsächlich extrahiert. P019 hat zudem den doppelten Archivabschluss beim Plugin-Teardown beseitigt (exakt ein Archiv pro Aufnahme). Das vorhandene Windows-Testlabor bestätigt die native Recorder-GUI (IDLE/READY/RECORDING), die Main-VSTGUI und die MIDI-/Audio-Integration. Bei einem realen Fender-Studio-Pro-DAW-Test muss insbesondere das Anklicken und MIDI-Leuchten der Tastatur noch überprüft werden.
 
 ## Offene Grenzen
 
