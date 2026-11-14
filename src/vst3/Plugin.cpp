@@ -61,6 +61,10 @@ struct Session {
     std::atomic<std::int64_t> anchor{kDisarmed};
     std::atomic<std::uint32_t> generation{0};
     std::atomic<int> sampleRate{44100};
+    // Set after the generator's last release has reached the recorder.
+    std::atomic<std::uint32_t> captureEndedGeneration{0};
+    // Set by the file writer only after closing RUN-REPORT.csv.
+    std::atomic<std::uint32_t> writerFinishedGeneration{0};
     // Observable per-run counts, updated atomically by the recorder.
     std::atomic<std::uint32_t> observed{0},written{0},rejected{0},silent{0},errors{0};
     std::atomic<std::uint64_t> dropped{0};
@@ -161,10 +165,17 @@ public:
         const auto silent=session().silent.load(std::memory_order_relaxed);
         const auto errors=session().errors.load(std::memory_order_relaxed);
         const auto dropped=session().dropped.load(std::memory_order_relaxed);
+        const auto gen=session().generation.load(std::memory_order_acquire);
+        const bool done=gen!=0 &&
+            session().writerFinishedGeneration.load(std::memory_order_acquire)==gen;
+        const bool finishing=gen!=0 &&
+            session().captureEndedGeneration.load(std::memory_order_acquire)==gen;
+        const char* state=done?"COMPLETE":finishing?"FINALIZING":
+            session().anchor.load(std::memory_order_acquire)!=kDisarmed?"RECORDING":"READY/STOPPED";
         char line[180]{};
         std::snprintf(line,sizeof(line),
-            "TAKES %u/%zu   WAV %u   REJECT %u   SILENCE %u   ERR %u   LOST %llu",
-            seen,config.takeCount(),written,rejected,silent,errors,
+            "%s  TAKES %u/%zu   WAV %u   REJECT %u   SILENCE %u   ERR %u   LOST %llu",
+            state,seen,config.takeCount(),written,rejected,silent,errors,
             static_cast<unsigned long long>(dropped));
         statusLabel_->setText(line);
     }
@@ -371,6 +382,17 @@ public:
         lastBlockEnd_=blockEnd;
         const auto anchor=session().anchor.load(std::memory_order_acquire);
         if(anchor==kDisarmed || blockEnd<=anchor) return Steinberg::kResultOk;
+        if(a125::jobCompleteAtBlockStart(config_,anchor,blockStart)){
+            // Not until this next block: the recorder may be called after
+            // the MIDI generator for a shared DAW processing block.
+            session().captureEndedGeneration.store(
+                session().generation.load(std::memory_order_acquire),
+                std::memory_order_release);
+            cancel();
+            runGate_.disarm();
+            lastBlockEnd_=kDisarmed;
+            return Steinberg::kResultOk;
+        }
         const auto relativeFirst=blockStart<=anchor?0:
              static_cast<std::uint64_t>(blockStart-anchor);
         const auto relativeEnd=static_cast<std::uint64_t>(blockEnd-anchor);
@@ -467,6 +489,7 @@ struct CapturedFrame {
     std::uint32_t take=0;
     std::uint8_t note=0,velocity=0,roundRobin=0;
     bool last=false;
+    bool jobEnd=false;
 };
 class SpscQueue {
 public:
@@ -560,7 +583,8 @@ public:
                 static_cast<std::uint32_t>(take.takeIndex),
                 static_cast<std::uint8_t>(take.note),
                 static_cast<std::uint8_t>(take.velocity),
-                static_cast<std::uint8_t>(take.roundRobin),loc->last};
+                static_cast<std::uint8_t>(take.roundRobin),loc->last,
+                loc->last && take.takeIndex+1==config.takeCount()};
             if(!queue_.push(frame))
                 session().dropped.fetch_add(1,std::memory_order_relaxed);
             if(loc->last)
@@ -613,6 +637,13 @@ private:
                 report.flush();
             }
         };
+        auto closeRun=[&] {
+            finishReport();
+            report.close();
+            if(generation!=0)
+                session().writerFinishedGeneration.store(
+                    generation,std::memory_order_release);
+        };
         auto record=[&](const char* status,std::uint64_t frames) {
             if(report) {
                 report << takeIndex << ',' << static_cast<unsigned>(note) << ','
@@ -630,8 +661,7 @@ private:
             current.clear();
         };
         auto openRun=[&](std::uint32_t gen) {
-            finishReport();
-            report.close();
+            if(attemptedRun) closeRun();
             dir.clear();
             haveRun=false;
             attemptedRun=true;
@@ -666,6 +696,14 @@ private:
             CapturedFrame f;
             if(!queue_.pop(f)) {
                 if(exit_.load(std::memory_order_acquire) && queue_.empty()) break;
+                // If the final frame was dropped, we still close the run
+                // with an INCOMPLETE record once the generator confirms
+                // the last capture block was processed.
+                if(attemptedRun && report &&
+                   session().captureEndedGeneration.load(std::memory_order_acquire)==generation){
+                    if(integrity.abandon()) reject("INCOMPLETE");
+                    closeRun();
+                }
                 std::this_thread::sleep_for(std::chrono::milliseconds(2));
                 continue;
             }
@@ -717,9 +755,15 @@ private:
                 }
                 current.clear();
             }
+            if(f.jobEnd){
+                // Final take is recorded and saved. Flush/close the report
+                // immediately; no DAW Stop or plugin unload is required.
+                if(integrity.abandon()) reject("INCOMPLETE");
+                closeRun();
+            }
         }
         if(integrity.abandon()) reject("ABORTED");
-        finishReport();
+        if(attemptedRun && report) closeRun();
     }
     std::uint32_t sampleRate_=44100;
     SpscQueue queue_;
@@ -732,10 +776,10 @@ private:
 BEGIN_FACTORY_DEF("125A","https://github.com/challanger2000","")
  DEF_CLASS2(INLINE_UID_FROM_FUID(kMidiID),
   Steinberg::PClassInfo::kManyInstances,kVstAudioEffectClass,
-  "125A AutoSampler MIDI",0,"Instrument","0.5.0",kVstVersionString,
+  "125A AutoSampler MIDI",0,"Instrument","0.8.0",kVstVersionString,
   MidiGenerator::createInstance)
  DEF_CLASS2(INLINE_UID_FROM_FUID(kRecorderID),
   Steinberg::PClassInfo::kManyInstances,kVstAudioEffectClass,
-  "125A AutoSampler Recorder",0,"Fx","0.5.0",kVstVersionString,
+  "125A AutoSampler Recorder",0,"Fx","0.8.0",kVstVersionString,
   Recorder::createInstance)
 END_FACTORY
