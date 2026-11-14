@@ -6,7 +6,17 @@
 #include "BuiltInSampler.h"
 #include "ManifestJson.h"
 #include <array>
+#include <chrono>
 #include <cstdint>
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#endif
 #include <cctype>
 #include <filesystem>
 #include <fstream>
@@ -189,10 +199,19 @@ inline void write125AArchive(const std::filesystem::path& source,
         throw std::runtime_error("invalid 125A sample count");
     std::sort(files.begin(),files.end());
     const auto manifest=instrumentManifest(instrumentName,files.size(),playback);
-    fs::path partial=destination;
-    partial+=".partial";
-    if(fs::exists(partial))throw std::runtime_error("stale partial archive");
+    // Each writer owns a distinct directory created with an atomic mkdir.
+    // No other process may truncate our in-progress archive, even if two
+    // recorders simultaneously choose the same destination basename.
+    fs::path stageDir;
     try {
+        const auto seed=std::chrono::steady_clock::now().time_since_epoch().count();
+        for(unsigned attempt=0;attempt<4096 && stageDir.empty();++attempt){
+            fs::path candidate=destination;
+            candidate+=".stage-"+std::to_string(seed)+"-"+std::to_string(attempt);
+            if(fs::create_directory(candidate))stageDir=std::move(candidate);
+        }
+        if(stageDir.empty())throw std::runtime_error("125A cannot reserve private stage");
+        const auto partial=stageDir/"instrument.partial";
         std::ofstream out(partial,std::ios::binary|std::ios::trunc);
         if(!out)throw std::runtime_error("cannot open 125A output");
         std::vector<ArchiveEntry> entries;
@@ -263,12 +282,23 @@ inline void write125AArchive(const std::filesystem::path& source,
         if(!out)throw std::runtime_error("125A write failed");
         out.close();
         if(!out)throw std::runtime_error("125A close failed");
+#ifdef _WIN32
+        // Win32 MoveFileEx without REPLACE_EXISTING is an atomic *exclusive*
+        // publication, unlike std::filesystem::rename which may overwrite.
+        if(!MoveFileExW(partial.c_str(),destination.c_str(),MOVEFILE_WRITE_THROUGH))
+            throw std::runtime_error("125A atomic exclusive publish failed");
+#else
         if(fs::exists(destination))
             throw std::runtime_error("125A destination appeared during write");
         fs::rename(partial,destination);
+#endif
+        std::error_code cleanup;
+        fs::remove(stageDir,cleanup);
     }catch(...){
-        std::error_code ec;
-        fs::remove(partial,ec);
+        if(!stageDir.empty()){
+            std::error_code cleanup;
+            fs::remove_all(stageDir,cleanup);
+        }
         throw;
     }
 }

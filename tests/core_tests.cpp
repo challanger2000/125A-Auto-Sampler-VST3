@@ -531,6 +531,23 @@ void testP017PortableArchive() {
         require(fs::exists(archive),"P017 archive file is missing");
         require(throws([&]{a125::write125AArchive(root/"takes",archive,"Duplicate");}),
             "P017 must not overwrite a portable instrument archive");
+#ifdef _WIN32
+        // Two writers race for one ZIP name. Exactly one may commit its
+        // finished archive. The other must not damage or replace it.
+        std::atomic<int> parallelSuccess{0};
+        const auto shared=root/"Concurrent.125A";
+        const auto submit=[&](){
+            try{
+                a125::write125AArchive(root/"takes",shared,"Concurrent");
+                parallelSuccess.fetch_add(1,std::memory_order_relaxed);
+            }catch(const std::exception&){}
+        };
+        std::thread firstWriter(submit),secondWriter(submit);
+        firstWriter.join();secondWriter.join();
+        require(parallelSuccess.load(std::memory_order_relaxed)==1 &&
+                a125::load125AArchive(shared),
+            "A05 parallel writers must publish exactly one uncorrupted .125A");
+#endif
         std::string name;
         a125::ArchivePlayback restoredSettings;
         const auto fingerprint=a125::archive125AFingerprint(archive);
