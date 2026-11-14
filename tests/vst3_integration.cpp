@@ -1681,6 +1681,264 @@ int runRestoreRace(const char* vst3path,bool mutant,bool invalidNameMutant=false
     return 0;
 }
 
+// Independent S02/F01 native scenarios. A is paused AFTER full bank decode,
+// BEFORE ANY publication. A rejected newer stream must not preempt its commit.
+// The test-only negative mutants reproduce the previous rejection-preemption
+// bug and an allocation exception AFTER publication, respectively.
+int runRestoreTransactionFaults(const char* vst3path,
+                                bool staleRejectedMutant,bool allocationMutant){
+    require(kRate==44100 && kBlock==256,
+            "S02/F01 transaction fixture requires 44.1kHz/256");
+    namespace fs=std::filesystem;
+    const auto root=fs::absolute("p024-s02-f01-transactions");
+    fs::remove_all(root);
+    const auto oldDir=root/"old",newDir=root/"new";
+    const auto oldFolder=root/"old-export",newFolder=root/"new-export";
+    for(const auto& path:{oldDir,newDir,oldFolder,newFolder})
+        fs::create_directories(path);
+    const auto oldBank=root/"Older Bank.125A",newBank=root/"Newer Bank.125A";
+    std::vector<a125::StereoFrame> pcmOld(4096,{.2f,-.1f});
+    std::vector<a125::StereoFrame> pcmNew(4096,{.4f,-.2f});
+    a125::writeWav24((oldDir/"N60_V100_RR01.wav").string(),44100,pcmOld);
+    a125::writeWav24((newDir/"N60_V100_RR01.wav").string(),44100,pcmNew);
+    require(a125::write125AArchive(oldDir,oldBank,"Earlier")!=0 &&
+            a125::write125AArchive(newDir,newBank,"Initial")!=0,
+            "S02/F01 archive creation failed");
+    const std::array<double,18> oldParams{
+        44./127.,44./127.,1.,0.,0.,
+        (.5-.25)/7.75,(.5-.25)/9.75,(.1-.05)/.45,
+        99./126.,59./126.,119./126.,
+        0.,1.,0.,0.,1.,.05,.5
+    };
+    const std::array<double,18> newParams{
+        72./127.,72./127.,1.,0.,0.,
+        (.75-.25)/7.75,(1.-.25)/9.75,(.2-.05)/.45,
+        80./126.,70./126.,60./126.,
+        0.,1.,0.,0.,1.,.05,.5
+    };
+    auto writeState=[&](ResizableMemoryIBStream& dest,
+                         const fs::path& bank,const fs::path& folder,
+                         const std::string& name,
+                         const std::array<double,18>& params){
+        IBStreamer out(&dest,kLittleEndian);
+        require(out.writeInt32(0x125A2201),"S02/F01 modern state marker");
+        for(double p:params)
+            require(out.writeDouble(p),"S02/F01 all state parameters");
+        auto writeString=[&](std::u8string text){
+            require(out.writeInt32(static_cast<int32>(text.size())),
+                    "S02/F01 string length");
+            int32 written=0;
+            if(!text.empty())
+                require(dest.write(text.data(),static_cast<int32>(text.size()),
+                            &written)==kResultOk &&
+                        written==static_cast<int32>(text.size()),
+                        "S02/F01 string payload");
+        };
+        writeString(folder.u8string());
+        writeString(bank.u8string());
+        require(out.writeInt32(static_cast<int32>(name.size())),
+                "S02/F01 name length");
+        auto mutableName=name;
+        int32 written=0;
+        require(dest.write(mutableName.data(),static_cast<int32>(name.size()),
+                    &written)==kResultOk &&
+                written==static_cast<int32>(name.size()),
+                "S02/F01 name payload");
+        const auto digest=a125::archive125AFingerprint(bank).value_or(0);
+        require(digest!=0 && out.writeInt64(static_cast<Steinberg::int64>(digest)),
+                "S02/F01 full PCM fingerprint");
+        dest.rewind();
+    };
+    std::string error;
+    auto module=Module::create(vst3path,error);
+    require(bool(module),"S02/F01 VST3 module load failed");
+    fs::path dll;
+    for(const auto& entry:regularFilesSnapshot(vst3path))
+        if(entry.extension()==".vst3"){
+            require(dll.empty(),"S02/F01 ambiguous QA DLL");
+            dll=entry;
+        }
+    const auto handle=GetModuleHandleW(dll.c_str());
+    require(handle!=nullptr,"S02/F01 QA DLL not mapped");
+    using Setter=void (__cdecl*)(int);
+    using Getter=int (__cdecl*)();
+    auto resolveSetter=[&](const char* name)->Setter {
+        const auto pointer=reinterpret_cast<Setter>(GetProcAddress(handle,name));
+        require(pointer!=nullptr,"S02/F01 missing QA setter");
+        return pointer;
+    };
+    const auto hold=resolveSetter("A125_AuditHoldRestoreCommit");
+    const auto entered=reinterpret_cast<Getter>(
+        GetProcAddress(handle,"A125_AuditRestoreCommitEntered"));
+    const auto preempt=resolveSetter("A125_AuditPreemptRejectedRestore");
+    const auto beforeFault=resolveSetter("A125_AuditFailRestorePrepare");
+    const auto afterFault=resolveSetter("A125_AuditFailRestoreAfterPublish");
+    require(entered!=nullptr,"S02/F01 missing commit barrier entry probe");
+    HostApplication host;
+    auto factory=module->getFactory();
+    factory.setHostContext(&host);
+    auto generator=load(factory,host,"125A AutoSampler");
+    std::array<Sample32,256> left{},right{};
+    std::array<Sample32*,2> channels{left.data(),right.data()};
+    AudioBusBuffers output{};
+    output.numChannels=2;
+    output.channelBuffers32=channels.data();
+    EventList notes(2);
+    Event on{};
+    on.busIndex=0;on.sampleOffset=0;
+    on.type=Event::kNoteOnEvent;
+    on.noteOn.channel=0;on.noteOn.pitch=60;
+    on.noteOn.velocity=100.f/127.f;on.noteOn.noteId=9301;
+    require(notes.addEvent(on)==kResultOk,"S02/F01 MIDI probe construction");
+    ProcessData playback{};
+    playback.processMode=kRealtime;
+    playback.symbolicSampleSize=kSample32;
+    playback.numSamples=256;playback.numOutputs=1;
+    playback.outputs=&output;
+    playback.inputEvents=&notes;
+
+    const auto verify=[&](const fs::path& bank,const fs::path& folder,
+                          const std::string& name,
+                          const std::array<double,18>& params,
+                          float sample,const char* reason){
+        ResizableMemoryIBStream persisted;
+        require(generator.component->getState(&persisted)==kResultOk,
+                "S02/F01 state snapshot failed");
+        persisted.rewind();
+        IBStreamer reader(&persisted,kLittleEndian);
+        int32 version=0;
+        require(reader.readInt32(version) && version==0x125A2201,reason);
+        for(int i=0;i<18;++i){
+            double value=0.;
+            require(reader.readDouble(value) &&
+                    std::abs(value-params[static_cast<std::size_t>(i)])<1.e-9,
+                    reason);
+        }
+        auto expectString=[&](const std::u8string& expected){
+            int32 count=0;
+            require(reader.readInt32(count) && count>=0 && count<=8192,
+                    reason);
+            std::u8string found(static_cast<std::size_t>(count),u8' ');
+            int32 got=0;
+            if(count)
+                require(persisted.read(found.data(),count,&got)==kResultOk &&
+                        got==count,reason);
+            require(found==expected,reason);
+        };
+        expectString(folder.u8string());
+        expectString(bank.u8string());
+        int32 len=0;
+        require(reader.readInt32(len) && len>0 && len<=192,reason);
+        std::string found(static_cast<std::size_t>(len),' ');
+        int32 got=0;
+        require(persisted.read(found.data(),len,&got)==kResultOk &&
+                got==len && found==name,reason);
+        Steinberg::int64 digest=0;
+        require(reader.readInt64(digest) &&
+                static_cast<std::uint64_t>(digest)==
+                    a125::archive125AFingerprint(bank).value_or(0),reason);
+        require(generator.component->setActive(false)==kResultOk,reason);
+        require(generator.component->setActive(true)==kResultOk,reason);
+        left.fill(0.f);right.fill(0.f);
+        require(generator.processor->process(playback)==kResultOk,reason);
+        require(std::abs(left[0]-sample)<.00001f &&
+                std::abs(right[0]+sample*.5f)<.00001f,reason);
+    };
+    auto initialize=[&]{
+        ResizableMemoryIBStream baseline;
+        writeState(baseline,newBank,newFolder,"Initial",newParams);
+        require(generator.component->setState(&baseline)==kResultOk,
+                "S02/F01 cannot initialize state B");
+    };
+    if(!allocationMutant){
+        // Four distinct rejected later requests: name, invalid version,
+        // NaN first normalized parameter, and truncated parameter stream.
+        for(int kind=0;kind<4;++kind){
+            initialize();
+            ResizableMemoryIBStream earlier,invalid;
+            writeState(earlier,oldBank,oldFolder,"Earlier",oldParams);
+            if(kind==0){
+                std::string badName="Bad";
+                badName.push_back(static_cast<char>(10));
+                badName+="Name";
+                writeState(invalid,newBank,newFolder,badName,newParams);
+            }else if(kind==1){
+                IBStreamer out(&invalid,kLittleEndian);
+                require(out.writeInt32(0x125AFF01),
+                        "S02 unknown version fixture");
+                invalid.rewind();
+            }else if(kind==2){
+                IBStreamer out(&invalid,kLittleEndian);
+                require(out.writeInt32(0x125A2201) &&
+                        out.writeDouble(std::numeric_limits<double>::quiet_NaN()),
+                        "S02 NaN parameter fixture");
+                invalid.rewind();
+            }else{
+                IBStreamer out(&invalid,kLittleEndian);
+                require(out.writeInt32(0x125A2201) &&
+                        out.writeDouble(.5),"S02 truncated parameter fixture");
+                invalid.rewind();
+            }
+            std::atomic<int> aResult{-999};
+            hold(1);
+            preempt(0);
+            std::thread older([&]{
+                aResult.store(generator.component->setState(&earlier),
+                              std::memory_order_release);
+            });
+            try{
+                bool paused=false;
+                for(int i=0;i<1500 && !paused;++i){
+                    paused=entered()!=0;
+                    if(!paused)
+                        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+                }
+                require(paused,"S02 older restore never reached postdecode barrier");
+                // Apply the deliberately old epoch policy ONLY for rejected B.
+                preempt(staleRejectedMutant?1:0);
+                require(generator.component->setState(&invalid)==kResultFalse,
+                        "S02 newer malformed state must reject");
+                preempt(0);
+                hold(0);
+                older.join();
+                require(aResult.load(std::memory_order_acquire)==kResultOk,
+                        "S02 earlier valid restore failed");
+                verify(oldBank,oldFolder,"Earlier",oldParams,.2f,
+                        "S02 rejected newer restore prevented older valid commit");
+                std::cout<<"[PASS] S02 rejected later restore variant "<<kind
+                         <<" preserves fully accepted earlier state\n";
+            }catch(...){
+                hold(0);preempt(0);
+                if(older.joinable())older.join();
+                throw;
+            }
+        }
+    }else{
+        // Fail BEFORE the commit on a valid name. QA mutation after publish
+        // must be killed by the same complete-state assertions.
+        initialize();
+        ResizableMemoryIBStream earlier;
+        writeState(earlier,oldBank,oldFolder,
+                   std::string(192,'X'),oldParams);
+        beforeFault(1);
+        require(generator.component->setState(&earlier)==kResultFalse,
+                "F01 injected prepare allocation must report failure");
+        beforeFault(0);
+        verify(newBank,newFolder,"Initial",newParams,.4f,
+               "F01 preparation exception altered previous project");
+        earlier.rewind();
+        afterFault(1);
+        require(generator.component->setState(&earlier)==kResultFalse,
+                "F01 injected postpublish mutant did not throw");
+        afterFault(0);
+        verify(newBank,newFolder,"Initial",newParams,.4f,
+               "F01 allocation failure left partially committed bank");
+    }
+    fs::remove_all(root);
+    std::cout<<"[PASS] S02/F01 native VST3 transaction and allocation scenario\n";
+    return 0;
+}
+
 int runAutomation(const char* vst3path){
     require(kRate==44100 && kBlock==256,
         "A13 automation fixture requires 44.1kHz and 256 samples");
@@ -1925,6 +2183,12 @@ int main(int argc,char** argv){
         if(mode=="restore-race") return runRestoreRace(argv[1],false);
         if(mode=="restore-race-mutant") return runRestoreRace(argv[1],true);
         if(mode=="invalid-name-mutant") return runRestoreRace(argv[1],false,true);
+        if(mode=="restore-commit-race")
+            return runRestoreTransactionFaults(argv[1],false,false);
+        if(mode=="restore-commit-race-mutant")
+            return runRestoreTransactionFaults(argv[1],true,false);
+        if(mode=="restore-oom-mutant")
+            return runRestoreTransactionFaults(argv[1],false,true);
         require(mode.empty() || mode=="matrix" || mode=="custom" ||
                 mode=="pending" || mode=="priority" || mode=="pending-mutant" ||
                 mode=="priority-no-replay",
