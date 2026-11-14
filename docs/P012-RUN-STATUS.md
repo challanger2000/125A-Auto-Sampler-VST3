@@ -1,5 +1,7 @@
 # P012 – Wahrheitsgemäßer Aufnahme- und Bankstatus
 
+**Automatisierte Windows-Abnahme: PASS.** [GitHub Actions #43539953663](https://github.com/challanger2000/125A-Auto-Sampler-VST3/actions/runs/43539953663): Windows-x64-Build, Steinberg-VST3-Validator, native Win32-GUI, neue Fehlerzustands-Regressionen, 72/72 echte WAVs, vier konsistente SFZ-Bankdateien und Mid-Take-STOP ohne Teil-WAV/SFZ. Artefakt: `125A-AutoSampler-P012-Win64`. Die GUI-Zustandsregeln wurden im C++-Core geprüft; der visuelle Fender-Studio-Pro-Praxistest bleibt offen.
+
 ## Produktkorrektur
 
 P011 erstellt nach vollständig erfolgreichen WAV-Aufnahmen automatisch eine SFZ-Bank. Ein zuvor vorhandener GUI-Fehler konnte dennoch `COMPLETE` anzeigen, obwohl WAVs fehlten, ein SFZ-Schreibfehler auftrat oder der Recorder niemals Audio empfangen hatte.

@@ -1,5 +1,7 @@
 # P011 – Automatisch spielbare SFZ-Bank aus den WAV-Aufnahmen
 
+**Automatisierte Windows-Abnahme: PASS.** [P011 Windows-Actions-Lauf #43539385851](https://github.com/challanger2000/125A-Auto-Sampler-VST3/actions/runs/43539385851). Alle Szenarien: **72/72 tatsächliche VST3-WAVs**, vier vollständige SFZ-Bänke (je eine pro Run), keine SFZ nach dem manuellen Abbruch, Steinberg-Validator und Core-Tests PASS. Neuerer Regressionstest inklusive P012: [#43539953663](https://github.com/challanger2000/125A-Auto-Sampler-VST3/actions/runs/43539953663).
+
 ## Was P011 liefert
 
 Nach jedem **vollständig erfolgreichen** Sampling-Durchlauf enthält der bestehende Run-Ordner nun:

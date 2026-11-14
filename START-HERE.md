@@ -1,6 +1,6 @@
 # START HERE – 125A AutoSampler P012
 
-## 1. Was bis P011 getestet ist; P012 in Windows-QA
+## 1. Was bis P012 erfolgreich unter Windows getestet ist
 
 - Windows-x64-VST3 mit zwei echten Klassen: MIDI-Generator und Audio-Recorder
 - VSTGUI-Editor tatsächlich über Win32-HWND geöffnet, Status-Timer gestartet und sauber geschlossen
@@ -9,7 +9,7 @@
 - Realer Plugin-Stop mit springender Songposition sendet die passende Note-Off-ID
 - Getrennte RUN-REPORT.csv-Einträge; korrupte und abgebrochene Takes werden nicht exportiert
 
-[P010 Windows-Build samt VST3-Artefakt – PASS](https://github.com/challanger2000/125A-Auto-Sampler-VST3/actions/runs/43538521360) – ZIP-Name **125A-AutoSampler-P010-Win64**. Nur die VST3-Datei installieren; das Testprogramm ist nicht Bestandteil des Plugins.
+[P012 Windows-Build samt VST3-Artefakt – PASS](https://github.com/challanger2000/125A-Auto-Sampler-VST3/actions/runs/43539953663) – ZIP-Name **125A-AutoSampler-P012-Win64**. Nur die VST3-Datei installieren; das Testprogramm ist nicht Bestandteil des Plugins.
 
 ## P011/P012 – SFZ-Instrument automatisch mit ausgeben
 
@@ -17,7 +17,7 @@ Bei einem **vollständig erfolgreichen** Durchlauf entstehen automatisch die PCM
 
 SFZ ordnet gesampelte Noten inklusive Zwischentönen, Velocity-Layer und Round Robins zu. Stand P011 ist **One-Shot-Abspielung**, keine automatische Sustain-Loop-Erkennung. Bei fehlender, stummer oder beschädigter WAV sowie bei Abbruch entsteht bewusst **keine** SFZ-Bank; `RUN-REPORT.csv` enthält dann `BANK,SKIPPED_INCOMPLETE` beziehungsweise `BANK,SFZ_ERROR`. Bei Erfolg erscheint `BANK,SFZ_CREATED,125A AutoSampler.sfz`.
 
-Die P012-GUI zeigt `COMPLETE` nur bei fehlerfreiem Export, sonst `PARTIAL / FAILED`, `FAILED` oder `ABORTED`; ohne aktiven Recorder nach Ende des Durchlaufs `NO AUDIO RECORDER`.
+Die mit Windows-P012-Tests geprüfte GUI-Statuslogik zeigt `COMPLETE` nur bei fehlerfreiem Export, sonst `PARTIAL / FAILED`, `FAILED` oder `ABORTED`; ohne aktiven Recorder nach Ende des Durchlaufs `NO AUDIO RECORDER`.
 
 Siehe [P011-SFZ-Dokumentation](docs/P011-SFZ-BANK.md) und [P012-Statusregeln](docs/P012-RUN-STATUS.md).
 

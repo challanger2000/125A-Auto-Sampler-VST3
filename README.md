@@ -11,7 +11,7 @@
 
 **P011 (Windows PASS):** Ein vollständig erfolgreicher Sampling-Run erzeugt neben den WAVs automatisch eine verschiebbare `125A AutoSampler.sfz` mit **Tastaturzonen, Velocity-Layern und 1–16 Round Robins**. Beim STOP, bei stummen oder verlorenen Samples sowie bei Schreibfehlern wird keine unvollständige Sampler-Bank ausgegeben. [P011: Windows-Build und Test](https://github.com/challanger2000/125A-Auto-Sampler-VST3/actions/runs/43539385851) – erneut **72/72 WAVs** mit korrekten SFZ-Referenzen.
 
-**P012:** Die GUI unterscheidet jetzt `COMPLETE` nur bei voller Ausgabe, `PARTIAL / FAILED`, `FAILED`, `ABORTED` und `NO AUDIO RECORDER`. Die neue Statuslogik soll einen fehlenden Recorder nicht mehr endlos als `FINALIZING` anzeigen.
+**P012 (Windows PASS):** Die GUI unterscheidet jetzt `COMPLETE` nur bei voller Ausgabe, `PARTIAL / FAILED`, `FAILED`, `ABORTED` und `NO AUDIO RECORDER`. Die Statuslogik meldet einen fehlenden Recorder ausdrücklich als Fehler, statt endlos `FINALIZING` anzuzeigen. [P012: kompletter Windows-Build, 72/72 WAVs und vier SFZ-Bänke bestanden](https://github.com/challanger2000/125A-Auto-Sampler-VST3/actions/runs/43539953663).
 
 **SFZ-Grenze:** Die erste Bank nutzt `loop_mode=one_shot`: Jede gesampelte Note wird mit ihrem aufgenommenen Ausklang einmal abgespielt. Es gibt noch keine automatischen Sustain-Loops. Die SFZ-Wiedergabe in einem externen Sampler ist noch nicht praktisch abgenommen.
 
