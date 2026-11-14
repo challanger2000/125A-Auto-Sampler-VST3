@@ -1104,7 +1104,7 @@ public:
         }
         if(data.numSamples<=0){
             for(std::size_t index=0;index<cursors.size();++index){
-                const auto* q=cursors[index].q;
+                auto* q=cursors[index].q;
                 if(!q)continue;
                 int32 offset=0;
                 V::ParamValue value=0.;
