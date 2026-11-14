@@ -42,6 +42,7 @@ if(BUILD_VST3)
         ${_125A_SCE_SOURCE}
         ${_125A_DLLMAIN_SOURCE}
         src/vst3/Plugin.cpp
+        "${VST3_SDK_ROOT}/vstgui4/vstgui/contrib/keyboardview.cpp"
         src/core/SamplingPlan.h
         src/core/SampleProcessing.h
         src/core/Timeline.h
