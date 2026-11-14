@@ -1107,6 +1107,118 @@ int run(const char* vst3path,bool matrix,bool customFolder){
 
 // A13: real VST3 output events must obey *all* parameter automation
 // offsets, including multiple OFF/ON changes in one audio callback.
+// A02: two sequential projects run inside one UNLOADED-NEVER VST3 module.
+// Old session state/PCM is not inherited across generator lifecycles.
+int runSequential(const char* vst3path){
+    require(kRate==44100 && kBlock==256,
+        "A02 sequential project fixture needs 44100/256");
+    namespace fs=std::filesystem;
+    const auto root=fs::absolute("p005-a02-sequential-projects");
+    fs::remove_all(root);
+    fs::create_directories(root/"takes");
+    std::vector<a125::StereoFrame> pcm(4096,{.4f,-.2f});
+    a125::writeWav24((root/"takes"/"N60_V100_RR01.wav").string(),44100,pcm);
+    const auto archive=root/"Project One.125A";
+    a125::write125AArchive(root/"takes",archive,"First Song Instrument");
+    std::string error;
+    auto module=Module::create(vst3path,error);
+    require(bool(module),"A02 real VST3 bundle unavailable");
+    HostApplication host;
+    auto factory=module->getFactory();
+    factory.setHostContext(&host);
+    // P013 legacy state accepts an explicit archive without a fingerprint;
+    // subsequent save upgrades to modern 0x125A2201 with full identity.
+    {
+        auto first=load(factory,host,"125A AutoSampler");
+        ResizableMemoryIBStream firstState;
+        IBStreamer io(&firstState,kLittleEndian);
+        require(io.writeInt32(0x125A1301),"A02 first state marker");
+        const std::array<double,11> params{
+            60./127.,60./127.,0.,7./15.,0.,
+            (1.-.25)/7.75,(2.-.25)/9.75,(.1-.05)/.45,
+            99./126.,59./126.,119./126.
+        };
+        for(double value:params)
+            require(io.writeDouble(value),"A02 first state parameter");
+        require(io.writeInt32(0),"A02 first state no output path");
+        const auto path=archive.u8string();
+        require(io.writeInt32(static_cast<int32>(path.size())),
+                "A02 first state instrument path length");
+        int32 written=0;
+        require(firstState.write(path.data(),static_cast<int32>(path.size()),
+                    &written)==kResultOk && written==static_cast<int32>(path.size()),
+                "A02 first state instrument path");
+        firstState.rewind();
+        require(first.component->setState(&firstState)==kResultOk,
+                "A02 first project could not load instrument");
+        ResizableMemoryIBStream saved;
+        require(first.component->getState(&saved)==kResultOk,
+                "A02 first project could not serialize loaded instrument");
+        saved.rewind();
+        IBStreamer reader(&saved,kLittleEndian);
+        int32 marker=0;
+        require(reader.readInt32(marker) && marker==0x125A2201,
+                "A02 first song state not upgraded");
+        for(int i=0;i<18;++i){
+            double ignored=0.;
+            require(reader.readDouble(ignored),"A02 first song params truncated");
+        }
+        int32 folderLength=0;
+        require(reader.readInt32(folderLength) && folderLength==0,
+                "A02 first song unexpected export path");
+        int32 bankLength=0;
+        require(reader.readInt32(bankLength) && bankLength>0,
+                "A02 first song archive not persisted");
+    } // terminate first generator while module remains loaded
+    {
+        auto second=load(factory,host,"125A AutoSampler");
+        ResizableMemoryIBStream clean;
+        require(second.component->getState(&clean)==kResultOk,
+                "A02 new project must serialize clean state");
+        clean.rewind();
+        IBStreamer reader(&clean,kLittleEndian);
+        int32 marker=0;
+        require(reader.readInt32(marker) && marker==0x125A2201,
+                "A02 new song state marker mismatch");
+        for(int i=0;i<18;++i){
+            double ignored=0.;
+            require(reader.readDouble(ignored),
+                "A02 new project saved parameters missing");
+        }
+        int32 folderLength=0,bankLength=0;
+        require(reader.readInt32(folderLength) && folderLength==0,
+                "A02 new project inherited previous export folder");
+        require(reader.readInt32(bankLength) && bankLength==0,
+                "A02 new project inherited previous bank path");
+        std::vector<Sample32> left(kBlock),right(kBlock);
+        std::array<Sample32*,2> channels{left.data(),right.data()};
+        AudioBusBuffers bus{};bus.numChannels=2;
+        bus.channelBuffers32=channels.data();
+        EventList notes(2);
+        Event on{};
+        on.busIndex=0;on.sampleOffset=0;
+        on.type=Event::kNoteOnEvent;
+        on.noteOn.channel=0;on.noteOn.pitch=60;
+        on.noteOn.velocity=1.f;on.noteOn.noteId=5502;
+        require(notes.addEvent(on)==kResultOk,"A02 new song MIDI input fixture");
+        ProcessData data{};
+        data.processMode=kRealtime;
+        data.symbolicSampleSize=kSample32;
+        data.numSamples=kBlock;data.numOutputs=1;data.outputs=&bus;
+        data.inputEvents=&notes;
+        require(second.processor->process(data)==kResultOk,
+                "A02 new project playback returned error");
+        for(int i=0;i<kBlock;++i)
+            require(std::abs(left[static_cast<std::size_t>(i)])<1.e-7f &&
+                    std::abs(right[static_cast<std::size_t>(i)])<1.e-7f,
+                "A02 new DAW project played previous project's instrument");
+    }
+    fs::remove_all(root);
+    std::cout<<"[PASS] A02 actual Windows VST3 sequential song isolation within "
+                "one loaded DLL; zero inherited archive and zero PCM\\n";
+    return 0;
+}
+
 int runAutomation(const char* vst3path){
     require(kRate==44100 && kBlock==256,
         "A13 automation fixture requires 44.1kHz and 256 samples");
@@ -1348,6 +1460,7 @@ int main(int argc,char** argv){
         const std::string mode=argc>=5?argv[4]:"";
         if(mode=="abort") return runAbort(argv[1]);
         if(mode=="automation") return runAutomation(argv[1]);
+        if(mode=="sequential") return runSequential(argv[1]);
         require(mode.empty() || mode=="matrix" || mode=="custom",
                 "invalid integration test mode");
         return run(argv[1],mode=="matrix",mode=="custom");
