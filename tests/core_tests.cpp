@@ -624,6 +624,41 @@ void testP017PortableArchive() {
         frame=player.renderOne();
         require(frame[0]==0.f && frame[1]==0.f,
             "P022 old voices must stop after project state bank is cleared");
+        // A09 adversarial ZIP: different filenames with leading-zero aliases
+        // decode to the SAME (note,velocity,RR) tuple. A normal .125A ZIP
+        // from our writer is mutated in both local and central filenames,
+        // preserving size, PCM bytes, manifest and CRCs.
+        {
+            std::ifstream source(archive,std::ios::binary);
+            require(bool(source),"A09 cannot read original ZIP fixture");
+            std::string bytes((std::istreambuf_iterator<char>(source)),{});
+            source.close();
+            const auto renameInZip=[&](const std::string& before,
+                                       const std::string& after){
+                require(before.size()==after.size(),
+                        "A09 ZIP alias fixture must retain fixed name lengths");
+                std::size_t count=0,pos=0;
+                while((pos=bytes.find(before,pos))!=std::string::npos){
+                    bytes.replace(pos,before.size(),after);
+                    pos+=after.size();
+                    ++count;
+                }
+                require(count==2,
+                        "A09 ZIP local/central name fixture differs from writer");
+            };
+            renameInZip("N60_V100_RR01.wav","N060_V10_RR01.wav");
+            renameInZip("N72_V100_RR01.wav","N60_V010_RR01.wav");
+            const auto aliases=root/"duplicate-semantic-tuple.125A";
+            std::ofstream output(aliases,std::ios::binary|std::ios::trunc);
+            require(bool(output),"A09 cannot write adversarial ZIP fixture");
+            output.write(bytes.data(),static_cast<std::streamsize>(bytes.size()));
+            output.flush();
+            require(bool(output),"A09 could not flush adversarial ZIP fixture");
+            output.close();
+            require(bool(output),"A09 could not close adversarial ZIP fixture");
+            require(!a125::load125AArchive(aliases),
+                    "A09 aliasing ZIP with two names for one RR must fail closed");
+        }
         // A single corrupt PCM byte is caught by the ZIP CRC, rather than
         // being loaded as a changed sample.
         {
