@@ -37,6 +37,14 @@ Ein einfacher dunkel gehaltener VSTGUI-Testbereich ist angefügt. Die 18 Paramet
 
 **Noch ausstehend:** portable, unabhängig vom absoluten WAV-Ordner verschiebbare Preset-Pakete und Fender-Studio-Pro-/ASIO-Praxistest.
 
+## P016 – Normalize ohne harte Übersteuerung
+
+**Praxishinweis:** P015 normalisierte die gesamte WAV-Bank korrekt auf −1 dBFS, aber überlagerte One-Shot-Stimmen wurden nach der Summierung intern bei ±1 hart abgeschnitten. Dadurch konnte aktiviertes NORMALIZE hörbare Verzerrungen auslösen. **P016** mischt aktive Stimmen mit gemeinsamer, rein linearer Headroom-Anpassung, erhält den Einzelnoten-Zielpegel, führt die Pegelreserve nach dem Ausklang zurück und entfernt das harte Clipping am Float-Ausgang. Die WAVs werden weiterhin **nicht** verändert.
+
+**Regression:** Acht gleichzeitig klingende, normalisierte Stimmen; zusätzlich wurde dieselbe Belastung im echten Windows-x64-VST3 nach dem automatischen PCM-Bankimport geprüft. [P016 Windows PASS: 94/94 Steinberg-Validator, alle Core-Tests, vier echte VST3-Integrationsläufe mit 72 WAVs](https://github.com/challanger2000/125A-Auto-Sampler-VST3/actions/runs/43570184894). [Aktuelles P016-Test-Bundle](https://github.com/challanger2000/125A-Auto-Sampler-VST3/actions/runs/43570184894/artifacts/14104102675).
+
+Bei der DAW-Wiedergabe muss die **Quell-VST-Spur** nach der Aufnahme stummgeschaltet bzw. ihr Monitoring ausgeschaltet sein, sonst klingen Quell-VST und 125A gegebenenfalls gleichzeitig; diese externe Summierung kann weiterhin den DAW-Ausgang übersteuern. Normalize verarbeitet ausschließlich das Audio der internen 125A-Sampler-Engine, nicht das Quell-VST.
+
 ## Routing in Fender Studio Pro
 
 1. Eine Instrumentenspur mit **125A AutoSampler** erstellen.
