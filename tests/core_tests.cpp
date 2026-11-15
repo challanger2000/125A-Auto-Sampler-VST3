@@ -570,11 +570,58 @@ void testA06WindowsWavExclusivePublish() {
             require(entry.is_regular_file() && entry.path().extension()==".wav",
                     "A06 exclusive writer leaked private stage/partial data");
         std::cout<<"[PASS] A06 native Win32 16 competing WAV publications: "
-                    "one winner, intact PCM, no orphan stages\\n";
+                    "one winner, intact PCM, no orphan stages\n";
     }catch(...){
         fs::remove_all(root);
         throw;
     }
+    fs::remove_all(root);
+#endif
+}
+
+void testA06WindowsReportPublicationFaults() {
+#ifdef _WIN32
+    // Direct Win32 OS-level publication checks, not mock status variables:
+    // a directory collision and a pre-existing report must not be replaced.
+    namespace fs=std::filesystem;
+    const auto root=fs::temp_directory_path()/"125a_a06_report_publication";
+    fs::remove_all(root);
+    fs::create_directories(root);
+    try{
+        const auto partial=root/"RUN-REPORT.csv.partial";
+        const auto published=root/"RUN-REPORT.csv";
+        {
+            std::ofstream out(partial,std::ios::binary|std::ios::trunc);
+            require(bool(out),"A06 cannot create staged report");
+            out<<"take,note,velocity,rr,result,frames\n";
+            out.flush();
+            require(bool(out),"A06 staged report flush failed");
+            out.close();
+            require(bool(out),"A06 staged report close failed");
+        }
+        fs::create_directory(published);
+        require(!a125::publishFileExclusive(partial,published) &&
+                fs::is_directory(published) && fs::exists(partial),
+                "A06 must reject final report directory collision");
+        fs::remove(published);
+        require(a125::publishFileExclusive(partial,published) &&
+                fs::is_regular_file(published) && !fs::exists(partial),
+                "A06 closed staged CSV must publish atomically");
+        const auto originalBytes=fs::file_size(published);
+        {
+            std::ofstream out(partial,std::ios::binary|std::ios::trunc);
+            out<<"MALICIOUS-OVERWRITE\n";
+            out.close();
+            require(bool(out),"A06 cannot prepare overwrite fixture");
+        }
+        require(!a125::publishFileExclusive(partial,published) &&
+                fs::is_regular_file(published) &&
+                fs::file_size(published)==originalBytes &&
+                fs::exists(partial),
+                "A06 must not replace an already finalized report");
+        std::cout<<"[PASS] A06 native Win32 report collision/overwrite: "
+                    "closed CSV published once; rejected stage intact\n";
+    }catch(...){fs::remove_all(root);throw;}
     fs::remove_all(root);
 #endif
 }
@@ -1348,6 +1395,7 @@ int main() {
         testP015DynamicsAndGate();
         testP016NormalizePolyphonicHeadroom();
         testA06WindowsWavExclusivePublish();
+        testA06WindowsReportPublicationFaults();
         testP017PortableArchive();
         testSfzKeyboardBank();
         testAutomaticBatch48Wavs();
