@@ -51,6 +51,55 @@ jobs:
           if (@($gui.'vstgui-ui-description'.template.view | Where-Object { $_.class -eq "KeyboardView" }).Count -ne 1) {
             throw "125A GUI must contain native Steinberg KeyboardView"
           }
+          # P027: shipping GUI is a real controller, not a mockup. Verify
+          # all 19 VST3 parameter IDs have at least one visible control, the
+          # relevant button families share exact dimensions, and all hit
+          # rectangles fit within the fixed native editor coordinates.
+          $views = @($gui.'vstgui-ui-description'.template.view)
+          $root = $gui.'vstgui-ui-description'.template
+          if ($root.size -ne "1024, 692") { throw "P027 original 1024x692 editor contract changed" }
+          foreach ($tag in $tags) {
+            if (@($views | Where-Object { $_.'control-tag' -eq $tag.name }).Count -lt 1) {
+              throw "P027 GUI has no live view for $($tag.name)"
+            }
+          }
+          $families = @(
+            @("PREV BANK","NEXT BANK"),
+            @("LOAD INSTRUMENT","LOAD SAMPLES"),
+            @("CHOOSE FOLDER","DEFAULT"),
+            @("NORMALIZE","ONE SHOT"),
+            @("OCT -","OCT +")
+          )
+          foreach ($family in $families) {
+            $pair = @($family | ForEach-Object {
+              $title = $_
+              @($views | Where-Object { $_.class -eq "CTextButton" -and $_.title -eq $title })
+            })
+            if ($pair.Count -ne 2 -or $pair[0].size -ne $pair[1].size) {
+              throw "P027 nonuniform button geometry: $($family -join ', ')"
+            }
+          }
+          $required = @("SAMPLER: EMPTY","STATUS: READY","BANK: -- / --",
+                        "OUTPUT: DEFAULT","NOTES 36 - 84","INSTRUMENT NAME")
+          foreach ($title in $required) {
+            if (@($views | Where-Object { $_.title -eq $title }).Count -ne 1) {
+              throw "P027 missing live GUI label/control: $title"
+            }
+          }
+          foreach ($view in $views) {
+            $xy = @($view.origin -split ',')
+            $wh = @($view.size -split ',')
+            if ($xy.Count -ne 2 -or $wh.Count -ne 2) { throw "P027 malformed view rectangle" }
+            $x = [int]$xy[0]; $y = [int]$xy[1]
+            $w = [int]$wh[0]; $h = [int]$wh[1]
+            if ($x -lt 0 -or $y -lt 0 -or $w -le 0 -or $h -le 0 -or
+                $x + $w -gt 1024 -or $y + $h -gt 692) {
+              throw "P027 out-of-bounds GUI view $($view.class) $($view.title)"
+            }
+          }
+          $dummy = @($views | Where-Object { $_.title -match '(?i)pitchbend|pitch bend|modwheel|mod wheel|presets|settings' })
+          if ($dummy.Count -ne 0) { throw "P027 a nonfunctional wheel/menu mockup was added" }
+          Write-Host "P027 hardware GUI: 19 bound parameters, 5 uniform control families, full editor bounds, no fake wheels/menus: PASS"
           Write-Host "P021 VSTGUI: 19 parameters, hardware keyboard, branded recorder status, valid packaged XML: PASS"
       - name: Official VST3 validator
         shell: pwsh
