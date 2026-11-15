@@ -2174,7 +2174,7 @@ int runInstrumentBrowse(const char* vst3path){
         for(double value:normalized)
             require(io.writeDouble(value),"P026 initial parameter missing");
         require(io.writeInt32(0),"P026 initial folder missing");
-        const auto name=lead.u8string();
+        auto name=lead.u8string(); // IBStream::write takes mutable void*
         require(io.writeInt32(static_cast<int32>(name.size())),
                 "P026 initial archive path length");
         int32 written=0;
