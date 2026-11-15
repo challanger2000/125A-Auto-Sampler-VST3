@@ -555,6 +555,8 @@ public:
         }
         if(auto* label=dynamic_cast<VSTGUI::CTextLabel*>(view)){
             if(label->getText()=="STATUS: READY")statusLabel_=label;
+            if(label->getText()=="TAKES 0/0  WAV 0  REJ 0  SIL 0  ERR 0")
+                statusDetailLabel_=label;
             if(label->getText()=="OUTPUT: DEFAULT")folderLabel_=label;
             if(label->getText()=="SAMPLER: EMPTY")samplerLabel_=label;
             if(label->getText()=="BANK: -- / --")bankBrowserLabel_=label;
@@ -952,6 +954,7 @@ public:
         folderLabel_=nullptr;
         samplerLabel_=nullptr;
         statusLabel_=nullptr;
+        statusDetailLabel_=nullptr;
     }
     void updateStatus() {
         // GUI only displays status; WAV loading happens on the bank worker.
@@ -975,12 +978,26 @@ public:
             session().anchor.load(std::memory_order_acquire)!=kDisarmed
         };
         const char* state=a125::runDisplayText(a125::runDisplayStatus(snapshot));
-        char line[180]{};
-        std::snprintf(line,sizeof(line),
-            "%s  TAKES %u/%zu   WAV %u   REJECT %u   SILENCE %u   ERR %u   LOST %llu",
-            state,seen,config.takeCount(),written,rejected,silent,errors,
-            static_cast<unsigned long long>(dropped));
-        statusLabel_->setText(line);
+        // Keep status and counters in separate fixed-width LCD rows.
+        // The old single 70+ character string was cropped at 362 px,
+        // hiding failures. No DSP/file work occurs on the GUI timer.
+        char stateText[72]{};
+        std::snprintf(stateText,sizeof(stateText),"STATUS: %s",state);
+        statusLabel_->setText(stateText);
+        if(statusDetailLabel_){
+            char counters[130]{};
+            if(dropped){
+                std::snprintf(counters,sizeof(counters),
+                    "TAKES %u/%zu  WAV %u  ERR %u  LOST %llu",
+                    seen,config.takeCount(),written,errors,
+                    static_cast<unsigned long long>(dropped));
+            }else{
+                std::snprintf(counters,sizeof(counters),
+                    "TAKES %u/%zu  WAV %u  REJ %u  SIL %u  ERR %u",
+                    seen,config.takeCount(),written,rejected,silent,errors);
+            }
+            statusDetailLabel_->setText(counters);
+        }
     }
     tresult PLUGIN_API initialize(FUnknown* context) override {
         if(!session().acquireGenerator(this))return Steinberg::kResultFalse;
@@ -1786,6 +1803,7 @@ private:
     bool retryPendingNoteOff_=false; // audio-thread owned, survives cancel
     a125::RunGate runGate_{};
     VSTGUI::CTextLabel* statusLabel_{nullptr};  // owned by active editor
+    VSTGUI::CTextLabel* statusDetailLabel_{nullptr};
     VSTGUI::CTextLabel* folderLabel_{nullptr};
     VSTGUI::CTextLabel* samplerLabel_{nullptr};
     VSTGUI::CTextLabel* bankBrowserLabel_{nullptr};
