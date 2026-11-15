@@ -2211,8 +2211,17 @@ int runInstrumentBrowse(const char* vst3path){
     const auto makeArchive=[&](const char* filename,const char* name,float amplitude){
         const auto samples=base/(std::string(filename)+"-samples");
         fs::create_directories(samples);
-        const std::vector<a125::StereoFrame> pcm(4096,
-            {amplitude,-amplitude*.5f});
+        // A recognizable decaying *test* waveform for the screenshot,
+        // with the same exact first PCM frame used by the regression gate.
+        std::vector<a125::StereoFrame> pcm(8192);
+        for(std::size_t i=0;i<pcm.size();++i){
+            const double t=static_cast<double>(i)/pcm.size();
+            const auto decay=static_cast<float>(std::exp(-4.5*t));
+            const auto carrier=static_cast<float>(std::cos(
+                6.2831853071795864769*(12.*t+36.*t*t)));
+            const float left=amplitude*decay*carrier;
+            pcm[i]={left,-left*.5f};
+        }
         a125::writeWav24((samples/"N60_V100_RR01.wav").string(),44100,pcm);
         const auto archive=bankDir/filename;
         a125::write125AArchive(samples,archive,name);
@@ -2392,6 +2401,9 @@ int runInstrumentBrowse(const char* vst3path){
     // waveform, status and bank-browser controls have received the sample.
     // The screenshot is optional on remote Windows services without an
     // interactive desktop and never substitutes for actual VST3 tests.
+    // Native CTextEdit commits/repaints can lag behind the loaded bank
+    // until the next Win32 paint cycle; let the real VSTGUI finish it.
+    InvalidateRect(child,nullptr,FALSE);
     UpdateWindow(child);
     pump();
     if(captureRealGuiBmp(child,"p027-real-vstgui.bmp"))
