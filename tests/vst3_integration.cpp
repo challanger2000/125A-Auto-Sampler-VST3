@@ -2328,15 +2328,27 @@ int runInstrumentBrowse(const char* vst3path){
     std::cerr<<"[P026] after PREV skip"<<std::endl;
     check(lead,"LEAD BANK",.4f);
     std::cerr<<"[P026] lead reverse check passed"<<std::endl;
+    std::cerr<<"[P026] remove view beginning"<<std::endl;
     require(view->removed()==kResultTrue,"P026 browser editor remove failed");
+    std::cerr<<"[P026] view removed"<<std::endl;
     require(view->setFrame(nullptr)==kResultTrue,"P026 host frame detach failed");
-    frame->release();view->release();controller->release();
+    std::cerr<<"[P026] frame cleared"<<std::endl;
+    frame->release();
+    std::cerr<<"[P026] frame released"<<std::endl;
+    view->release();
+    std::cerr<<"[P026] view released"<<std::endl;
+    controller->release();
+    std::cerr<<"[P026] controller released"<<std::endl;
     DestroyWindow(hwnd);
+    std::cerr<<"[P026] Win32 parent destroyed"<<std::endl;
     require(generator.component->setActive(false)==kResultOk,
             "P026 cannot deactivate browsed instrument");
     generator.active=false;
+    std::cerr<<"[P026] generator deactivated"<<std::endl;
     fs::remove_all(base);
+    std::cerr<<"[P026] fixtures removed"<<std::endl;
     CoUninitialize();
+    std::cerr<<"[P026] COM deinitialized"<<std::endl;
     std::cout<<"[PASS] P026 ACTUAL WINDOWS VST3: PREV/NEXT GUI clicks, "
                 "skip corrupt bank, wrap, preserve name/path/fingerprint/PCM\n";
     return 0;
