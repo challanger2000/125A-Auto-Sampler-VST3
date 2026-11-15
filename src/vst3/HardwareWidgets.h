@@ -1,7 +1,7 @@
 #pragma once
 // 125A hardware rendering primitives. Ordinary VSTGUI CKnob interaction is
 // retained; only the faceplate is drawn here. No bitmap files, JUCE or DAW
-// extensions are needed to draw the silver metal dials.
+// extensions are needed to draw the black gloss controls.
 #include "vstgui/lib/controls/cknob.h"
 #include "vstgui/lib/cdrawcontext.h"
 #include "vstgui/lib/cview.h"
@@ -13,9 +13,11 @@
 
 namespace a125ui {
 
-class SilverKnob final : public VSTGUI::CKnob {
+// A sober, black-glass dial with tangible brushed-metal rim.
+// Deliberately retain CKnob's original hit targets, automation and drag law.
+class BlackGlossKnob final : public VSTGUI::CKnob {
 public:
-    explicit SilverKnob(const VSTGUI::CKnob& original)
+    explicit BlackGlossKnob(const VSTGUI::CKnob& original)
         : VSTGUI::CKnob(original.getViewSize(),original.getListener(),
                         original.getTag(),nullptr,nullptr) {
         setMin(original.getMin());
@@ -26,69 +28,68 @@ public:
         setMouseEnabled(original.getMouseEnabled());
         setWheelInc(original.getWheelInc());
     }
-    void draw(VSTGUI::CDrawContext* ctx) override {
-        if(!ctx)return;
-        auto circle=[&](VSTGUI::CRect r,VSTGUI::CColor fill,
-                        VSTGUI::CColor outline,double width=1.) {
-            ctx->setFillColor(fill);
-            ctx->setFrameColor(outline);
-            ctx->setLineWidth(width);
-            ctx->drawEllipse(r,VSTGUI::kDrawFilledAndStroked);
+    void draw(VSTGUI::CDrawContext* dc) override {
+        if(!dc)return;
+        dc->setDrawMode(VSTGUI::kAntiAliasing|VSTGUI::kNonIntegralMode);
+        const auto bounds=getViewSize();
+        const double diameter=std::min(bounds.getWidth(),bounds.getHeight());
+        const auto center=bounds.getCenter();
+        auto ring=[&](double radius,VSTGUI::CColor fill,
+                      VSTGUI::CColor border,double line=1.) {
+            VSTGUI::CRect r(center.x-radius,center.y-radius,
+                            center.x+radius,center.y+radius);
+            dc->setFillColor(fill);
+            dc->setFrameColor(border);
+            dc->setLineWidth(line);
+            dc->drawEllipse(r,VSTGUI::kDrawFilledAndStroked);
         };
-        ctx->setDrawMode(VSTGUI::kAntiAliasing|VSTGUI::kNonIntegralMode);
-        auto r=getViewSize();
-        const auto w=std::min(r.getWidth(),r.getHeight());
-        r.inset((r.getWidth()-w)/2.+2.,(r.getHeight()-w)/2.+2.);
-        circle(r,{17,19,24,255},{91,96,104,255},1.4);
-        r.inset(3.,3.);
-        circle(r,{60,64,71,255},{10,13,16,255},1.);
-        r.inset(2.,2.);
-        circle(r,{192,197,201,255},{240,243,247,255},1.3);
-        r.inset(3.,3.);
-        circle(r,{146,151,157,255},{95,100,108,255},.7);
-        r.inset(3.,3.);
-        circle(r,{193,198,202,255},{102,109,116,255},.8);
-        r.inset(4.,4.);
-        circle(r,{173,180,186,255},{227,230,234,255},.6);
-        // Fine engraved radial scale. Eleven marks use the same arc as
-        // CKnob: the end stops are real 0% / 100%, never decorative.
-        const auto center=getViewSize().getCenter();
-        const auto current=std::clamp(getValueNormalized(),0.f,1.f);
-        for(int mark=0;mark<=10;++mark){
-            const double fraction=static_cast<double>(mark)/10.;
-            const double angle=(-225.+270.*fraction)*
-                               3.14159265358979323846/180.;
-            const double inner=w*(mark%5==0?.387:.409);
-            const double outer=w*.462;
-            const auto x=std::cos(angle);
-            const auto y=std::sin(angle);
-            ctx->setLineWidth(mark%5==0?1.8:1.2);
-            ctx->setFrameColor(fraction<=current?
-                VSTGUI::CColor{229,174,89,255}:
-                VSTGUI::CColor{113,120,130,255});
-            ctx->drawLine({center.x+x*inner,center.y+y*inner},
-                          {center.x+x*outer,center.y+y*outer});
+        // Dark housing, two fine metal edges, then four dark lacquer
+        // layers: no aluminum disks or conspicuous white central spots.
+        const double radius=diameter*.475;
+        ring(radius,     {19,22,28,255},{86,95,103,255},1.35);
+        ring(radius-2.0, {54,62,69,255},{124,132,138,255},.65);
+        ring(radius-4.4, {7,10,15,255}, {14,19,24,255},1.15);
+        ring(radius-7.2, {12,16,23,255},{63,72,81,255},.9);
+        ring(radius-10., {16,23,33,255},{7,10,13,255},.8);
+        // High-gloss upper arc: subtle cold reflection, retained black
+        // faceplate and a short, precise specular rim.
+        dc->setLineWidth(2.4);
+        dc->setFrameColor({112,139,155,255});
+        dc->drawLine({center.x-radius*.58,center.y-radius*.64},
+                     {center.x-radius*.10,center.y-radius*.81});
+        dc->setLineWidth(1.35);
+        dc->setFrameColor({207,227,235,255});
+        dc->drawLine({center.x-radius*.41,center.y-radius*.72},
+                     {center.x-radius*.14,center.y-radius*.78});
+        // Eleven restrained, meaningful 0..100% ticks around the face.
+        const double fraction=std::clamp(
+            static_cast<double>(getValueNormalized()),0.,1.);
+        constexpr double pi=3.14159265358979323846;
+        for(int i=0;i<=10;++i){
+            const double x=static_cast<double>(i)/10.;
+            const double angle=(-225.+270.*x)*pi/180.;
+            const double cx=std::cos(angle),cy=std::sin(angle);
+            const double r0=diameter*(i%5==0?.393:.412);
+            const double r1=diameter*.466;
+            dc->setLineWidth(i%5==0?1.65:.9);
+            dc->setFrameColor(x<=fraction?
+                VSTGUI::CColor{224,167,79,255}:
+                VSTGUI::CColor{104,114,124,255});
+            dc->drawLine({center.x+cx*r0,center.y+cy*r0},
+                         {center.x+cx*r1,center.y+cy*r1});
         }
-        // Highlight is part of the dial, not a painted-on static image.
-        auto spot=r;
-        spot.inset(9.,9.);
-        spot.offset(-2.,-2.);
-        circle(spot,{224,228,233,255},{199,206,211,255},.2);
-        const double angle=(-225.+270.*getValueNormalized())*
-                           3.14159265358979323846/180.;
-        const double radius=w*.27;
-        VSTGUI::CPoint from(center.x+std::cos(angle)*radius*.30,
-                            center.y+std::sin(angle)*radius*.30);
-        VSTGUI::CPoint to(center.x+std::cos(angle)*radius,
-                          center.y+std::sin(angle)*radius);
-        ctx->setLineStyle(VSTGUI::kLineSolid);
-        ctx->setLineWidth(std::max(2.,w*.060));
-        ctx->setFrameColor({35,40,48,255});
-        ctx->drawLine(from,to);
-        from.offset(-.8,-.8);to.offset(-.8,-.8);
-        ctx->setLineWidth(std::max(1.,w*.026));
-        ctx->setFrameColor({245,247,250,255});
-        ctx->drawLine(from,to);
+        // Short amber index on the actual parameter angle; no dummy dial.
+        const double angle=(-225.+270.*fraction)*pi/180.;
+        const double vx=std::cos(angle),vy=std::sin(angle);
+        const double inner=diameter*.16,outer=diameter*.325;
+        dc->setFrameColor({251,192,92,255});
+        dc->setLineWidth(3.);
+        dc->drawLine({center.x+vx*inner,center.y+vy*inner},
+                     {center.x+vx*outer,center.y+vy*outer});
+        dc->setFrameColor({250,221,169,255});
+        dc->setLineWidth(1.);
+        dc->drawLine({center.x+vx*inner,center.y+vy*inner},
+                     {center.x+vx*outer,center.y+vy*outer});
         setDirty(false);
     }
 };
@@ -110,7 +111,10 @@ public:
         setBlackKeyColor(original.getBlackKeyColor());
         setWhiteKeyPressedColor(original.getWhiteKeyPressedColor());
         setBlackKeyPressedColor(original.getBlackKeyPressedColor());
-        setDrawNoteText(original.getDrawNoteText());
+        // Use Steinberg's actual octave labels and MIDI hit-testing.
+        // The default SDK keyboard omits the octave names and looks flat.
+        setDrawNoteText(true);
+        setFontColor({45,52,62,255});
         setMouseEnabled(original.getMouseEnabled());
     }
     void setRoots(const std::array<bool,128>& mask) {
@@ -120,15 +124,62 @@ public:
     }
     void drawRect(VSTGUI::CDrawContext* dc,
                   const VSTGUI::CRect& dirty) override {
+        // The original KeyboardView owns all note hit-testing, hover,
+        // MIDI press state, pressed-key color and labels.
         VSTGUI::KeyboardView::drawRect(dc,dirty);
-        dc->setFillColor({206,170,105,255});
-        for(int note=getKeyRangeStart();
-            note<=getKeyRangeStart()+getNumKeys() && note<128;++note) {
+        dc->setDrawMode(VSTGUI::kAntiAliasing|VSTGUI::kNonIntegralMode);
+        const int first=getKeyRangeStart();
+        const int last=std::min(127,first+getNumKeys());
+        // Delicately beveled white-key fronts (below the black-key area).
+        // These surfaces don't obscure Steinberg's pressed-note colors.
+        for(int note=first;note<=last;++note){
+            if(!isWhiteKey(note))continue;
+            auto r=getNoteRect(static_cast<NoteIndex>(note));
+            if(r.isEmpty() || !dirty.rectOverlap(r))continue;
+            auto lip=r;
+            lip.left+=1.;lip.right-=1.;
+            lip.top=lip.bottom-7.;
+            dc->setFillColor({169,178,187,100});
+            dc->drawRect(lip,VSTGUI::kDrawFilled);
+            lip.top=lip.bottom-4.;
+            dc->setFillColor({225,229,233,190});
+            dc->drawRect(lip,VSTGUI::kDrawFilled);
+            dc->setFrameColor({251,253,255,160});
+            dc->setLineWidth(1.35);
+            dc->drawLine({r.left+2.,r.bottom-18.},
+                         {r.left+2.,r.bottom-7.});
+        }
+        // Lacquered black keycaps with narrow specular reflections. All
+        // highlights are clipped by each key's actual geometry.
+        for(int note=first;note<=last;++note){
+            if(isWhiteKey(note))continue;
+            auto r=getNoteRect(static_cast<NoteIndex>(note));
+            if(r.isEmpty() || !dirty.rectOverlap(r))continue;
+            auto shine=r;
+            shine.inset(2.5,2.5);
+            shine.bottom=shine.top+8.;
+            dc->setFillColor({56,66,76,255});
+            dc->drawRect(shine,VSTGUI::kDrawFilled);
+            shine.top+=1.5;shine.bottom=shine.top+2.;
+            dc->setFillColor({102,118,130,255});
+            dc->drawRect(shine,VSTGUI::kDrawFilled);
+            dc->setFrameColor({169,186,197,255});
+            dc->setLineWidth(1.0);
+            dc->drawLine({r.left+3.,r.top+5.},
+                         {r.left+3.,r.bottom-12.});
+            dc->setFrameColor({5,8,12,255});
+            dc->drawLine({r.left+1.5,r.bottom-2.},
+                         {r.right-1.5,r.bottom-2.});
+        }
+        // Index marks signal real sampled roots; never show a fake light.
+        dc->setFillColor({225,168,71,255});
+        for(int note=first;note<=last;++note){
             if(!roots_[static_cast<std::size_t>(note)])continue;
-            auto rect=getNoteRect(static_cast<NoteIndex>(note));
-            if(rect.isEmpty() || !dirty.rectOverlap(rect))continue;
-            rect.top+=1.;rect.bottom=rect.top+4.;
-            dc->drawRect(rect,VSTGUI::kDrawFilled);
+            auto r=getNoteRect(static_cast<NoteIndex>(note));
+            if(r.isEmpty() || !dirty.rectOverlap(r))continue;
+            r.top+=1.;r.bottom=r.top+4.;
+            r.left+=1.5;r.right-=1.5;
+            dc->drawRect(r,VSTGUI::kDrawFilled);
         }
     }
 private:
