@@ -2158,6 +2158,9 @@ int runInstrumentBrowse(const char* vst3path){
     }
     const auto pad=makeArchive("04_Pad.125A","PAD BANK",.7f);
     std::cerr<<"[P026] fixtures ready"<<std::endl;
+    // Destroy all VST3/COM-owned objects before deleting their source files
+    // or uninitializing the Windows COM apartment.
+    {
     std::string error;
     auto module=Module::create(vst3path,error);
     require(bool(module),"P026 real VST3 module missing");
@@ -2345,6 +2348,9 @@ int runInstrumentBrowse(const char* vst3path){
             "P026 cannot deactivate browsed instrument");
     generator.active=false;
     std::cerr<<"[P026] generator deactivated"<<std::endl;
+    std::cerr<<"[P026] starting VST3 instance/module teardown"<<std::endl;
+    } // all plugin interfaces and module are now terminated/unloaded
+    std::cerr<<"[P026] VST3 instance/module teardown complete"<<std::endl;
     fs::remove_all(base);
     std::cerr<<"[P026] fixtures removed"<<std::endl;
     CoUninitialize();
