@@ -80,7 +80,7 @@ jobs:
             }
           }
           $required = @("SAMPLER: EMPTY","STATUS: READY","BANK: -- / --",
-                        "OUTPUT: DEFAULT","NOTES 36 - 84","INSTRUMENT NAME")
+                        "OUTPUT: DEFAULT","NOTES C1 - C5","INSTRUMENT NAME")
           foreach ($title in $required) {
             if (@($views | Where-Object { $_.title -eq $title }).Count -ne 1) {
               throw "P027 missing live GUI label/control: $title"
@@ -99,6 +99,25 @@ jobs:
           }
           $dummy = @($views | Where-Object { $_.title -match '(?i)pitchbend|pitch bend|modwheel|mod wheel|presets|settings' })
           if ($dummy.Count -ne 0) { throw "P027 a nonfunctional wheel/menu mockup was added" }
+          # P028: visual equality matters: the real INSTRUMENT edit must
+          # share the SAMPLE action's top edge and exact control height.
+          $instrument = @($views | Where-Object { $_.title -eq "INSTRUMENT NAME" })
+          $sample = @($views | Where-Object { $_.title -eq "SAMPLE" })
+          if ($instrument.Count -ne 1 -or $sample.Count -ne 1) {
+            throw "P028 cannot locate instrument/sample header controls"
+          }
+          $iTop = [int](($instrument[0].origin -split ',')[1])
+          $sTop = [int](($sample[0].origin -split ',')[1])
+          $iHeight = [int](($instrument[0].size -split ',')[1])
+          $sHeight = [int](($sample[0].size -split ',')[1])
+          if ($iTop -ne $sTop -or $iHeight -ne $sHeight) {
+            throw "P028 INSTRUMENT and SAMPLE input/action not aligned"
+          }
+          $keys = @($views | Where-Object { $_.class -eq "KeyboardView" })
+          if ($keys.Count -ne 1 -or $keys[0].'draw-note-text' -ne "true") {
+            throw "P028 playable keyboard must display actual octave labels"
+          }
+          Write-Host "P028 alignment: INSTRUMENT + SAMPLE y=$iTop h=$iHeight; Steinberg keyboard with octave names: PASS"
           Write-Host "P027 hardware GUI: 19 bound parameters, 5 uniform control families, full editor bounds, no fake wheels/menus: PASS"
           Write-Host "P021 VSTGUI: 19 parameters, hardware keyboard, branded recorder status, valid packaged XML: PASS"
       - name: Official VST3 validator
