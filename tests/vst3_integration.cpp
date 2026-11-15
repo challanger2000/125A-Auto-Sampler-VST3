@@ -7,6 +7,7 @@
 #include <ole2.h>
 #include "base/source/fobject.h"
 #include "pluginterfaces/gui/iplugview.h"
+#include "pluginterfaces/base/ustring.h"
 #include "core/InstrumentArchive.h"
 #include "pluginterfaces/vst/ivsteditcontroller.h"
 #include "public.sdk/source/vst/hosting/module.h"
@@ -2277,6 +2278,34 @@ int runInstrumentBrowse(const char* vst3path){
     require(generator.component->queryInterface(IEditController::iid,
         reinterpret_cast<void**>(&controller))==kResultOk && controller,
         "P026 actual VST3 IEditController missing");
+    // P028: query the real shipping VST3 parameter API, not a
+    // separately mocked MIDI-to-note-name formatter.
+    Steinberg::String128 noteDisplay{};
+    require(controller->getParamStringByValue(1001,60./127.,noteDisplay)
+                ==kResultTrue,
+            "P028 actual VST3 MIDI note label formatting failed");
+    char noteAscii[128]{};
+    Steinberg::UString(noteDisplay,128).toAscii(noteAscii,128);
+    require(std::string_view(noteAscii)=="C3",
+            "P028 actual VST3 shows MIDI 60 instead of C3");
+    Steinberg::String128 enteredNote{};
+    Steinberg::UString(enteredNote,128).fromAscii("F#3");
+    Steinberg::Vst::ParamValue parsed=0.;
+    require(controller->getParamValueByString(1001,enteredNote,parsed)
+                ==kResultTrue &&
+            std::abs(parsed-66./127.)<1.e-9,
+            "P028 actual VST3 C# note input must parse musical notation");
+    Steinberg::UString(enteredNote,128).fromAscii("60");
+    require(controller->getParamValueByString(1002,enteredNote,parsed)
+                ==kResultTrue &&
+            std::abs(parsed-60./127.)<1.e-9,
+            "P028 actual VST3 must accept legacy numeric MIDI note entry");
+    Steinberg::UString(enteredNote,128).fromAscii("C9");
+    require(controller->getParamValueByString(1001,enteredNote,parsed)
+                ==kResultFalse,
+            "P028 actual VST3 must reject an invalid octave");
+    std::cout<<"[PASS] P028 ACTUAL VST3 C3 notation, F#3 entry, numeric "
+                "compatibility and invalid-octave rejection\n";
     IPlugView* view=controller->createView(ViewType::kEditor);
     require(view!=nullptr,"P026 VSTGUI editor missing");
     ViewRect rect{};
