@@ -9,6 +9,7 @@
 #include "core/SfzBank.h"
 #include "core/BuiltInSampler.h"
 #include "core/InstrumentArchive.h"
+#include "core/InstrumentBrowser.h"
 #include "core/CompletedBank.h"
 #include "core/RunStatus.h"
 #include <array>
@@ -624,6 +625,46 @@ void testA06WindowsReportPublicationFaults() {
     }catch(...){fs::remove_all(root);throw;}
     fs::remove_all(root);
 #endif
+}
+
+void testP026InstrumentBrowser(){
+    namespace fs=std::filesystem;
+    const auto dir=fs::temp_directory_path()/"125a_p026_archive_browse";
+    fs::remove_all(dir);
+    fs::create_directories(dir/"Sub");
+    try{
+        const auto bass=dir/"01_Bass.125A";
+        const auto lead=dir/"02_Lead.125A";
+        const auto pad=dir/"03_Pad.125A";
+        for(const auto& filename:{bass,lead,pad,dir/"Wrong.zip",
+                                 dir/"Sub"/"Nested.125A"}){
+            std::ofstream out(filename,std::ios::binary);
+            require(bool(out),"P026 cannot build archive sibling fixture");
+            out<<"fixture";
+        }
+        fs::create_directory(dir/"04_Folder.125A");
+        const auto siblings=a125::listInstrumentNeighbors(lead);
+        require(siblings.found && siblings.paths.size()==3 &&
+                siblings.current==1 && siblings.paths[0]==bass &&
+                siblings.paths[1]==lead && siblings.paths[2]==pad,
+                "P026 must enumerate only immediate .125A files in sorted order");
+        const auto forward=a125::instrumentBrowseOrder(siblings,+1);
+        const auto backward=a125::instrumentBrowseOrder(siblings,-1);
+        require(forward.size()==2 && forward[0]==pad && forward[1]==bass &&
+                backward.size()==2 && backward[0]==bass &&
+                backward[1]==pad,
+                "P026 PREV/NEXT must wrap without returning active bank");
+        require(!a125::listInstrumentNeighbors(lead,2).found,
+                "P026 bounded inventory may not present truncated bank list");
+        require(!a125::listInstrumentNeighbors(dir/"Absent.125A").found,
+                "P026 missing active instrument may not navigate unrelated ZIPs");
+        require(!a125::listInstrumentNeighbors(dir/"Wrong.zip").found &&
+                !a125::listInstrumentNeighbors({}).found,
+                "P026 browse refuses non-archive/empty selection");
+        std::cout<<"[PASS] P026 local .125A inventory, bounded scan, "
+                    "sorted/wrapped PREV/NEXT and missing-file safeguards\n";
+    }catch(...){fs::remove_all(dir);throw;}
+    fs::remove_all(dir);
 }
 
 void testP017PortableArchive() {
@@ -1396,6 +1437,7 @@ int main() {
         testP016NormalizePolyphonicHeadroom();
         testA06WindowsWavExclusivePublish();
         testA06WindowsReportPublicationFaults();
+        testP026InstrumentBrowser();
         testP017PortableArchive();
         testSfzKeyboardBank();
         testAutomaticBatch48Wavs();
