@@ -104,6 +104,21 @@ inline void writeWav24Stream(std::ostream& out,std::uint32_t sampleRate,
     out.flush();
     if(!out)throw std::runtime_error("WAV write/flush failed");
 }
+// Publish fully closed worker outputs without replacing any existing file.
+// On Windows, MoveFileExW without REPLACE_EXISTING is the atomic OS gate.
+// The caller removes its private temporary file if this returns false.
+inline bool publishFileExclusive(const std::filesystem::path& prepared,
+                                 const std::filesystem::path& destination) noexcept {
+#ifdef _WIN32
+    return MoveFileExW(prepared.c_str(),destination.c_str(),
+                       MOVEFILE_WRITE_THROUGH)!=0;
+#else
+    std::error_code ec;
+    if(std::filesystem::exists(destination,ec) || ec)return false;
+    std::filesystem::rename(prepared,destination,ec);
+    return !ec;
+#endif
+}
 // Must be called on a worker thread, NEVER the VST3 process() audio callback.
 inline void writeWav24(const std::string& path, std::uint32_t sampleRate,
                        std::span<const StereoFrame> audio) {
@@ -131,15 +146,8 @@ inline void writeWav24(const std::string& path, std::uint32_t sampleRate,
         const auto expected=44ull+static_cast<std::uint64_t>(audio.size())*6ull;
         if(fs::file_size(partial)!=expected)
             throw std::runtime_error("WAV final length mismatch");
-#ifdef _WIN32
-        // No REPLACE_EXISTING: unlike fs::rename, MoveFileExW rejects
-        // an output that appeared after the initial preflight.
-        if(!MoveFileExW(partial.c_str(),destination.c_str(),MOVEFILE_WRITE_THROUGH))
+        if(!publishFileExclusive(partial,destination))
             throw std::runtime_error("WAV atomic exclusive publish failed");
-#else
-        if(fs::exists(destination))throw std::runtime_error("WAV destination appeared");
-        fs::rename(partial,destination);
-#endif
         std::error_code ec;
         fs::remove(stageDir,ec);
     }catch(...){
