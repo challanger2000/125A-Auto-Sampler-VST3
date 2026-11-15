@@ -2021,15 +2021,39 @@ private:
             const bool reportFlushed=static_cast<bool>(report);
             report.close();
             const bool reportClosed=reportFlushed && static_cast<bool>(report);
-            if(!reportClosed){
-                // A failed final report flush/close invalidates the capture;
-                // never publish its archived bank, even if its WAVs exist.
+            // A06: a run report only becomes visible under its final name
+            // after ALL contents have been flushed and the file closed.
+            // Bank readiness is contingent on the SAME publication result.
+            bool reportPublished=false;
+            const auto stagedReport=dir/"RUN-REPORT.csv.partial";
+            if(reportClosed){
+                try {
+                    const auto finalReport=dir/"RUN-REPORT.csv";
+#ifdef _WIN32
+                    // Atomic, exclusive rename: never overwrite a competing
+                    // final report if a Windows directory was interfered with.
+                    reportPublished=MoveFileExW(
+                        stagedReport.c_str(),finalReport.c_str(),
+                        MOVEFILE_WRITE_THROUGH)!=0;
+#else
+                    if(!std::filesystem::exists(finalReport)){
+                        std::filesystem::rename(stagedReport,finalReport);
+                        reportPublished=true;
+                    }
+#endif
+                }catch(const std::exception&){
+                    // Treat rename failure like a failed report flush/close.
+                }
+            }
+            if(!reportPublished){
                 ++runErrors;
                 session().errors.fetch_add(1,std::memory_order_relaxed);
                 if(completedArchive){
                     std::error_code error;
                     std::filesystem::remove(*completedArchive,error);
                 }
+                std::error_code cleanup;
+                std::filesystem::remove(stagedReport,cleanup);
             }else if(completedArchive){
                 // Only a still-live capture owner may receive the complete
                 // bank. In particular no publication from the previous DAW.
@@ -2094,7 +2118,8 @@ private:
                     }
                 }
                 if(!haveRun) throw std::runtime_error("cannot create unique run folder");
-                report.open(dir/"RUN-REPORT.csv",std::ios::binary|std::ios::trunc);
+                // A06: incomplete CSV is never exposed as the final report.
+                report.open(dir/"RUN-REPORT.csv.partial",std::ios::binary|std::ios::trunc);
                 if(!report) throw std::runtime_error("cannot create run report");
                 report << "take,note,velocity,rr,result,frames\n";
                 report.flush();
@@ -2103,6 +2128,10 @@ private:
                 ++runErrors;
                 session().errors.fetch_add(1,std::memory_order_relaxed);
                 report.close();
+                if(!dir.empty()){
+                    std::error_code cleanup;
+                    std::filesystem::remove(dir/"RUN-REPORT.csv.partial",cleanup);
+                }
                 haveRun=false;
             }
         };
