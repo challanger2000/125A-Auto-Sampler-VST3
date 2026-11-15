@@ -1,0 +1,147 @@
+﻿2026-11-15T00:17:15.3840782Z Current runner version: '2.338.2'
+2026-11-15T00:17:15.3865513Z ##[group]Runner Image Provisioner
+2026-11-15T00:17:15.3866379Z Hosted Compute Agent
+2026-11-15T00:17:15.3866917Z Version: 20261103.629
+2026-11-15T00:17:15.3867470Z Commit: 15dbd9ccb5dbf34fae002b6ed1a2670f52df37bc
+2026-11-15T00:17:15.3868168Z Build Date: 2026-11-03T17:26:59Z
+2026-11-15T00:17:15.3868762Z Worker ID: {ec08bc54-c67c-4b8e-8a6e-6ece378a6c27}
+2026-11-15T00:17:15.3869400Z Region: westcentralus
+2026-11-15T00:17:15.3869898Z Cloud: Azure
+2026-11-15T00:17:15.3870372Z ##[endgroup]
+2026-11-15T00:17:15.3871665Z ##[group]Operating System
+2026-11-15T00:17:15.3872259Z Microsoft Windows Server 2022
+2026-11-15T00:17:15.3872826Z 10.0.20348
+2026-11-15T00:17:15.3873302Z Datacenter
+2026-11-15T00:17:15.3873752Z ##[endgroup]
+2026-11-15T00:17:15.3874253Z ##[group]Runner Image
+2026-11-15T00:17:15.3874754Z Image: windows-2022
+2026-11-15T00:17:15.3875237Z Version: 20261112.366.7
+2026-11-15T00:17:15.3876561Z Included Software: https://github.com/actions/runner-images/blob/win22/20261112.366/images/windows/Windows2022-Readme.md
+2026-11-15T00:17:15.3877994Z Image Release: https://github.com/actions/runner-images/releases/tag/win22%2F20261112.366
+2026-11-15T00:17:15.3878885Z ##[endgroup]
+2026-11-15T00:17:15.3879954Z ##[group]GITHUB_TOKEN Permissions
+2026-11-15T00:17:15.3881749Z Contents: read
+2026-11-15T00:17:15.3882297Z Metadata: read
+2026-11-15T00:17:15.3882790Z Packages: read
+2026-11-15T00:17:15.3883286Z ##[endgroup]
+2026-11-15T00:17:15.3885296Z Secret source: Actions
+2026-11-15T00:17:15.3886133Z Cache mode: write
+2026-11-15T00:17:15.3886804Z Prepare workflow directory
+2026-11-15T00:17:15.4256174Z Prepare all required actions
+2026-11-15T00:17:15.4325438Z Getting action download info
+2026-11-15T00:17:15.7494008Z Download action repository 'actions/checkout@v4' (SHA:11d5960a326750d5838078e36cf38b85af677262)
+2026-11-15T00:17:16.0207022Z Complete job name: windows-core
+2026-11-15T00:17:16.2366649Z ##[group]Run actions/checkout@v4
+2026-11-15T00:17:16.2367743Z with:
+2026-11-15T00:17:16.2368218Z   repository: challanger2000/125A-Auto-Sampler-VST3
+2026-11-15T00:17:16.2372191Z   token: ***
+2026-11-15T00:17:16.2372590Z   ssh-strict: true
+2026-11-15T00:17:16.2372986Z   ssh-user: git
+2026-11-15T00:17:16.2373391Z   persist-credentials: true
+2026-11-15T00:17:16.2373839Z   clean: true
+2026-11-15T00:17:16.2374241Z   sparse-checkout-cone-mode: true
+2026-11-15T00:17:16.2374720Z   fetch-depth: 1
+2026-11-15T00:17:16.2375104Z   fetch-tags: false
+2026-11-15T00:17:16.2375508Z   show-progress: true
+2026-11-15T00:17:16.2375909Z   lfs: false
+2026-11-15T00:17:16.2376279Z   submodules: false
+2026-11-15T00:17:16.2376693Z   set-safe-directory: true
+2026-11-15T00:17:16.2377162Z   allow-unsafe-pr-checkout: false
+2026-11-15T00:17:16.2377853Z ##[endgroup]
+2026-11-15T00:17:16.3865998Z Syncing repository: challanger2000/125A-Auto-Sampler-VST3
+2026-11-15T00:17:16.3867817Z ##[group]Getting Git version info
+2026-11-15T00:17:16.3868577Z Working directory is 'D:\a\125A-Auto-Sampler-VST3\125A-Auto-Sampler-VST3'
+2026-11-15T00:17:16.5130763Z [command]"C:\Program Files\Git\bin\git.exe" version
+2026-11-15T00:17:16.9623108Z git version 2.56.1.windows.1
+2026-11-15T00:17:16.9669117Z ##[endgroup]
+2026-11-15T00:17:16.9690692Z Temporarily overriding HOME='D:\a\_temp\412fddc7-2678-4bb9-a98e-68d97eaeccb8' before making global git config changes
+2026-11-15T00:17:16.9693131Z Adding repository directory to the temporary git global config as a safe directory
+2026-11-15T00:17:16.9702440Z [command]"C:\Program Files\Git\bin\git.exe" config --global --add safe.directory D:\a\125A-Auto-Sampler-VST3\125A-Auto-Sampler-VST3
+2026-11-15T00:17:17.0475921Z Deleting the contents of 'D:\a\125A-Auto-Sampler-VST3\125A-Auto-Sampler-VST3'
+2026-11-15T00:17:17.0480906Z ##[group]Initializing the repository
+2026-11-15T00:17:17.0490187Z [command]"C:\Program Files\Git\bin\git.exe" init D:\a\125A-Auto-Sampler-VST3\125A-Auto-Sampler-VST3
+2026-11-15T00:17:17.1608505Z Initialized empty Git repository in D:/a/125A-Auto-Sampler-VST3/125A-Auto-Sampler-VST3/.git/
+2026-11-15T00:17:17.1647132Z [command]"C:\Program Files\Git\bin\git.exe" remote add origin https://github.com/challanger2000/125A-Auto-Sampler-VST3
+2026-11-15T00:17:17.2451307Z ##[endgroup]
+2026-11-15T00:17:17.2452335Z ##[group]Disabling automatic garbage collection
+2026-11-15T00:17:17.2459335Z [command]"C:\Program Files\Git\bin\git.exe" config --local gc.auto 0
+2026-11-15T00:17:17.2748784Z ##[endgroup]
+2026-11-15T00:17:17.2749722Z ##[group]Setting up auth
+2026-11-15T00:17:17.2760865Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp core\.sshCommand
+2026-11-15T00:17:17.3071961Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :\""
+2026-11-15T00:17:18.9580288Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-11-15T00:17:18.9881018Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :\""
+2026-11-15T00:17:19.4727130Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-11-15T00:17:19.5028969Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "git config --local --show-origin --name-only --get-regexp remote.origin.url"
+2026-11-15T00:17:19.9939479Z [command]"C:\Program Files\Git\bin\git.exe" config --local http.https://github.com/.extraheader "AUTHORIZATION: basic ***"
+2026-11-15T00:17:20.0263214Z ##[endgroup]
+2026-11-15T00:17:20.0264150Z ##[group]Fetching the repository
+2026-11-15T00:17:20.0279104Z [command]"C:\Program Files\Git\bin\git.exe" -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +39b8582b818bc74325b1fb97a7de20125530d746:refs/remotes/origin/develop/p001-autosampler-foundation
+2026-11-15T00:17:21.4523593Z From https://github.com/challanger2000/125A-Auto-Sampler-VST3
+2026-11-15T00:17:21.4524786Z  * [new ref]         39b8582b818bc74325b1fb97a7de20125530d746 -> origin/develop/p001-autosampler-foundation
+2026-11-15T00:17:21.4554755Z ##[endgroup]
+2026-11-15T00:17:21.4555395Z ##[group]Determining the checkout info
+2026-11-15T00:17:21.4557891Z ##[endgroup]
+2026-11-15T00:17:21.4567042Z [command]"C:\Program Files\Git\bin\git.exe" sparse-checkout disable
+2026-11-15T00:17:21.5022930Z [command]"C:\Program Files\Git\bin\git.exe" config --local --unset-all extensions.worktreeConfig
+2026-11-15T00:17:21.5333525Z ##[group]Checking out the ref
+2026-11-15T00:17:21.5342172Z [command]"C:\Program Files\Git\bin\git.exe" checkout --progress --force -B develop/p001-autosampler-foundation refs/remotes/origin/develop/p001-autosampler-foundation
+2026-11-15T00:17:21.6173835Z Switched to a new branch 'develop/p001-autosampler-foundation'
+2026-11-15T00:17:21.6193255Z branch 'develop/p001-autosampler-foundation' set up to track 'origin/develop/p001-autosampler-foundation'.
+2026-11-15T00:17:21.6234743Z ##[endgroup]
+2026-11-15T00:17:21.6698488Z [command]"C:\Program Files\Git\bin\git.exe" log -1 --format=%H
+2026-11-15T00:17:21.6975129Z 39b8582b818bc74325b1fb97a7de20125530d746
+2026-11-15T00:17:21.7343447Z ##[group]Run cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DBUILD_TESTING=ON
+2026-11-15T00:17:21.7344182Z [36;1mcmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DBUILD_TESTING=ON[0m
+2026-11-15T00:17:21.7456700Z shell: C:\Program Files\PowerShell\7\pwsh.EXE -command ". '{0}'"
+2026-11-15T00:17:21.7457081Z ##[endgroup]
+2026-11-15T00:17:23.3207740Z -- Selecting Windows SDK version 10.0.26100.0 to target Windows 10.0.20348.
+2026-11-15T00:17:36.4533385Z -- The CXX compiler identification is MSVC 19.44.35230.0
+2026-11-15T00:17:36.6329022Z -- Detecting CXX compiler ABI info
+2026-11-15T00:17:37.8263708Z -- Detecting CXX compiler ABI info - done
+2026-11-15T00:17:37.8441957Z -- Check for working CXX compiler: C:/Program Files/Microsoft Visual Studio/2022/Enterprise/VC/Tools/MSVC/14.44.35207/bin/Hostx64/x64/cl.exe - skipped
+2026-11-15T00:17:37.8456787Z -- Detecting CXX compile features
+2026-11-15T00:17:37.8470655Z -- Detecting CXX compile features - done
+2026-11-15T00:17:38.1438626Z -- Configuring done (15.3s)
+2026-11-15T00:17:38.1785193Z -- Generating done (0.0s)
+2026-11-15T00:17:38.1792176Z -- Build files have been written to: D:/a/125A-Auto-Sampler-VST3/125A-Auto-Sampler-VST3/build
+2026-11-15T00:17:38.2949492Z ##[group]Run cmake --build build --config Release --parallel
+2026-11-15T00:17:38.2950011Z [36;1mcmake --build build --config Release --parallel[0m
+2026-11-15T00:17:38.2998877Z shell: C:\Program Files\PowerShell\7\pwsh.EXE -command ". '{0}'"
+2026-11-15T00:17:38.2999237Z ##[endgroup]
+2026-11-15T00:17:38.6149034Z MSBuild version 17.14.60+43b635718 for .NET Framework
+2026-11-15T00:17:38.6492788Z 
+2026-11-15T00:17:39.0741804Z   1>Checking Build System
+2026-11-15T00:17:39.2105030Z   Building Custom Rule D:/a/125A-Auto-Sampler-VST3/125A-Auto-Sampler-VST3/CMakeLists.txt
+2026-11-15T00:17:39.3935785Z   core_tests.cpp
+2026-11-15T00:17:50.4505272Z   autosampler_core_tests.vcxproj -> D:\a\125A-Auto-Sampler-VST3\125A-Auto-Sampler-VST3\build\Release\autosampler_core_tests.exe
+2026-11-15T00:17:50.5010680Z   Building Custom Rule D:/a/125A-Auto-Sampler-VST3/125A-Auto-Sampler-VST3/CMakeLists.txt
+2026-11-15T00:17:50.6655412Z ##[group]Run ctest --test-dir build -C Release --output-on-failure
+2026-11-15T00:17:50.6655953Z [36;1mctest --test-dir build -C Release --output-on-failure[0m
+2026-11-15T00:17:50.6694190Z shell: C:\Program Files\PowerShell\7\pwsh.EXE -command ". '{0}'"
+2026-11-15T00:17:50.6694535Z ##[endgroup]
+2026-11-15T00:17:51.4823304Z Internal ctest changing into directory: D:/a/125A-Auto-Sampler-VST3/125A-Auto-Sampler-VST3/build
+2026-11-15T00:17:51.6020347Z Test project D:/a/125A-Auto-Sampler-VST3/125A-Auto-Sampler-VST3/build
+2026-11-15T00:17:51.6631363Z     Start 1: autosampler_core_tests
+2026-11-15T00:17:52.8721077Z 1/1 Test #1: autosampler_core_tests ...........   Passed    1.21 sec
+2026-11-15T00:17:52.8787866Z 
+2026-11-15T00:17:52.8788287Z 100% tests passed, 0 tests failed out of 1
+2026-11-15T00:17:52.8788676Z 
+2026-11-15T00:17:52.8788845Z Total Test time (real) =   1.28 sec
+2026-11-15T00:17:53.0363971Z Post job cleanup.
+2026-11-15T00:17:53.2144136Z [command]"C:\Program Files\Git\bin\git.exe" version
+2026-11-15T00:17:53.2451842Z git version 2.56.1.windows.1
+2026-11-15T00:17:53.2530894Z Temporarily overriding HOME='D:\a\_temp\4ecdb4ab-2a7b-40dd-88c3-75c2dd035f52' before making global git config changes
+2026-11-15T00:17:53.2532163Z Adding repository directory to the temporary git global config as a safe directory
+2026-11-15T00:17:53.2543782Z [command]"C:\Program Files\Git\bin\git.exe" config --global --add safe.directory D:\a\125A-Auto-Sampler-VST3\125A-Auto-Sampler-VST3
+2026-11-15T00:17:53.2876981Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp core\.sshCommand
+2026-11-15T00:17:53.3190099Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :\""
+2026-11-15T00:17:53.7509919Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-11-15T00:17:53.7763380Z http.https://github.com/.extraheader
+2026-11-15T00:17:53.7795649Z [command]"C:\Program Files\Git\bin\git.exe" config --local --unset-all http.https://github.com/.extraheader
+2026-11-15T00:17:53.8100253Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :\""
+2026-11-15T00:17:54.2834828Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-11-15T00:17:54.3114494Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "git config --local --show-origin --name-only --get-regexp remote.origin.url"
+2026-11-15T00:17:54.8307455Z Cleaning up orphan processes
+2026-11-15T00:17:54.8535842Z Terminate orphan process: pid (4580) (vctip)
+2026-11-15T00:17:54.8625620Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/

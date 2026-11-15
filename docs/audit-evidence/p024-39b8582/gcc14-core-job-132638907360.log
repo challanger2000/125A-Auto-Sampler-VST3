@@ -1,0 +1,194 @@
+﻿2026-11-15T00:17:11.9691334Z Current runner version: '2.338.2'
+2026-11-15T00:17:11.9719146Z ##[group]Runner Image Provisioner
+2026-11-15T00:17:11.9720479Z Hosted Compute Agent
+2026-11-15T00:17:11.9721444Z Version: 20261103.629
+2026-11-15T00:17:11.9722533Z Commit: 15dbd9ccb5dbf34fae002b6ed1a2670f52df37bc
+2026-11-15T00:17:11.9723922Z Build Date: 2026-11-03T17:26:59Z
+2026-11-15T00:17:11.9725089Z Worker ID: {7604e81b-2359-4cfb-9e1c-e146b645f207}
+2026-11-15T00:17:11.9726178Z Region: westus
+2026-11-15T00:17:11.9727033Z Cloud: Azure
+2026-11-15T00:17:11.9727890Z ##[endgroup]
+2026-11-15T00:17:11.9729884Z ##[group]Operating System
+2026-11-15T00:17:11.9730995Z Ubuntu
+2026-11-15T00:17:11.9731783Z 24.04.5
+2026-11-15T00:17:11.9732605Z LTS
+2026-11-15T00:17:11.9733699Z ##[endgroup]
+2026-11-15T00:17:11.9734569Z ##[group]Runner Image
+2026-11-15T00:17:11.9735582Z Image: ubuntu-24.04
+2026-11-15T00:17:11.9736454Z Version: 20261111.370.1
+2026-11-15T00:17:11.9738466Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20261111.370/images/ubuntu/Ubuntu2404-Readme.md
+2026-11-15T00:17:11.9740921Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20261111.370
+2026-11-15T00:17:11.9742401Z ##[endgroup]
+2026-11-15T00:17:11.9743997Z ##[group]GITHUB_TOKEN Permissions
+2026-11-15T00:17:11.9746348Z Contents: read
+2026-11-15T00:17:11.9746984Z Metadata: read
+2026-11-15T00:17:11.9747538Z Packages: read
+2026-11-15T00:17:11.9748243Z ##[endgroup]
+2026-11-15T00:17:11.9750276Z Secret source: Actions
+2026-11-15T00:17:11.9751762Z Cache mode: write
+2026-11-15T00:17:11.9752464Z Prepare workflow directory
+2026-11-15T00:17:12.0441363Z Prepare all required actions
+2026-11-15T00:17:12.0490251Z Getting action download info
+2026-11-15T00:17:12.3792261Z Download action repository 'actions/checkout@v4' (SHA:11d5960a326750d5838078e36cf38b85af677262)
+2026-11-15T00:17:12.5988820Z Complete job name: gcc14-core
+2026-11-15T00:17:12.7042053Z ##[group]Run actions/checkout@v4
+2026-11-15T00:17:12.7042991Z with:
+2026-11-15T00:17:12.7043867Z   repository: challanger2000/125A-Auto-Sampler-VST3
+2026-11-15T00:17:12.7049171Z   token: ***
+2026-11-15T00:17:12.7049659Z   ssh-strict: true
+2026-11-15T00:17:12.7050107Z   ssh-user: git
+2026-11-15T00:17:12.7050562Z   persist-credentials: true
+2026-11-15T00:17:12.7051072Z   clean: true
+2026-11-15T00:17:12.7051526Z   sparse-checkout-cone-mode: true
+2026-11-15T00:17:12.7052171Z   fetch-depth: 1
+2026-11-15T00:17:12.7052612Z   fetch-tags: false
+2026-11-15T00:17:12.7053065Z   show-progress: true
+2026-11-15T00:17:12.7053826Z   lfs: false
+2026-11-15T00:17:12.7054255Z   submodules: false
+2026-11-15T00:17:12.7054723Z   set-safe-directory: true
+2026-11-15T00:17:12.7055239Z   allow-unsafe-pr-checkout: false
+2026-11-15T00:17:12.7056165Z ##[endgroup]
+2026-11-15T00:17:13.1770937Z Syncing repository: challanger2000/125A-Auto-Sampler-VST3
+2026-11-15T00:17:13.1774375Z ##[group]Getting Git version info
+2026-11-15T00:17:13.1775953Z Working directory is '/home/runner/work/125A-Auto-Sampler-VST3/125A-Auto-Sampler-VST3'
+2026-11-15T00:17:13.1778071Z [command]/usr/bin/git version
+2026-11-15T00:17:13.1864207Z git version 2.56.1
+2026-11-15T00:17:13.1895203Z ##[endgroup]
+2026-11-15T00:17:13.1906312Z Temporarily overriding HOME='/home/runner/work/_temp/f7c3f3b5-7808-463e-a07f-6f031b8fa858' before making global git config changes
+2026-11-15T00:17:13.1908777Z Adding repository directory to the temporary git global config as a safe directory
+2026-11-15T00:17:13.1911970Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/125A-Auto-Sampler-VST3/125A-Auto-Sampler-VST3
+2026-11-15T00:17:13.1966942Z Deleting the contents of '/home/runner/work/125A-Auto-Sampler-VST3/125A-Auto-Sampler-VST3'
+2026-11-15T00:17:13.1971858Z ##[group]Initializing the repository
+2026-11-15T00:17:13.1976507Z [command]/usr/bin/git init /home/runner/work/125A-Auto-Sampler-VST3/125A-Auto-Sampler-VST3
+2026-11-15T00:17:13.2384933Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-11-15T00:17:13.2386653Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-11-15T00:17:13.2388505Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-11-15T00:17:13.2389684Z hint: call:
+2026-11-15T00:17:13.2390320Z hint:
+2026-11-15T00:17:13.2391150Z hint: 	git config --global init.defaultBranch <name>
+2026-11-15T00:17:13.2392118Z hint:
+2026-11-15T00:17:13.2393027Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-11-15T00:17:13.2394785Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-11-15T00:17:13.2396011Z hint:
+2026-11-15T00:17:13.2396652Z hint: 	git branch -m <name>
+2026-11-15T00:17:13.2397386Z hint:
+2026-11-15T00:17:13.2398369Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-11-15T00:17:13.2400310Z Initialized empty Git repository in /home/runner/work/125A-Auto-Sampler-VST3/125A-Auto-Sampler-VST3/.git/
+2026-11-15T00:17:13.2405997Z [command]/usr/bin/git remote add origin https://github.com/challanger2000/125A-Auto-Sampler-VST3
+2026-11-15T00:17:13.2488840Z ##[endgroup]
+2026-11-15T00:17:13.2490286Z ##[group]Disabling automatic garbage collection
+2026-11-15T00:17:13.2493503Z [command]/usr/bin/git config --local gc.auto 0
+2026-11-15T00:17:13.2535598Z ##[endgroup]
+2026-11-15T00:17:13.2536835Z ##[group]Setting up auth
+2026-11-15T00:17:13.2542824Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-11-15T00:17:13.2588658Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-11-15T00:17:13.3057258Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-11-15T00:17:13.3102134Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-11-15T00:17:13.3350211Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-11-15T00:17:13.3396046Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-11-15T00:17:13.3658339Z [command]/usr/bin/git config --local http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-11-15T00:17:13.3712790Z ##[endgroup]
+2026-11-15T00:17:13.3726567Z ##[group]Fetching the repository
+2026-11-15T00:17:13.3728646Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +39b8582b818bc74325b1fb97a7de20125530d746:refs/remotes/origin/develop/p001-autosampler-foundation
+2026-11-15T00:17:13.7894460Z From https://github.com/challanger2000/125A-Auto-Sampler-VST3
+2026-11-15T00:17:13.7897029Z  * [new ref]         39b8582b818bc74325b1fb97a7de20125530d746 -> origin/develop/p001-autosampler-foundation
+2026-11-15T00:17:13.7901485Z ##[endgroup]
+2026-11-15T00:17:13.7903679Z ##[group]Determining the checkout info
+2026-11-15T00:17:13.7906434Z ##[endgroup]
+2026-11-15T00:17:13.7911909Z [command]/usr/bin/git sparse-checkout disable
+2026-11-15T00:17:13.7988623Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-11-15T00:17:13.8031184Z ##[group]Checking out the ref
+2026-11-15T00:17:13.8035787Z [command]/usr/bin/git checkout --progress --force -B develop/p001-autosampler-foundation refs/remotes/origin/develop/p001-autosampler-foundation
+2026-11-15T00:17:13.8159478Z Switched to a new branch 'develop/p001-autosampler-foundation'
+2026-11-15T00:17:13.8166640Z branch 'develop/p001-autosampler-foundation' set up to track 'origin/develop/p001-autosampler-foundation'.
+2026-11-15T00:17:13.8176092Z ##[endgroup]
+2026-11-15T00:17:13.8237608Z [command]/usr/bin/git log -1 --format=%H
+2026-11-15T00:17:13.8272638Z 39b8582b818bc74325b1fb97a7de20125530d746
+2026-11-15T00:17:13.8533929Z ##[group]Run set -euo pipefail
+2026-11-15T00:17:13.8534805Z [36;1mset -euo pipefail[0m
+2026-11-15T00:17:13.8535679Z [36;1msudo apt-get update -qq[0m
+2026-11-15T00:17:13.8536461Z [36;1msudo apt-get install -y -qq g++-14 ninja-build[0m
+2026-11-15T00:17:13.8537267Z [36;1mg++-14 --version[0m
+2026-11-15T00:17:13.8538624Z [36;1mcmake -S . -B build-gcc14 -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=g++-14 -DBUILD_VST3=OFF -DBUILD_TESTING=ON[0m
+2026-11-15T00:17:13.8540137Z [36;1mcmake --build build-gcc14 --parallel 2[0m
+2026-11-15T00:17:13.8541021Z [36;1mctest --test-dir build-gcc14 --output-on-failure[0m
+2026-11-15T00:17:13.8567412Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-11-15T00:17:13.8568297Z ##[endgroup]
+2026-11-15T00:17:20.2314626Z Selecting previously unselected package ninja-build.
+2026-11-15T00:17:20.2623804Z (Reading database ... 
+2026-11-15T00:17:20.2634655Z (Reading database ... 5%
+2026-11-15T00:17:20.2646674Z (Reading database ... 10%
+2026-11-15T00:17:20.2647403Z (Reading database ... 15%
+2026-11-15T00:17:20.2648235Z (Reading database ... 20%
+2026-11-15T00:17:20.2649222Z (Reading database ... 25%
+2026-11-15T00:17:20.2650024Z (Reading database ... 30%
+2026-11-15T00:17:20.2651322Z (Reading database ... 35%
+2026-11-15T00:17:20.2651983Z (Reading database ... 40%
+2026-11-15T00:17:20.2652877Z (Reading database ... 45%
+2026-11-15T00:17:20.2653836Z (Reading database ... 50%
+2026-11-15T00:17:20.2684536Z (Reading database ... 55%
+2026-11-15T00:17:20.3793457Z (Reading database ... 60%
+2026-11-15T00:17:20.5809999Z (Reading database ... 65%
+2026-11-15T00:17:20.7806965Z (Reading database ... 70%
+2026-11-15T00:17:20.9719760Z (Reading database ... 75%
+2026-11-15T00:17:21.0876888Z (Reading database ... 80%
+2026-11-15T00:17:21.2327678Z (Reading database ... 85%
+2026-11-15T00:17:21.3912103Z (Reading database ... 90%
+2026-11-15T00:17:21.4751605Z (Reading database ... 95%
+2026-11-15T00:17:21.4752517Z (Reading database ... 100%
+2026-11-15T00:17:21.4754305Z (Reading database ... 216752 files and directories currently installed.)
+2026-11-15T00:17:21.4802471Z Preparing to unpack .../ninja-build_1.11.1-2_amd64.deb ...
+2026-11-15T00:17:21.4832084Z Unpacking ninja-build (1.11.1-2) ...
+2026-11-15T00:17:21.5385895Z Setting up ninja-build (1.11.1-2) ...
+2026-11-15T00:17:21.5419533Z Processing triggers for man-db (2.12.0-4build2) ...
+2026-11-15T00:17:21.5445238Z Not building database; man-db/auto-update is not 'true'.
+2026-11-15T00:17:22.2504281Z 
+2026-11-15T00:17:22.2504875Z Running kernel seems to be up-to-date.
+2026-11-15T00:17:22.2507517Z 
+2026-11-15T00:17:22.2524425Z No services need to be restarted.
+2026-11-15T00:17:22.2525017Z 
+2026-11-15T00:17:22.2525275Z No containers need to be restarted.
+2026-11-15T00:17:22.2525713Z 
+2026-11-15T00:17:22.2525985Z No user sessions are running outdated binaries.
+2026-11-15T00:17:22.2526491Z 
+2026-11-15T00:17:22.2526943Z No VM guests are running outdated hypervisor (qemu) binaries on this host.
+2026-11-15T00:17:23.4477985Z g++-14 (Ubuntu 14.2.0-4ubuntu2~24.04.1) 14.2.0
+2026-11-15T00:17:23.4478787Z Copyright (C) 2024 Free Software Foundation, Inc.
+2026-11-15T00:17:23.4479861Z This is free software; see the source for copying conditions.  There is NO
+2026-11-15T00:17:23.4481117Z warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+2026-11-15T00:17:23.4481856Z 
+2026-11-15T00:17:25.8962535Z -- The CXX compiler identification is GNU 14.2.0
+2026-11-15T00:17:26.0117924Z -- Detecting CXX compiler ABI info
+2026-11-15T00:17:26.2795115Z -- Detecting CXX compiler ABI info - done
+2026-11-15T00:17:26.2972208Z -- Check for working CXX compiler: /usr/bin/g++-14 - skipped
+2026-11-15T00:17:26.3022390Z -- Detecting CXX compile features
+2026-11-15T00:17:26.3071187Z -- Detecting CXX compile features - done
+2026-11-15T00:17:26.3452735Z -- Configuring done (2.4s)
+2026-11-15T00:17:26.3621827Z -- Generating done (0.0s)
+2026-11-15T00:17:26.3627350Z -- Build files have been written to: /home/runner/work/125A-Auto-Sampler-VST3/125A-Auto-Sampler-VST3/build-gcc14
+2026-11-15T00:17:37.4032558Z [1/2] Building CXX object CMakeFiles/autosampler_core_tests.dir/tests/core_tests.cpp.o
+2026-11-15T00:17:37.4661093Z [2/2] Linking CXX executable autosampler_core_tests
+2026-11-15T00:17:37.8079682Z Internal ctest changing into directory: /home/runner/work/125A-Auto-Sampler-VST3/125A-Auto-Sampler-VST3/build-gcc14
+2026-11-15T00:17:37.8694537Z Test project /home/runner/work/125A-Auto-Sampler-VST3/125A-Auto-Sampler-VST3/build-gcc14
+2026-11-15T00:17:37.9151301Z     Start 1: autosampler_core_tests
+2026-11-15T00:17:37.9423783Z 1/1 Test #1: autosampler_core_tests ...........   Passed    0.02 sec
+2026-11-15T00:17:37.9480302Z 
+2026-11-15T00:17:37.9480624Z 100% tests passed, 0 tests failed out of 1
+2026-11-15T00:17:37.9480902Z 
+2026-11-15T00:17:37.9481041Z Total Test time (real) =   0.08 sec
+2026-11-15T00:17:37.9997872Z Post job cleanup.
+2026-11-15T00:17:38.0994613Z [command]/usr/bin/git version
+2026-11-15T00:17:38.1043136Z git version 2.56.1
+2026-11-15T00:17:38.1088728Z Temporarily overriding HOME='/home/runner/work/_temp/fd1b2bbe-285e-43a2-9977-dad2bf800400' before making global git config changes
+2026-11-15T00:17:38.1090185Z Adding repository directory to the temporary git global config as a safe directory
+2026-11-15T00:17:38.1096436Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/125A-Auto-Sampler-VST3/125A-Auto-Sampler-VST3
+2026-11-15T00:17:38.1160049Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-11-15T00:17:38.1213207Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-11-15T00:17:38.1490289Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-11-15T00:17:38.1567854Z http.https://github.com/.extraheader
+2026-11-15T00:17:38.1582879Z [command]/usr/bin/git config --local --unset-all http.https://github.com/.extraheader
+2026-11-15T00:17:38.1643996Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-11-15T00:17:38.1946475Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-11-15T00:17:38.2009551Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-11-15T00:17:38.2491905Z Cleaning up orphan processes
+2026-11-15T00:17:38.3117724Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
