@@ -153,6 +153,28 @@ jobs:
           $exitCode = $LASTEXITCODE
           $result | Out-Host
           if ($exitCode -ne 0) { throw "P026 real GUI browser failed with exit code $exitCode" }
+      - name: P027 preserve real VSTGUI design-review screenshot when Win32 allows capture
+        shell: pwsh
+        run: |
+          if (Test-Path -LiteralPath 'p027-real-vstgui.bmp') {
+            Add-Type -AssemblyName System.Drawing
+            $src = (Resolve-Path 'p027-real-vstgui.bmp').Path
+            $dst = Join-Path $PWD 'p027-real-vstgui.png'
+            $bitmap = [System.Drawing.Image]::FromFile($src)
+            try {
+              $bitmap.Save($dst, [System.Drawing.Imaging.ImageFormat]::Png)
+            } finally {
+              $bitmap.Dispose()
+            }
+            Write-Host "P027 actual loaded shipping-VST3 GUI screenshot: $dst"
+          } else {
+            Write-Host "P027 screenshot NOT RUN: headless Win32 capture unavailable; functional GUI regression still PASS"
+          }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: 125A-P027-Actual-Windows-VSTGUI
+          path: p027-real-vstgui.png
+          if-no-files-found: ignore
       - name: P023/A03 deterministic real VST3 worker-barrier regressions
         shell: pwsh
         run: |
