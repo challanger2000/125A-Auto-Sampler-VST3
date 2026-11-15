@@ -2029,18 +2029,8 @@ private:
             if(reportClosed){
                 try {
                     const auto finalReport=dir/"RUN-REPORT.csv";
-#ifdef _WIN32
-                    // Atomic, exclusive rename: never overwrite a competing
-                    // final report if a Windows directory was interfered with.
-                    reportPublished=MoveFileExW(
-                        stagedReport.c_str(),finalReport.c_str(),
-                        MOVEFILE_WRITE_THROUGH)!=0;
-#else
-                    if(!std::filesystem::exists(finalReport)){
-                        std::filesystem::rename(stagedReport,finalReport);
-                        reportPublished=true;
-                    }
-#endif
+                    reportPublished=a125::publishFileExclusive(
+                        stagedReport,finalReport);
                 }catch(const std::exception&){
                     // Treat rename failure like a failed report flush/close.
                 }
