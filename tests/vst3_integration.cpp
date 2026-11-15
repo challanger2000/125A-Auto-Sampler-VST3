@@ -2365,7 +2365,11 @@ int runInstrumentBrowse(const char* vst3path){
         drain.symbolicSampleSize=kSample32;
         drain.numSamples=kBlock;drain.numOutputs=1;
         drain.outputs=&bus;
-        for(int block=0;block<17;++block)
+        // P027 test fixture is now 8192 frames long, so the old 17x256
+        // drain would compare newly triggered PCM while a valid previous
+        // One-Shot was still ringing. Allow the entire longest test voice
+        // (plus a bounded safety margin) to finish, without changing DSP.
+        for(int block=0;block<40;++block)
             require(generator.processor->process(drain)==kResultOk,
                 "P026 cannot drain prior One-Shot voice");
         EventList notes(2);
