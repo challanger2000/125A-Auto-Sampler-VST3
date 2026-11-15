@@ -67,6 +67,10 @@ std::atomic<bool> a125AuditRestoreCommitEntered{false};
 std::atomic<bool> a125AuditPreemptRejectedRestore{false};
 std::atomic<bool> a125AuditFailRestorePrepare{false};
 std::atomic<bool> a125AuditFailRestoreAfterPublish{false};
+std::atomic<bool> a125AuditFailReportAfterClose{false};
+std::atomic<bool> a125AuditSkipReportFailureCleanup{false};
+std::atomic<bool> a125AuditReportAfterCloseFaultFired{false};
+std::atomic<bool> a125AuditReportFailureHandled{false};
 }
 extern "C" __declspec(dllexport) void __cdecl A125_AuditHoldImport(int enabled) noexcept {
     if(enabled){
@@ -116,6 +120,20 @@ extern "C" __declspec(dllexport) void __cdecl A125_AuditFailRestorePrepare(int e
 }
 extern "C" __declspec(dllexport) void __cdecl A125_AuditFailRestoreAfterPublish(int enabled) noexcept {
     a125AuditFailRestoreAfterPublish.store(enabled!=0,std::memory_order_release);
+}
+extern "C" __declspec(dllexport) void __cdecl A125_AuditFailReportAfterClose(int enabled) noexcept {
+    a125AuditReportAfterCloseFaultFired.store(false,std::memory_order_release);
+    a125AuditReportFailureHandled.store(false,std::memory_order_release);
+    a125AuditFailReportAfterClose.store(enabled!=0,std::memory_order_release);
+}
+extern "C" __declspec(dllexport) void __cdecl A125_AuditSkipReportFailureCleanup(int enabled) noexcept {
+    a125AuditSkipReportFailureCleanup.store(enabled!=0,std::memory_order_release);
+}
+extern "C" __declspec(dllexport) int __cdecl A125_AuditReportAfterCloseFaultFired() noexcept {
+    return a125AuditReportAfterCloseFaultFired.load(std::memory_order_acquire)?1:0;
+}
+extern "C" __declspec(dllexport) int __cdecl A125_AuditReportFailureHandled() noexcept {
+    return a125AuditReportFailureHandled.load(std::memory_order_acquire)?1:0;
 }
 #endif
 
@@ -1940,6 +1958,9 @@ private:
         std::uint32_t takeIndex=0;
         std::uint8_t note=0,velocity=0,rr=0;
         std::filesystem::path dir;
+        // Prepared before any .125A archive is created. After report.close()
+        // path concatenation could allocate and bypass rollback (N01).
+        std::filesystem::path stagedReportPath,finalReportPath;
         std::ofstream report;
         bool haveRun=false;
         bool attemptedRun=false;
@@ -2021,29 +2042,46 @@ private:
             const bool reportFlushed=static_cast<bool>(report);
             report.close();
             const bool reportClosed=reportFlushed && static_cast<bool>(report);
-            // A06: a run report only becomes visible under its final name
-            // after ALL contents have been flushed and the file closed.
-            // Bank readiness is contingent on the SAME publication result.
+            // N01: no allocating path construction after report.close().
+            // All fallible finalization operations are contained here and
+            // failure always reaches archive + partial cleanup. The report
+            // publication is the last prerequisite for bank readiness.
             bool reportPublished=false;
-            const auto stagedReport=dir/"RUN-REPORT.csv.partial";
-            if(reportClosed){
-                try {
-                    const auto finalReport=dir/"RUN-REPORT.csv";
-                    reportPublished=a125::publishFileExclusive(
-                        stagedReport,finalReport);
-                }catch(const std::exception&){
-                    // Treat rename failure like a failed report flush/close.
+            try{
+#ifdef A125_ENABLE_AUDIT_HOOKS
+                if(a125AuditFailReportAfterClose.exchange(
+                        false,std::memory_order_acq_rel)){
+                    a125AuditReportAfterCloseFaultFired.store(
+                        true,std::memory_order_release);
+                    throw std::bad_alloc{}; // exactly after real CSV close
                 }
+#endif
+                if(reportClosed)
+                    reportPublished=a125::publishFileExclusive(
+                        stagedReportPath,finalReportPath);
+            }catch(...){
+                reportPublished=false; // fail closed; cleanup is mandatory
             }
             if(!reportPublished){
                 ++runErrors;
                 session().errors.fetch_add(1,std::memory_order_relaxed);
-                if(completedArchive){
-                    std::error_code error;
-                    std::filesystem::remove(*completedArchive,error);
+                bool skipCleanup=false;
+#ifdef A125_ENABLE_AUDIT_HOOKS
+                skipCleanup=a125AuditSkipReportFailureCleanup.load(
+                    std::memory_order_acquire); // deliberate N01 mutant
+#endif
+                if(!skipCleanup){
+                    std::error_code ec;
+                    if(completedArchive)
+                        std::filesystem::remove(*completedArchive,ec);
+                    ec.clear();
+                    if(!stagedReportPath.empty())
+                        std::filesystem::remove(stagedReportPath,ec);
                 }
-                std::error_code cleanup;
-                std::filesystem::remove(stagedReport,cleanup);
+#ifdef A125_ENABLE_AUDIT_HOOKS
+                a125AuditReportFailureHandled.store(true,
+                    std::memory_order_release);
+#endif
             }else if(completedArchive){
                 // Only a still-live capture owner may receive the complete
                 // bank. In particular no publication from the previous DAW.
@@ -2091,6 +2129,8 @@ private:
             root=a125::ExportTarget::resolve(
                 session().exportTarget.chosenFolder(),outputRoot());
             dir.clear();
+            stagedReportPath.clear();
+            finalReportPath.clear();
             haveRun=false;
             attemptedRun=true;
             runWritten=runRejected=runSilent=runErrors=0;
@@ -2108,8 +2148,12 @@ private:
                     }
                 }
                 if(!haveRun) throw std::runtime_error("cannot create unique run folder");
-                // A06: incomplete CSV is never exposed as the final report.
-                report.open(dir/"RUN-REPORT.csv.partial",std::ios::binary|std::ios::trunc);
+                // Both filenames are fully prepared before any report or
+                // archive exists; the close/rollback path never constructs
+                // another filesystem::path and cannot hit N01.
+                stagedReportPath=dir/"RUN-REPORT.csv.partial";
+                finalReportPath=dir/"RUN-REPORT.csv";
+                report.open(stagedReportPath,std::ios::binary|std::ios::trunc);
                 if(!report) throw std::runtime_error("cannot create run report");
                 report << "take,note,velocity,rr,result,frames\n";
                 report.flush();
@@ -2118,9 +2162,9 @@ private:
                 ++runErrors;
                 session().errors.fetch_add(1,std::memory_order_relaxed);
                 report.close();
-                if(!dir.empty()){
+                if(!stagedReportPath.empty()){
                     std::error_code cleanup;
-                    std::filesystem::remove(dir/"RUN-REPORT.csv.partial",cleanup);
+                    std::filesystem::remove(stagedReportPath,cleanup);
                 }
                 haveRun=false;
             }
