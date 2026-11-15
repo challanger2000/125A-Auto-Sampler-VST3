@@ -2130,6 +2130,7 @@ int runAutomation(const char* vst3path){
 // P026 actual Windows VST3 GUI: navigate archived instruments with mouse,
 // skip a corrupt candidate, wrap, and compare saved DAW identity + real PCM.
 int runInstrumentBrowse(const char* vst3path){
+    std::cerr<<"[P026] start"<<std::endl;
     const HRESULT com=CoInitializeEx(nullptr,COINIT_APARTMENTTHREADED);
     require(SUCCEEDED(com),"P026 Win32 COM initialization failed");
     namespace fs=std::filesystem;
@@ -2156,6 +2157,7 @@ int runInstrumentBrowse(const char* vst3path){
         out<<"not a valid .125A archive";
     }
     const auto pad=makeArchive("04_Pad.125A","PAD BANK",.7f);
+    std::cerr<<"[P026] fixtures ready"<<std::endl;
     std::string error;
     auto module=Module::create(vst3path,error);
     require(bool(module),"P026 real VST3 module missing");
@@ -2163,6 +2165,7 @@ int runInstrumentBrowse(const char* vst3path){
     auto factory=module->getFactory();
     factory.setHostContext(&host);
     auto generator=load(factory,host,"125A AutoSampler");
+    std::cerr<<"[P026] generator created"<<std::endl;
     (void)generator.component->activateBus(kEvent,kInput,0,true);
     {
         ResizableMemoryIBStream initial;
@@ -2187,6 +2190,7 @@ int runInstrumentBrowse(const char* vst3path){
         require(generator.component->setState(&initial)==kResultOk,
                 "P026 initial Lead archive recall failed");
     }
+    std::cerr<<"[P026] initial bank restored"<<std::endl;
     IEditController* controller=nullptr;
     require(generator.component->queryInterface(IEditController::iid,
         reinterpret_cast<void**>(&controller))==kResultOk && controller,
@@ -2213,6 +2217,7 @@ int runInstrumentBrowse(const char* vst3path){
     require(view->setFrame(frame)==kResultTrue &&
             view->attached(hwnd,kPlatformTypeHWND)==kResultTrue,
             "P026 cannot attach actual VSTGUI");
+    std::cerr<<"[P026] GUI attached"<<std::endl;
     ShowWindow(hwnd,SW_SHOWNA);
     UpdateWindow(hwnd);
     HWND child=GetWindow(hwnd,GW_CHILD);
@@ -2303,15 +2308,26 @@ int runInstrumentBrowse(const char* vst3path){
                 "P026 GUI bank changed metadata but PCM is wrong");
     };
     pump();
+    std::cerr<<"[P026] before initial check"<<std::endl;
     check(lead,"Untitled Instrument",.4f); // legacy state lacks name
+    std::cerr<<"[P026] initial check passed"<<std::endl;
+    std::cerr<<"[P026] before NEXT skip"<<std::endl;
     click(638,389); // NEXT: skips invalid 03 and selects 04
+    std::cerr<<"[P026] after NEXT skip"<<std::endl;
     check(pad,"PAD BANK",.7f);
+    std::cerr<<"[P026] pad check passed"<<std::endl;
     click(638,389); // NEXT: wrap to 01
+    std::cerr<<"[P026] after NEXT wrap"<<std::endl;
     check(bass,"BASS BANK",.2f);
+    std::cerr<<"[P026] bass check passed"<<std::endl;
     click(384,389); // PREV: wrap to 04
+    std::cerr<<"[P026] after PREV wrap"<<std::endl;
     check(pad,"PAD BANK",.7f);
+    std::cerr<<"[P026] pad reverse check passed"<<std::endl;
     click(384,389); // PREV: skips invalid 03, selects 02
+    std::cerr<<"[P026] after PREV skip"<<std::endl;
     check(lead,"LEAD BANK",.4f);
+    std::cerr<<"[P026] lead reverse check passed"<<std::endl;
     require(view->removed()==kResultTrue,"P026 browser editor remove failed");
     require(view->setFrame(nullptr)==kResultTrue,"P026 host frame detach failed");
     frame->release();view->release();controller->release();
