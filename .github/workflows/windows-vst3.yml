@@ -99,8 +99,11 @@ jobs:
           $bundle = @(Get-ChildItem build-vst3/VST3/Release -Directory -Filter 'AutosamplerVST3.vst3')
           if ($bundle.Count -ne 1) { throw 'P026 shipping VST3 bundle missing' }
           $runner = 'build-vst3/Release/AutosamplerIntegration.exe'
-          & $runner $bundle[0].FullName 44100 256 browse
-          if ($LASTEXITCODE -ne 0) { throw 'P026 actual GUI PREV/NEXT and bank identity playback failed' }
+          $PSNativeCommandUseErrorActionPreference = $false
+          $result = & $runner $bundle[0].FullName 44100 256 browse 2>&1
+          $exitCode = $LASTEXITCODE
+          $result | Out-Host
+          if ($exitCode -ne 0) { throw "P026 real GUI browser failed with exit code $exitCode" }
       - name: P023/A03 deterministic real VST3 worker-barrier regressions
         shell: pwsh
         run: |
