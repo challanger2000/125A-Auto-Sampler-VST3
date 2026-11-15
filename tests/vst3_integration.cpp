@@ -2267,6 +2267,18 @@ int runInstrumentBrowse(const char* vst3path){
         std::array<Sample32*,2> channels{l.data(),r.data()};
         AudioBusBuffers bus{};
         bus.numChannels=2;bus.channelBuffers32=channels.data();
+        // Existing One-Shot voices intentionally survive a manual bank
+        // switch. Drain the previous sample before comparing the FIRST
+        // frame of a new voice; do not mistake a deliberate tail for
+        // a wrong bank or lose the existing voice-lifetime semantics.
+        ProcessData drain{};
+        drain.processMode=kRealtime;
+        drain.symbolicSampleSize=kSample32;
+        drain.numSamples=kBlock;drain.numOutputs=1;
+        drain.outputs=&bus;
+        for(int block=0;block<17;++block)
+            require(generator.processor->process(drain)==kResultOk,
+                "P026 cannot drain prior One-Shot voice");
         EventList notes(2);
         Event event{};
         event.busIndex=0;event.sampleOffset=0;
@@ -2289,7 +2301,7 @@ int runInstrumentBrowse(const char* vst3path){
                 "P026 GUI bank changed metadata but PCM is wrong");
     };
     pump();
-    check(lead,"LEAD BANK",.4f);
+    check(lead,"Untitled Instrument",.4f); // legacy state lacks name
     click(638,389); // NEXT: skips invalid 03 and selects 04
     check(pad,"PAD BANK",.7f);
     click(638,389); // NEXT: wrap to 01
