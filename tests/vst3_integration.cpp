@@ -283,11 +283,14 @@ int run(const char* vst3path,bool matrix,bool customFolder,
                               auditMode=="priority-no-replay");
     const bool auditPriority=(auditMode=="priority" ||
                               auditMode=="priority-no-replay");
+    const bool auditN01=(auditMode=="report-close-oom" ||
+                         auditMode=="report-close-oom-mutant");
     using AuditHold=void (__cdecl*)(int);
     using AuditEntered=int (__cdecl*)();
     AuditHold auditHold=nullptr;
     AuditEntered auditEntered=nullptr;
     AuditEntered auditReturned=nullptr;
+    AuditEntered auditN01Fired=nullptr,auditN01Handled=nullptr;
     const auto base=std::filesystem::absolute("p005-real-vst3-output");
     std::filesystem::remove_all(base);
     std::filesystem::create_directories(base/"Documents");
@@ -322,6 +325,32 @@ int run(const char* vst3path,bool matrix,bool customFolder,
         auditHold(1);
         mutate(auditMode=="pending-mutant"?1:0);
         dropReplay(auditMode=="priority-no-replay"?1:0);
+    }
+    if(auditN01){
+        // Real QA-only Windows Recorder DLL, not a reconstructed consumer.
+        // Force exactly one bad_alloc after a *successful* close of the
+        // report, while the complete .125A archive already exists.
+        std::filesystem::path dll;
+        for(const auto& item:std::filesystem::recursive_directory_iterator(vst3path))
+            if(item.is_regular_file() && item.path().extension()==".vst3"){
+                require(dll.empty(),"N01 multiple QA binary candidates");
+                dll=item.path();
+            }
+        require(!dll.empty(),"N01 missing actual QA VST3 DLL");
+        const auto loaded=GetModuleHandleW(dll.c_str());
+        require(loaded!=nullptr,"N01 test-only module not mapped");
+        const auto failAfterClose=reinterpret_cast<AuditHold>(
+            GetProcAddress(loaded,"A125_AuditFailReportAfterClose"));
+        const auto skipCleanup=reinterpret_cast<AuditHold>(
+            GetProcAddress(loaded,"A125_AuditSkipReportFailureCleanup"));
+        auditN01Fired=reinterpret_cast<AuditEntered>(
+            GetProcAddress(loaded,"A125_AuditReportAfterCloseFaultFired"));
+        auditN01Handled=reinterpret_cast<AuditEntered>(
+            GetProcAddress(loaded,"A125_AuditReportFailureHandled"));
+        require(failAfterClose && skipCleanup && auditN01Fired && auditN01Handled,
+                "N01 nonshipping fault / cleanup exports missing");
+        skipCleanup(auditMode=="report-close-oom-mutant"?1:0);
+        failAfterClose(1);
     }
     HostApplication host;
     auto factory=module->getFactory();
@@ -547,6 +576,62 @@ int run(const char* vst3path,bool matrix,bool customFolder,
             static_cast<int>(noteIDs.size())==expectedTakes,
             "actual VST3 MIDI notes differ from configured note/velocity/RR matrix");
 
+    if(auditN01){
+        // Wait until the real recorder has handled its post-close injected
+        // exception, not just until the fault hook was entered.
+        bool completed=false;
+        for(int poll=0;poll<200 && !completed;++poll){
+            completed=auditN01Handled()!=0;
+            if(!completed)
+                std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        }
+        require(completed && auditN01Fired()!=0,
+                "N01 injected post-close bad_alloc was not actually triggered");
+        const auto outputRoot=base/"Documents"/"125A AutoSampler";
+        std::size_t wavs=0,archives=0,staged=0,reports=0;
+        for(const auto& path:regularFilesSnapshot(outputRoot)){
+            if(path.extension()==".wav"){
+                (void)nonzeroWav(path); // keep all eight legitimate WAVs
+                ++wavs;
+            }
+            if(path.extension()==".125A")++archives;
+            if(path.filename()=="RUN-REPORT.csv.partial")++staged;
+            if(path.filename()=="RUN-REPORT.csv")++reports;
+        }
+        require(wavs==static_cast<std::size_t>(expectedTakes),
+                "N01 failed close must preserve valid recorded WAVs");
+        require(archives==0 && staged==0 && reports==0,
+                "N01 retained published archive or partial report after failed close");
+        // Read real serialized generator state: a rejected failed report
+        // must never make the archive eligible for DAW recall.
+        ResizableMemoryIBStream saved;
+        require(generator.component->getState(&saved)==kResultOk,
+                "N01 host state not readable after injected report close");
+        saved.rewind();
+        IBStreamer state(&saved,kLittleEndian);
+        int32 version=0;
+        require(state.readInt32(version) && version==0x125A2201,
+                "N01 saved project state marker");
+        for(int i=0;i<18;++i){
+            double value=0.;
+            require(state.readDouble(value),
+                    "N01 serialized params unavailable");
+        }
+        int32 folderSize=0,archiveSize=-1;
+        require(state.readInt32(folderSize) && folderSize==0 &&
+                state.readInt32(archiveSize) && archiveSize==0,
+                "N01 bank was authorized after failed report publication");
+        require(recorder.component->setActive(false)==kResultOk,
+                "N01 recorder deactivation failed");
+        recorder.active=false;
+        require(generator.component->setActive(false)==kResultOk,
+                "N01 generator deactivation failed");
+        generator.active=false;
+        std::cout<<"[PASS] N01 actual Windows Recorder: post-close bad_alloc "
+                    "rolled back .125A + partial report; 8 WAVs intact; "
+                    "no authorized DAW bank\\n";
+        return 0;
+    }
     // P008: the real recorder must close the CSV and flush the last WAV
     // automatically. The DAW is still playing, and BOTH plugins remain
     // active. setActive(false) must not be required for a completed job.
@@ -2181,6 +2266,8 @@ int main(int argc,char** argv){
                 "invalid sample rate or block size");
         const std::string mode=argc>=5?argv[4]:"";
         if(mode=="abort") return runAbort(argv[1]);
+        if(mode=="report-close-oom" || mode=="report-close-oom-mutant")
+            return run(argv[1],false,false,mode);
         if(mode=="automation") return runAutomation(argv[1]);
         if(mode=="sequential") return runSequential(argv[1]);
         if(mode=="restore-race") return runRestoreRace(argv[1],false);
