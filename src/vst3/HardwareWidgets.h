@@ -50,13 +50,30 @@ public:
         circle(r,{193,198,202,255},{102,109,116,255},.8);
         r.inset(4.,4.);
         circle(r,{173,180,186,255},{227,230,234,255},.6);
-        // A bright upper-left reflection and a fixed dark center make the
-        // dial look metallic even before the final photographic GUI skins.
+        // Fine engraved radial scale. Eleven marks use the same arc as
+        // CKnob: the end stops are real 0% / 100%, never decorative.
+        const auto center=getViewSize().getCenter();
+        const auto current=std::clamp(getValueNormalized(),0.f,1.f);
+        for(int mark=0;mark<=10;++mark){
+            const double fraction=static_cast<double>(mark)/10.;
+            const double angle=(-225.+270.*fraction)*
+                               3.14159265358979323846/180.;
+            const double inner=w*(mark%5==0?.387:.409);
+            const double outer=w*.462;
+            const auto x=std::cos(angle);
+            const auto y=std::sin(angle);
+            ctx->setLineWidth(mark%5==0?1.8:1.2);
+            ctx->setFrameColor(fraction<=current?
+                VSTGUI::CColor{229,174,89,255}:
+                VSTGUI::CColor{113,120,130,255});
+            ctx->drawLine({center.x+x*inner,center.y+y*inner},
+                          {center.x+x*outer,center.y+y*outer});
+        }
+        // Highlight is part of the dial, not a painted-on static image.
         auto spot=r;
         spot.inset(9.,9.);
         spot.offset(-2.,-2.);
         circle(spot,{224,228,233,255},{199,206,211,255},.2);
-        const auto center=getViewSize().getCenter();
         const double angle=(-225.+270.*getValueNormalized())*
                            3.14159265358979323846/180.;
         const double radius=w*.27;
@@ -118,6 +135,8 @@ private:
     std::array<bool,128> roots_{};
 };
 
+// A factual PCM peak envelope drawn from the selected sample. Its scale,
+// center line and grid are hardware-like, but the displayed waveform is real.
 class WaveformView final : public VSTGUI::CView {
 public:
     static constexpr std::size_t Points=192;
@@ -131,23 +150,46 @@ public:
         if(!ctx)return;
         const auto r=getViewSize();
         ctx->setDrawMode(VSTGUI::kAntiAliasing|VSTGUI::kNonIntegralMode);
-        ctx->setFillColor({17,32,29,255});
-        ctx->setFrameColor({63,88,78,255});
+        ctx->setFillColor({11,21,33,255});
+        ctx->setFrameColor({105,119,135,255});
         ctx->setLineWidth(1.);
         ctx->drawRect(r,VSTGUI::kDrawFilledAndStroked);
-        const auto center=(r.top+r.bottom)/2.;
-        ctx->setFrameColor({57,88,72,255});
-        ctx->drawLine({r.left+6.,center},{r.right-6.,center});
+
+        // Fixed measurement grid, not a fake waveform or fictional meters.
+        const auto left=r.left+7.;
+        const auto right=r.right-7.;
+        const auto width=right-left;
+        const auto top=r.top+7.;
+        const auto bottom=r.bottom-7.;
+        const auto height=bottom-top;
+        const auto center=(top+bottom)*.5;
+        ctx->setFrameColor({34,52,69,255});
+        ctx->setLineWidth(1.);
+        for(int i=1;i<12;++i){
+            const double x=left+width*static_cast<double>(i)/12.;
+            ctx->drawLine({x,top},{x,bottom});
+        }
+        for(int j=1;j<4;++j){
+            const double y=top+height*static_cast<double>(j)/4.;
+            ctx->drawLine({left,y},{right,y});
+        }
+        ctx->setFrameColor({81,112,134,255});
+        ctx->drawLine({left,center},{right,center});
         if(valid_){
-            ctx->setFrameColor({188,230,177,255});
-            ctx->setLineWidth(1.35);
-            const auto width=r.getWidth()-12.;
-            const auto height=r.getHeight()*.43;
-            for(std::size_t i=0;i<Points;++i){
-                const auto x=r.left+6.+static_cast<double>(i)*width/(Points-1);
-                const auto y=height*std::clamp(
-                    static_cast<double>(values_[i]),0.,1.);
-                ctx->drawLine({x,center-y},{x,center+y});
+            const double amplitude=height*.45;
+            // Soft blue trace beneath a sharp light trace: sample peaks
+            // remain visible without smearing attacks or adding fake peaks.
+            for(int pass=0;pass<2;++pass){
+                ctx->setFrameColor(pass==0?
+                    VSTGUI::CColor{52,110,160,255}:
+                    VSTGUI::CColor{166,213,247,255});
+                ctx->setLineWidth(pass==0?3.:1.25);
+                for(std::size_t i=0;i<Points;++i){
+                    const auto x=left+static_cast<double>(i)*width/(Points-1);
+                    const auto y=amplitude*std::clamp(
+                        static_cast<double>(values_[i]),0.,1.);
+                    ctx->drawLine({x,center-y},{x,center+y});
+                }
             }
         }
         setDirty(false);
