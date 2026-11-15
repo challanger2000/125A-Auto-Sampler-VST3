@@ -11,6 +11,7 @@
 #include "core/BuiltInSampler.h"
 #include "core/InstrumentArchive.h"
 #include "core/InstrumentBrowser.h"
+#include "core/NoteNames.h"
 #include "core/CompletedBank.h"
 #include "base/source/fstreamer.h"
 #include "pluginterfaces/base/ibstream.h"
@@ -478,8 +479,8 @@ public:
             static_cast<VSTGUI::KeyboardViewBase::NoteIndex>(keyboardStart_),
             static_cast<VSTGUI::KeyboardViewBase::NumNotes>(49));
         if(rangeLabel_){
-            const auto label=std::string("NOTES ")+std::to_string(keyboardStart_)+
-                " - "+std::to_string(keyboardStart_+48);
+            const auto label=std::string("NOTES ")+a125::midiNoteName(keyboardStart_)+
+                " - "+a125::midiNoteName(keyboardStart_+48);
             rangeLabel_->setText(label.c_str());
         }
         updateKeyboard();
@@ -535,9 +536,9 @@ public:
             const VSTGUI::UIAttributes&,const VSTGUI::IUIDescription*,
             VSTGUI::VST3Editor*) override {
         if(auto* original=dynamic_cast<VSTGUI::CKnob*>(view)){
-            auto* metal=new a125ui::SilverKnob(*original);
+            auto* dial=new a125ui::BlackGlossKnob(*original);
             original->forget();
-            view=metal;
+            view=dial;
         }
         if(auto* keys=dynamic_cast<VSTGUI::KeyboardView*>(view)){
             auto* marked=new a125ui::ZoneKeyboardView(*keys);
@@ -560,7 +561,7 @@ public:
             if(label->getText()=="OUTPUT: DEFAULT")folderLabel_=label;
             if(label->getText()=="SAMPLER: EMPTY")samplerLabel_=label;
             if(label->getText()=="BANK: -- / --")bankBrowserLabel_=label;
-            if(label->getText()=="NOTES 36 - 84")rangeLabel_=label;
+            if(label->getText()=="NOTES C1 - C5")rangeLabel_=label;
         }
         if(auto* button=dynamic_cast<VSTGUI::CTextButton*>(view)){
             if(button->getTitle()=="OCT -"){
@@ -1067,8 +1068,10 @@ public:
         if(!text)return Steinberg::kResultFalse;
         char buf[32]{};
         switch(tag) {
-        case kFirstParam: case kLastParam:
-            std::snprintf(buf,sizeof(buf),"%d",a125::stepped(value,0,127));break;
+        case kFirstParam: case kLastParam: {
+            const auto name=a125::midiNoteName(a125::stepped(value,0,127));
+            std::snprintf(buf,sizeof(buf),"%s",name.c_str());break;
+        }
         case kStepParam:
             std::snprintf(buf,sizeof(buf),"%d",a125::stepped(value,1,12));break;
         case kRRParam:
@@ -1104,11 +1107,20 @@ public:
         if(tag<=kRunParam || tag>kGainParam)
             return SingleComponentEffect::getParamValueByString(tag,text,normalized);
         if(!text)return Steinberg::kResultFalse;
+        // Note fields accept C3 / F#2 / Bb3 as well as legacy decimal MIDI
+        // numbers; they reject invalid notes instead of silently clamping.
+        if(tag==kFirstParam || tag==kLastParam){
+            char ascii[128]{};
+            Steinberg::UString(text,128).toAscii(ascii,128);
+            const auto midi=a125::parseMidiNoteName(ascii);
+            if(!midi)return Steinberg::kResultFalse;
+            normalized=static_cast<double>(*midi)/127.;
+            return Steinberg::kResultTrue;
+        }
         double entered=0.;
         if(!Steinberg::UString(text,128).scanFloat(entered) ||
            !std::isfinite(entered))return Steinberg::kResultFalse;
         switch(tag) {
-        case kFirstParam: case kLastParam: normalized=entered/127.;break;
         case kStepParam: normalized=(entered-1.)/11.;break;
         case kRRParam: normalized=(entered-1.)/15.;break;
         case kLayersParam: normalized=(entered-1.)/2.;break;
