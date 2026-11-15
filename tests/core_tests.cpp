@@ -513,6 +513,71 @@ void testP016NormalizePolyphonicHeadroom() {
     fs::remove_all(dir);
 }
 
+void testA06WindowsWavExclusivePublish() {
+#ifdef _WIN32
+    // A06 native Windows race: two complete different WAV payloads target
+    // the same filename. Exactly one may publish; no shared .partial,
+    // overwritten output, truncated PCM, or abandoned stage may remain.
+    namespace fs=std::filesystem;
+    const auto root=fs::temp_directory_path()/"125a_a06_exclusive_wav";
+    fs::remove_all(root);
+    fs::create_directories(root);
+    try {
+        const std::vector<a125::StereoFrame> quiet(8192,{.2f,-.1f});
+        const std::vector<a125::StereoFrame> loud(8192,{.75f,-.375f});
+        for(int iteration=0;iteration<16;++iteration){
+            const auto destination=root/("Conflict_"+std::to_string(iteration)+".wav");
+            std::atomic<int> ready{0},winners{0},rejections{0};
+            std::atomic<bool> go{false};
+            auto writer=[&](const std::vector<a125::StereoFrame>& frames){
+                ready.fetch_add(1,std::memory_order_release);
+                while(!go.load(std::memory_order_acquire))
+                    std::this_thread::yield();
+                try{
+                    a125::writeWav24(destination.string(),44100,frames);
+                    winners.fetch_add(1,std::memory_order_relaxed);
+                }catch(const std::exception&){
+                    rejections.fetch_add(1,std::memory_order_relaxed);
+                }
+            };
+            std::thread first(writer,std::cref(quiet));
+            std::thread second(writer,std::cref(loud));
+            while(ready.load(std::memory_order_acquire)!=2)
+                std::this_thread::yield();
+            go.store(true,std::memory_order_release);
+            first.join();second.join();
+            require(winners.load()==1 && rejections.load()==1,
+                    "A06 concurrent WAV writers must publish exactly one");
+            a125::SampleZone zone;
+            require(a125::readCapturedWav(destination,zone,
+                        a125::kMaxBankDecodedBytes) && zone.pcm.size()==8192,
+                    "A06 exclusive WAV published partial/corrupt PCM");
+            const float firstLeft=zone.pcm.front()[0];
+            const float firstRight=zone.pcm.front()[1];
+            const bool fromQuiet=std::abs(firstLeft-.2f)<.000001f &&
+                                 std::abs(firstRight+.1f)<.000001f;
+            const bool fromLoud=std::abs(firstLeft-.75f)<.000001f &&
+                                std::abs(firstRight+.375f)<.000001f;
+            require(fromQuiet || fromLoud,
+                    "A06 collision output differs from both complete writers");
+            for(const auto& frame:zone.pcm)
+                require(std::abs(frame[0]-firstLeft)<.000001f &&
+                        std::abs(frame[1]-firstRight)<.000001f,
+                        "A06 WAV contains interleaved payloads from writers");
+        }
+        for(const auto& entry:fs::directory_iterator(root))
+            require(entry.is_regular_file() && entry.path().extension()==".wav",
+                    "A06 exclusive writer leaked private stage/partial data");
+        std::cout<<"[PASS] A06 native Win32 16 competing WAV publications: "
+                    "one winner, intact PCM, no orphan stages\\n";
+    }catch(...){
+        fs::remove_all(root);
+        throw;
+    }
+    fs::remove_all(root);
+#endif
+}
+
 void testP017PortableArchive() {
     namespace fs=std::filesystem;
     const auto root=fs::temp_directory_path()/"125a_p017_portable_archive";
