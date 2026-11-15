@@ -651,8 +651,10 @@ public:
                     a125::instrumentBrowseOrder(siblings,direction)){
                 if(!loadSamples(candidate,true))continue;
                 updateSamplerLabel();
-                if(instrumentNameEdit_)
+                if(instrumentNameEdit_){
                     instrumentNameEdit_->setText(session().captureName().c_str());
+                    instrumentNameEdit_->invalid(); // repaint after focused edit
+                }
                 updateWaveform();
                 updateKeyboard();
                 return true;
@@ -902,7 +904,10 @@ public:
                 const auto count=player_.loadedZones();
                 if(loadFailed_)std::snprintf(line,sizeof(line),"SAMPLER: BANK LOAD FAILED");
                 else if(!count)std::snprintf(line,sizeof(line),"SAMPLER: EMPTY");
-                else std::snprintf(line,sizeof(line),"SAMPLER: %zu WAVS READY TO PLAY",count);
+                else if(count==1)std::snprintf(line,sizeof(line),
+                    "SAMPLER: 1 WAV READY TO PLAY");
+                else std::snprintf(line,sizeof(line),
+                    "SAMPLER: %zu WAVS READY TO PLAY",count);
             }
             samplerLabel_->setText(line);
         }
