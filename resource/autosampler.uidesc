@@ -1,27 +1,40 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <vstgui-ui-description version="1">
   <colors>
-    <color name="Dark" rgba="#171A1EFF"/>
-    <color name="Panel" rgba="#292D33FF"/>
-    <color name="Inset" rgba="#20252AFF"/>
-    <color name="LCD" rgba="#14251FFF"/>
-    <color name="Frame" rgba="#626974FF"/>
-    <color name="Accent" rgba="#C9A973FF"/>
-    <color name="Silver" rgba="#E4E7EAFF"/>
-    <color name="Muted" rgba="#A6B0BBFF"/>
-    <color name="Green" rgba="#C5E6B7FF"/>
+    <!-- 125A hardware palette: accessible text contrast, restrained amber. -->
+    <color name="Dark" rgba="#101318FF"/>
+    <color name="Rim" rgba="#667079FF"/>
+    <color name="Panel" rgba="#272D35FF"/>
+    <color name="Inset" rgba="#131920FF"/>
+    <color name="LCD" rgba="#0C1924FF"/>
+    <color name="Frame" rgba="#77828DFF"/>
+    <color name="Accent" rgba="#E4AB56FF"/>
+    <color name="AccentDim" rgba="#6E5638FF"/>
+    <color name="Silver" rgba="#EDF1F5FF"/>
+    <color name="Muted" rgba="#B9C2CCFF"/>
+    <color name="Green" rgba="#93D7AAFF"/>
+    <color name="Warning" rgba="#D65C41FF"/>
   </colors>
   <template name="view" class="CViewContainer" origin="0, 0" size="1024, 692" background-color="Dark" background-color-draw-style="filled" mouse-enabled="true" transparent="false">
+    <!-- 2-pixel physical chassis edging: all geometry stays in 1024x692. -->
+    <view class="CViewContainer" origin="14, 14" size="996, 85" background-color="Rim" background-color-draw-style="filled" transparent="false" mouse-enabled="false"/>
     <view class="CViewContainer" origin="16, 16" size="992, 81" background-color="Panel" background-color-draw-style="filled" transparent="false" mouse-enabled="false"/>
-    <view class="CTextLabel" origin="32, 28" size="350, 37" title="125A   AUTO SAMPLER" font="~ NormalFontVeryBig" font-color="Silver" back-color="Panel" frame-color="Panel" frame-width="0" transparent="true" mouse-enabled="false"/>
-    <view class="CTextLabel" origin="33, 67" size="318, 16" title="SAMPLE  /  MAP  /  PLAY" font="~ NormalFont" font-color="Accent" back-color="Panel" frame-color="Panel" frame-width="0" transparent="true" mouse-enabled="false"/>
+    <view class="CViewContainer" origin="32, 90" size="956, 2" background-color="AccentDim" background-color-draw-style="filled" transparent="false" mouse-enabled="false"/>
+    <view class="CTextLabel" origin="32, 25" size="350, 42" title="125A   AUTO SAMPLER" font="~ NormalFontVeryBig" font-color="Silver" back-color="Panel" frame-color="Panel" frame-width="0" transparent="true" mouse-enabled="false"/>
+    <view class="CTextLabel" origin="33, 67" size="318, 16" title="CAPTURE  /  MAP  /  PLAYBACK" font="~ NormalFont" font-color="Accent" back-color="Panel" frame-color="Panel" frame-width="0" transparent="true" mouse-enabled="false"/>
     <view class="CTextLabel" origin="389, 35" size="108, 21" title="INSTRUMENT" font="~ NormalFont" font-color="Muted" back-color="Panel" frame-color="Panel" frame-width="0" transparent="true" mouse-enabled="false"/>
     <view class="CTextEdit" origin="389, 57" size="420, 27" title="INSTRUMENT NAME" font="~ NormalFont" font-color="Silver" back-color="Inset" frame-color="Frame" frame-width="1" text-alignment="left" transparent="false" mouse-enabled="true" />
     <view class="CTextButton" control-tag="Run" origin="836, 33" size="153, 49" title="SAMPLE" font="~ NormalFont" text-color="Silver" text-color-highlighted="Dark" frame-color="Accent" frame-color-highlighted="Accent" frame-width="1" round-radius="6" gradient="Idle" gradient-highlighted="Active" kick-style="false" mouse-enabled="true" wants-focus="true"/>
+    <view class="CViewContainer" origin="14, 105" size="296, 370" background-color="Rim" background-color-draw-style="filled" transparent="false" mouse-enabled="false"/>
     <view class="CViewContainer" origin="16, 107" size="292, 366" background-color="Panel" background-color-draw-style="filled" transparent="false" mouse-enabled="false"/>
+    <view class="CViewContainer" origin="314, 105" size="400, 370" background-color="Rim" background-color-draw-style="filled" transparent="false" mouse-enabled="false"/>
     <view class="CViewContainer" origin="316, 107" size="396, 366" background-color="Panel" background-color-draw-style="filled" transparent="false" mouse-enabled="false"/>
+    <view class="CViewContainer" origin="718, 105" size="292, 370" background-color="Rim" background-color-draw-style="filled" transparent="false" mouse-enabled="false"/>
     <view class="CViewContainer" origin="720, 107" size="288, 366" background-color="Panel" background-color-draw-style="filled" transparent="false" mouse-enabled="false"/>
-    <view class="CTextLabel" origin="30, 118" size="263, 24" title="01   SAMPLING" font="~ NormalFont" font-color="Accent" back-color="Panel" frame-color="Panel" frame-width="0" transparent="true" mouse-enabled="false"/>
+    <view class="CViewContainer" origin="30, 143" size="264, 1" background-color="AccentDim" background-color-draw-style="filled" transparent="false" mouse-enabled="false"/>
+    <view class="CViewContainer" origin="332, 143" size="364, 1" background-color="AccentDim" background-color-draw-style="filled" transparent="false" mouse-enabled="false"/>
+    <view class="CViewContainer" origin="735, 143" size="256, 1" background-color="AccentDim" background-color-draw-style="filled" transparent="false" mouse-enabled="false"/>
+    <view class="CTextLabel" origin="30, 118" size="263, 24" title="01   SAMPLING" font="~ NormalFontBig" font-color="Accent" back-color="Panel" frame-color="Panel" frame-width="0" transparent="true" mouse-enabled="false"/>
 
     <view class="CTextLabel" origin="35, 149" size="163, 23" title="FROM NOTE" font="~ NormalFont" font-color="Muted" back-color="Panel" frame-color="Panel" frame-width="0" transparent="true" mouse-enabled="false"/>
     <view class="CTextEdit" control-tag="P1001" origin="208, 148" size="78, 25" font="~ NormalFont" font-color="Silver" back-color="Inset" frame-color="Frame" frame-width="1" text-alignment="center" transparent="false" mouse-enabled="true" min-value="0" max-value="1" value-precision="2"/>
@@ -39,22 +52,22 @@
     <view class="CTextEdit" control-tag="P1010" origin="208, 316" size="78, 25" font="~ NormalFont" font-color="Silver" back-color="Inset" frame-color="Frame" frame-width="1" text-alignment="center" transparent="false" mouse-enabled="true" min-value="0" max-value="1" value-precision="2"/>
     <view class="CTextLabel" origin="35, 345" size="163, 23" title="VELOCITY 3" font="~ NormalFont" font-color="Muted" back-color="Panel" frame-color="Panel" frame-width="0" transparent="true" mouse-enabled="false"/>
     <view class="CTextEdit" control-tag="P1011" origin="208, 344" size="78, 25" font="~ NormalFont" font-color="Silver" back-color="Inset" frame-color="Frame" frame-width="1" text-alignment="center" transparent="false" mouse-enabled="true" min-value="0" max-value="1" value-precision="2"/>
-    <view class="CTextLabel" origin="35, 373" size="163, 23" title="HOLD  /  s" font="~ NormalFont" font-color="Muted" back-color="Panel" frame-color="Panel" frame-width="0" transparent="true" mouse-enabled="false"/>
+    <view class="CTextLabel" origin="35, 373" size="163, 23" title="NOTE HOLD  /  s" font="~ NormalFont" font-color="Muted" back-color="Panel" frame-color="Panel" frame-width="0" transparent="true" mouse-enabled="false"/>
     <view class="CTextEdit" control-tag="P1006" origin="208, 372" size="78, 25" font="~ NormalFont" font-color="Silver" back-color="Inset" frame-color="Frame" frame-width="1" text-alignment="center" transparent="false" mouse-enabled="true" min-value="0" max-value="1" value-precision="2"/>
-    <view class="CTextLabel" origin="35, 401" size="163, 23" title="TAIL  /  s" font="~ NormalFont" font-color="Muted" back-color="Panel" frame-color="Panel" frame-width="0" transparent="true" mouse-enabled="false"/>
+    <view class="CTextLabel" origin="35, 401" size="163, 23" title="RELEASE  /  s" font="~ NormalFont" font-color="Muted" back-color="Panel" frame-color="Panel" frame-width="0" transparent="true" mouse-enabled="false"/>
     <view class="CTextEdit" control-tag="P1007" origin="208, 400" size="78, 25" font="~ NormalFont" font-color="Silver" back-color="Inset" frame-color="Frame" frame-width="1" text-alignment="center" transparent="false" mouse-enabled="true" min-value="0" max-value="1" value-precision="2"/>
-    <view class="CTextLabel" origin="35, 429" size="163, 23" title="GAP  /  s" font="~ NormalFont" font-color="Muted" back-color="Panel" frame-color="Panel" frame-width="0" transparent="true" mouse-enabled="false"/>
+    <view class="CTextLabel" origin="35, 429" size="163, 23" title="PAUSE  /  s" font="~ NormalFont" font-color="Muted" back-color="Panel" frame-color="Panel" frame-width="0" transparent="true" mouse-enabled="false"/>
     <view class="CTextEdit" control-tag="P1008" origin="208, 428" size="78, 25" font="~ NormalFont" font-color="Silver" back-color="Inset" frame-color="Frame" frame-width="1" text-alignment="center" transparent="false" mouse-enabled="true" min-value="0" max-value="1" value-precision="2"/>
-    <view class="CTextLabel" origin="332, 118" size="360, 23" title="02   SAMPLE DISPLAY" font="~ NormalFont" font-color="Accent" back-color="Panel" frame-color="Panel" frame-width="0" transparent="true" mouse-enabled="false"/>
+    <view class="CTextLabel" origin="332, 118" size="360, 23" title="02   INSTRUMENT &amp; WAVEFORM" font="~ NormalFont" font-color="Accent" back-color="Panel" frame-color="Panel" frame-width="0" transparent="true" mouse-enabled="false"/>
     <view class="CView" custom-view-name="125A Waveform" origin="334, 154" size="362, 155" mouse-enabled="false" transparent="false"/>
     <view class="CTextLabel" origin="334, 316" size="362, 24" title="SAMPLER: EMPTY" font="~ NormalFont" font-color="Green" back-color="Panel" frame-color="Panel" frame-width="0" transparent="true" mouse-enabled="false"/>
     <view class="CTextLabel" origin="334, 348" size="362, 23" title="STATUS: READY" font="~ NormalFont" font-color="Silver" back-color="Panel" frame-color="Panel" frame-width="0" transparent="true" mouse-enabled="false" />
-    <view class="CTextButton" origin="334, 377" size="100, 25" title="PREV BANK" font="~ NormalFont" text-color="Silver" text-color-highlighted="Dark" frame-color="Frame" frame-color-highlighted="Accent" frame-width="1" round-radius="5" gradient="Idle" gradient-highlighted="Active" kick-style="true" mouse-enabled="true" wants-focus="true"/>
-    <view class="CTextLabel" origin="446, 379" size="138, 23" title="BANK: -- / --" font="~ NormalFont" font-color="Accent" back-color="Panel" frame-color="Panel" frame-width="0" text-alignment="center" transparent="true" mouse-enabled="false"/>
-    <view class="CTextButton" origin="594, 377" size="100, 25" title="NEXT BANK" font="~ NormalFont" text-color="Silver" text-color-highlighted="Dark" frame-color="Frame" frame-color-highlighted="Accent" frame-width="1" round-radius="5" gradient="Idle" gradient-highlighted="Active" kick-style="true" mouse-enabled="true" wants-focus="true"/>
+    <view class="CTextButton" origin="334, 375" size="102, 29" title="PREV BANK" font="~ NormalFont" text-color="Silver" text-color-highlighted="Dark" frame-color="Frame" frame-color-highlighted="Accent" frame-width="1" round-radius="5" gradient="Idle" gradient-highlighted="Active" kick-style="true" mouse-enabled="true" wants-focus="true"/>
+    <view class="CTextLabel" origin="446, 378" size="138, 23" title="BANK: -- / --" font="~ NormalFont" font-color="Accent" back-color="Panel" frame-color="Panel" frame-width="0" text-alignment="center" transparent="true" mouse-enabled="false"/>
+    <view class="CTextButton" origin="592, 375" size="102, 29" title="NEXT BANK" font="~ NormalFont" text-color="Silver" text-color-highlighted="Dark" frame-color="Frame" frame-color-highlighted="Accent" frame-width="1" round-radius="5" gradient="Idle" gradient-highlighted="Active" kick-style="true" mouse-enabled="true" wants-focus="true"/>
     <view class="CTextButton" origin="334, 410" size="171, 38" title="LOAD INSTRUMENT" font="~ NormalFont" text-color="Silver" text-color-highlighted="Dark" frame-color="Accent" frame-color-highlighted="Accent" frame-width="1" round-radius="5" gradient="Idle" gradient-highlighted="Active" kick-style="true" mouse-enabled="true" wants-focus="true"/>
     <view class="CTextButton" origin="523, 410" size="171, 38" title="LOAD SAMPLES" font="~ NormalFont" text-color="Silver" text-color-highlighted="Dark" frame-color="Frame" frame-color-highlighted="Accent" frame-width="1" round-radius="5" gradient="Idle" gradient-highlighted="Active" kick-style="true" mouse-enabled="true" wants-focus="true"/>
-    <view class="CTextLabel" origin="735, 118" size="262, 24" title="03   PLAYBACK" font="~ NormalFont" font-color="Accent" back-color="Panel" frame-color="Panel" frame-width="0" transparent="true" mouse-enabled="false"/>
+    <view class="CTextLabel" origin="735, 118" size="262, 24" title="03   PLAYBACK" font="~ NormalFontBig" font-color="Accent" back-color="Panel" frame-color="Panel" frame-width="0" transparent="true" mouse-enabled="false"/>
 
     <view class="CTextLabel" origin="750, 142" size="91, 22" title="ATTACK" font="~ NormalFont" font-color="Muted" back-color="Panel" frame-color="Panel" frame-width="0" text-alignment="center" transparent="true" mouse-enabled="false"/>
     <view class="CKnob" control-tag="P1014" origin="768, 168" size="63, 63" min-value="0" max-value="1" default-value="0.0" mouse-enabled="true" transparent="false"/>
@@ -71,12 +84,14 @@
     <view class="CTextLabel" origin="740, 417" size="46, 20" title="GAIN" font="~ NormalFont" font-color="Muted" back-color="Panel" frame-color="Panel" frame-width="0" transparent="true" mouse-enabled="false"/>
     <view class="CSlider" control-tag="P1018" origin="796, 416" size="108, 21" orientation="horizontal" mode="free click" draw-back="true" draw-back-color="Inset" draw-frame="true" draw-frame-color="Frame" draw-value="true" draw-value-color="Accent" mouse-enabled="true" transparent="false" default-value="0.5"/>
     <view class="CTextEdit" control-tag="P1018" origin="915, 414" size="76, 25" font="~ NormalFont" font-color="Silver" back-color="Inset" frame-color="Frame" frame-width="1" text-alignment="center" transparent="false" mouse-enabled="true" min-value="0" max-value="1" value-precision="1"/>
-    <view class="CTextButton" control-tag="P1012" origin="741, 443" size="120, 25" title="NORMALIZE" font="~ NormalFont" text-color="Silver" text-color-highlighted="Dark" frame-color="Accent" frame-color-highlighted="Accent" frame-width="1" round-radius="5" gradient="Idle" gradient-highlighted="Active" kick-style="false" mouse-enabled="true" wants-focus="true"/>
-    <view class="CTextButton" control-tag="P1013" origin="868, 443" size="123, 25" title="ONE SHOT" font="~ NormalFont" text-color="Silver" text-color-highlighted="Dark" frame-color="Accent" frame-color-highlighted="Accent" frame-width="1" round-radius="5" gradient="Idle" gradient-highlighted="Active" kick-style="false" mouse-enabled="true" wants-focus="true"/>
+    <view class="CTextButton" control-tag="P1012" origin="741, 443" size="122, 25" title="NORMALIZE" font="~ NormalFont" text-color="Silver" text-color-highlighted="Dark" frame-color="Accent" frame-color-highlighted="Accent" frame-width="1" round-radius="5" gradient="Idle" gradient-highlighted="Active" kick-style="false" mouse-enabled="true" wants-focus="true"/>
+    <view class="CTextButton" control-tag="P1013" origin="869, 443" size="122, 25" title="ONE SHOT" font="~ NormalFont" text-color="Silver" text-color-highlighted="Dark" frame-color="Accent" frame-color-highlighted="Accent" frame-width="1" round-radius="5" gradient="Idle" gradient-highlighted="Active" kick-style="false" mouse-enabled="true" wants-focus="true"/>
+    <view class="CViewContainer" origin="14, 483" size="996, 59" background-color="Rim" background-color-draw-style="filled" transparent="false" mouse-enabled="false"/>
     <view class="CViewContainer" origin="16, 485" size="992, 55" background-color="Panel" background-color-draw-style="filled" transparent="false" mouse-enabled="false"/>
-    <view class="CTextButton" origin="30, 494" size="145, 35" title="CHOOSE FOLDER" font="~ NormalFont" text-color="Silver" text-color-highlighted="Dark" frame-color="Frame" frame-color-highlighted="Accent" frame-width="1" round-radius="5" gradient="Idle" gradient-highlighted="Active" kick-style="true" mouse-enabled="true"/>
-    <view class="CTextButton" origin="185, 494" size="98, 35" title="DEFAULT" font="~ NormalFont" text-color="Silver" text-color-highlighted="Dark" frame-color="Frame" frame-color-highlighted="Accent" frame-width="1" round-radius="5" gradient="Idle" gradient-highlighted="Active" kick-style="true" mouse-enabled="true"/>
+    <view class="CTextButton" origin="30, 494" size="123, 35" title="CHOOSE FOLDER" font="~ NormalFont" text-color="Silver" text-color-highlighted="Dark" frame-color="Frame" frame-color-highlighted="Accent" frame-width="1" round-radius="5" gradient="Idle" gradient-highlighted="Active" kick-style="true" mouse-enabled="true"/>
+    <view class="CTextButton" origin="164, 494" size="123, 35" title="DEFAULT" font="~ NormalFont" text-color="Silver" text-color-highlighted="Dark" frame-color="Frame" frame-color-highlighted="Accent" frame-width="1" round-radius="5" gradient="Idle" gradient-highlighted="Active" kick-style="true" mouse-enabled="true"/>
     <view class="CTextLabel" origin="303, 497" size="683, 31" title="OUTPUT: DEFAULT" font="~ NormalFont" font-color="Muted" back-color="Panel" frame-color="Panel" frame-width="0" text-alignment="left" transparent="true" mouse-enabled="false"/>
+    <view class="CViewContainer" origin="14, 548" size="996, 130" background-color="Rim" background-color-draw-style="filled" transparent="false" mouse-enabled="false"/>
     <view class="CViewContainer" origin="16, 550" size="992, 126" background-color="Panel" background-color-draw-style="filled" transparent="false" mouse-enabled="false"/>
     <view class="CTextLabel" origin="31, 557" size="510, 22" title="MIDI KEYBOARD   /   CLICK TO SELECT AND PLAY" font="~ NormalFont" font-color="Accent" back-color="Panel" frame-color="Panel" frame-width="0" transparent="true" mouse-enabled="false"/>
     <view class="CTextButton" origin="631, 557" size="82, 22" title="OCT -" font="~ NormalFont" text-color="Silver" text-color-highlighted="Dark" frame-color="Frame" frame-color-highlighted="Accent" frame-width="1" round-radius="4" gradient="Idle" gradient-highlighted="Active" kick-style="true" mouse-enabled="true"/>
@@ -107,12 +122,12 @@
   </control-tags>
   <gradients>
     <gradient name="Idle">
-      <color-stop rgba="#404750FF" start="0"/>
-      <color-stop rgba="#23282FFF" start="1"/>
+      <color-stop rgba="#48505CFF" start="0"/>
+      <color-stop rgba="#20252CFF" start="1"/>
     </gradient>
     <gradient name="Active">
-      <color-stop rgba="#E0C692FF" start="0"/>
-      <color-stop rgba="#A58652FF" start="1"/>
+      <color-stop rgba="#F3C575FF" start="0"/>
+      <color-stop rgba="#AB722CFF" start="1"/>
     </gradient>
   </gradients>
 </vstgui-ui-description>
