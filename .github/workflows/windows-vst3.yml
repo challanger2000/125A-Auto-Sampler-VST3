@@ -93,6 +93,14 @@ jobs:
           Write-Host "P010: project-restored custom folder, eight real VST3 WAVs"
           & $runner $plugin.FullName 44100 256 custom
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: P026 real Windows VSTGUI archive browser, state and PCM
+        shell: pwsh
+        run: |
+          $bundle = @(Get-ChildItem build-vst3/VST3/Release -Directory -Filter 'AutosamplerVST3.vst3')
+          if ($bundle.Count -ne 1) { throw 'P026 shipping VST3 bundle missing' }
+          $runner = 'build-vst3/Release/AutosamplerIntegration.exe'
+          & $runner $bundle[0].FullName 44100 256 browse
+          if ($LASTEXITCODE -ne 0) { throw 'P026 actual GUI PREV/NEXT and bank identity playback failed' }
       - name: P023/A03 deterministic real VST3 worker-barrier regressions
         shell: pwsh
         run: |
