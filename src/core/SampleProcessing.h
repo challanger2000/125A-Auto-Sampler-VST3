@@ -1,6 +1,7 @@
 #pragma once
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -12,6 +13,15 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#endif
 
 namespace a125 {
 using StereoFrame = std::array<float, 2>;
@@ -99,24 +109,44 @@ inline void writeWav24(const std::string& path, std::uint32_t sampleRate,
                        std::span<const StereoFrame> audio) {
     namespace fs=std::filesystem;
     const fs::path destination(path);
-    fs::path partial=destination;
-    partial+=".partial";
-    if(fs::exists(destination) || fs::exists(partial))
-        throw std::runtime_error("WAV destination or partial already exists");
-    try{
+    if(fs::exists(destination))
+        throw std::runtime_error("WAV destination already exists");
+    // Each writer owns a private stage, reserved with atomic mkdir. Two
+    // simultaneous captures can never truncate the same .partial file.
+    fs::path stageDir;
+    try {
+        const auto seed=std::chrono::steady_clock::now().time_since_epoch().count();
+        for(unsigned attempt=0;attempt<4096 && stageDir.empty();++attempt){
+            fs::path candidate=destination;
+            candidate+=".stage-"+std::to_string(seed)+"-"+std::to_string(attempt);
+            if(fs::create_directory(candidate))stageDir=std::move(candidate);
+        }
+        if(stageDir.empty())throw std::runtime_error("WAV staging exhausted");
+        const auto partial=stageDir/"sample.partial";
         std::ofstream out(partial,std::ios::binary|std::ios::trunc);
-        if(!out)throw std::runtime_error("cannot open WAV partial output");
+        if(!out)throw std::runtime_error("cannot open WAV private stage");
         writeWav24Stream(out,sampleRate,audio);
         out.close();
         if(!out)throw std::runtime_error("WAV close failed");
         const auto expected=44ull+static_cast<std::uint64_t>(audio.size())*6ull;
         if(fs::file_size(partial)!=expected)
             throw std::runtime_error("WAV final length mismatch");
+#ifdef _WIN32
+        // No REPLACE_EXISTING: unlike fs::rename, MoveFileExW rejects
+        // an output that appeared after the initial preflight.
+        if(!MoveFileExW(partial.c_str(),destination.c_str(),MOVEFILE_WRITE_THROUGH))
+            throw std::runtime_error("WAV atomic exclusive publish failed");
+#else
         if(fs::exists(destination))throw std::runtime_error("WAV destination appeared");
         fs::rename(partial,destination);
-    }catch(...){
+#endif
         std::error_code ec;
-        fs::remove(partial,ec);
+        fs::remove(stageDir,ec);
+    }catch(...){
+        if(!stageDir.empty()){
+            std::error_code ec;
+            fs::remove_all(stageDir,ec);
+        }
         throw;
     }
 }
