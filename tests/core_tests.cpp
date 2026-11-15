@@ -13,6 +13,7 @@
 #include "core/RunStatus.h"
 #include <array>
 #include <filesystem>
+#include <functional>
 #include <fstream>
 #include <iostream>
 #include <iterator>
@@ -1346,6 +1347,7 @@ int main() {
         testNativeSamplerPlayback();
         testP015DynamicsAndGate();
         testP016NormalizePolyphonicHeadroom();
+        testA06WindowsWavExclusivePublish();
         testP017PortableArchive();
         testSfzKeyboardBank();
         testAutomaticBatch48Wavs();
