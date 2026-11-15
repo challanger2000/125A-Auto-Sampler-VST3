@@ -2129,6 +2129,76 @@ int runAutomation(const char* vst3path){
 
 // P026 actual Windows VST3 GUI: navigate archived instruments with mouse,
 // skip a corrupt candidate, wrap, and compare saved DAW identity + real PCM.
+// Optional product-GUI screenshot for review. This captures the actual
+// shipping VST3's HWND, not a mocked layout or an image-generator concept.
+// A headless Windows runner may refuse HWND readback: do not assert a fake
+// screenshot in that case. The interactive native GUI tests still gate CI.
+bool captureRealGuiBmp(HWND child,const std::filesystem::path& target){
+    RECT rect{};
+    if(!child || !GetClientRect(child,&rect))return false;
+    const int w=rect.right-rect.left,h=rect.bottom-rect.top;
+    if(w<1000 || h<680 || w>4096 || h>4096)return false;
+    HDC display=GetDC(child);
+    if(!display)return false;
+    HDC memory=CreateCompatibleDC(display);
+    if(!memory){ReleaseDC(child,display);return false;}
+    BITMAPINFO info{};
+    info.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);
+    info.bmiHeader.biWidth=w;
+    info.bmiHeader.biHeight=-h; // top-down
+    info.bmiHeader.biPlanes=1;
+    info.bmiHeader.biBitCount=32;
+    info.bmiHeader.biCompression=BI_RGB;
+    void* pixels=nullptr;
+    HBITMAP dib=CreateDIBSection(display,&info,DIB_RGB_COLORS,
+                                 &pixels,nullptr,0);
+    if(!dib || !pixels){
+        if(dib)DeleteObject(dib);
+        DeleteDC(memory);ReleaseDC(child,display);return false;
+    }
+    HGDIOBJ original=SelectObject(memory,dib);
+    auto colorful=[&](){
+        if(!pixels)return false;
+        const auto* rgba=static_cast<const std::uint32_t*>(pixels);
+        std::set<std::uint32_t> distinct;
+        for(std::size_t i=0;i<static_cast<std::size_t>(w)*h;i+=431)
+            distinct.insert(rgba[i]&0x00ffffffu);
+        return distinct.size()>12;
+    };
+    BOOL copied=PrintWindow(child,memory,PW_CLIENTONLY);
+    if(!copied || !colorful()){
+        copied=BitBlt(memory,0,0,w,h,display,0,0,SRCCOPY);
+    }
+    const bool valid=copied && colorful();
+    bool saved=false;
+    if(valid){
+        BITMAPFILEHEADER header{};
+        header.bfType=0x4d42;
+        header.bfOffBits=sizeof(BITMAPFILEHEADER)+sizeof(BITMAPINFOHEADER);
+        const auto bytes=static_cast<std::uint32_t>(w)*
+                         static_cast<std::uint32_t>(h)*4u;
+        header.bfSize=header.bfOffBits+bytes;
+        std::ofstream out(target,std::ios::binary|std::ios::trunc);
+        if(out){
+            out.write(reinterpret_cast<const char*>(&header),sizeof(header));
+            out.write(reinterpret_cast<const char*>(&info.bmiHeader),
+                      sizeof(info.bmiHeader));
+            out.write(static_cast<const char*>(pixels),bytes);
+            out.flush();
+            saved=static_cast<bool>(out);
+        }
+    }
+    SelectObject(memory,original);
+    DeleteObject(dib);
+    DeleteDC(memory);
+    ReleaseDC(child,display);
+    if(!saved){
+        std::error_code ec;
+        std::filesystem::remove(target,ec);
+    }
+    return saved;
+}
+
 int runInstrumentBrowse(const char* vst3path){
     std::cerr<<"[P026] start"<<std::endl;
     const HRESULT com=CoInitializeEx(nullptr,COINIT_APARTMENTTHREADED);
@@ -2318,6 +2388,18 @@ int runInstrumentBrowse(const char* vst3path){
     click(638,389); // NEXT: skips invalid 03 and selects 04
     std::cerr<<"[P026] after NEXT skip"<<std::endl;
     check(pad,"PAD BANK",.7f);
+    // For a useful design review, capture a real loaded GUI after the
+    // waveform, status and bank-browser controls have received the sample.
+    // The screenshot is optional on remote Windows services without an
+    // interactive desktop and never substitutes for actual VST3 tests.
+    UpdateWindow(child);
+    pump();
+    if(captureRealGuiBmp(child,"p027-real-vstgui.bmp"))
+        std::cout<<"[PASS] P027 actual Windows VSTGUI screenshot captured "
+                    "(loaded instrument, real sample mapping)\n";
+    else
+        std::cout<<"[INFO] P027 actual VSTGUI screenshot unavailable on "
+                    "headless runner; live GUI tests remain mandatory\n";
     std::cerr<<"[P026] pad check passed"<<std::endl;
     click(638,389); // NEXT: wrap to 01
     std::cerr<<"[P026] after NEXT wrap"<<std::endl;
