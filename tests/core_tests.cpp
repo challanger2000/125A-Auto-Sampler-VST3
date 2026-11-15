@@ -10,6 +10,7 @@
 #include "core/BuiltInSampler.h"
 #include "core/InstrumentArchive.h"
 #include "core/InstrumentBrowser.h"
+#include "core/NoteNames.h"
 #include "core/CompletedBank.h"
 #include "core/RunStatus.h"
 #include <array>
@@ -31,6 +32,33 @@ void require(bool condition, const char* why) {
 }
 template<class Fn> bool throws(Fn fn) {
     try { fn(); return false; } catch(const std::exception&) { return true; }
+}
+void testP028NoteNames() {
+    // Same octave convention as Steinberg KeyboardView: MIDI60=C3.
+    require(a125::midiNoteName(60)=="C3" &&
+            a125::midiNoteName(36)=="C1" &&
+            a125::midiNoteName(84)=="C5" &&
+            a125::midiNoteName(0)=="C-2" &&
+            a125::midiNoteName(127)=="G8",
+            "P028 musical GUI octave numbering wrong");
+    for(int n=0;n<=127;++n){
+        const auto name=a125::midiNoteName(n);
+        require(a125::parseMidiNoteName(name)==n &&
+                a125::parseMidiNoteName(std::to_string(n))==n,
+                "P028 all note names and legacy MIDI numbers must round-trip");
+    }
+    require(a125::parseMidiNoteName(" c#3 ")==61 &&
+            a125::parseMidiNoteName("Db3")==61 &&
+            a125::parseMidiNoteName("B#2")==60 &&
+            a125::parseMidiNoteName("Cb3")==59 &&
+            a125::parseMidiNoteName("Bb3")==70,
+            "P028 accidentals and whitespace parsing wrong");
+    for(const auto name:{"","C","H3","C9","G#8","-1",
+                         "128","60.5","C 3","C##3","C3garbage"}){
+        require(!a125::parseMidiNoteName(name),
+                "P028 malformed or out-of-range note must fail closed");
+    }
+    std::cout << "[PASS] P028 all 128 C3-style note labels and safe editable parsing\n";
 }
 void testEightRoundRobins() {
     a125::Settings cfg;
@@ -1419,6 +1447,7 @@ void testWavAndTrim() {
 } // namespace
 int main() {
     try {
+        testP028NoteNames();
         testEightRoundRobins();
         testSchedulerSampleOffsets();
         testValidation();
