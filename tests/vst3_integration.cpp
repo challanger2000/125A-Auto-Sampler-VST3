@@ -2127,6 +2127,190 @@ int runAutomation(const char* vst3path){
     return 0;
 }
 
+// P026 actual Windows VST3 GUI: navigate archived instruments with mouse,
+// skip a corrupt candidate, wrap, and compare saved DAW identity + real PCM.
+int runInstrumentBrowse(const char* vst3path){
+    namespace fs=std::filesystem;
+    const auto base=fs::absolute("p026-real-browser-output");
+    fs::remove_all(base);
+    fs::create_directories(base/"Banks");
+    const auto bankDir=base/"Banks";
+    const auto makeArchive=[&](const char* filename,const char* name,float amplitude){
+        const auto samples=base/(std::string(filename)+"-samples");
+        fs::create_directories(samples);
+        const std::vector<a125::StereoFrame> pcm(4096,
+            {amplitude,-amplitude*.5f});
+        a125::writeWav24((samples/"N60_V100_RR01.wav").string(),44100,pcm);
+        const auto archive=bankDir/filename;
+        a125::write125AArchive(samples,archive,name);
+        return archive;
+    };
+    const auto bass=makeArchive("01_Bass.125A","BASS BANK",.2f);
+    const auto lead=makeArchive("02_Lead.125A","LEAD BANK",.4f);
+    const auto broken=bankDir/"03_Broken.125A";
+    {
+        std::ofstream out(broken,std::ios::binary|std::ios::trunc);
+        require(bool(out),"P026 could not create deliberately corrupt bank");
+        out<<"not a valid .125A archive";
+    }
+    const auto pad=makeArchive("04_Pad.125A","PAD BANK",.7f);
+    std::string error;
+    auto module=Module::create(vst3path,error);
+    require(bool(module),"P026 real VST3 module missing");
+    HostApplication host;
+    auto factory=module->getFactory();
+    factory.setHostContext(&host);
+    auto generator=load(factory,host,"125A AutoSampler");
+    (void)generator.component->activateBus(kEvent,kInput,0,true);
+    {
+        ResizableMemoryIBStream initial;
+        IBStreamer io(&initial,kLittleEndian);
+        require(io.writeInt32(0x125A1301),"P026 cannot write initial state");
+        const std::array<double,11> normalized{
+            60./127.,60./127.,0.,7./15.,0.,
+            (1.-.25)/7.75,(2.-.25)/9.75,(.1-.05)/.45,
+            99./126.,59./126.,119./126.
+        };
+        for(double value:normalized)
+            require(io.writeDouble(value),"P026 initial parameter missing");
+        require(io.writeInt32(0),"P026 initial folder missing");
+        const auto name=lead.u8string();
+        require(io.writeInt32(static_cast<int32>(name.size())),
+                "P026 initial archive path length");
+        int32 written=0;
+        require(initial.write(name.data(),static_cast<int32>(name.size()),
+                    &written)==kResultOk && written==static_cast<int32>(name.size()),
+                "P026 initial archive path");
+        initial.rewind();
+        require(generator.component->setState(&initial)==kResultOk,
+                "P026 initial Lead archive recall failed");
+    }
+    IEditController* controller=nullptr;
+    require(generator.component->queryInterface(IEditController::iid,
+        reinterpret_cast<void**>(&controller))==kResultOk && controller,
+        "P026 actual VST3 IEditController missing");
+    IPlugView* view=controller->createView(ViewType::kEditor);
+    require(view!=nullptr,"P026 VSTGUI editor missing");
+    ViewRect rect{};
+    require(view->getSize(&rect)==kResultTrue &&
+            rect.getWidth()==1024 && rect.getHeight()==692,
+            "P026 GUI layout must preserve 1024x692 click coordinates");
+    WNDCLASSW wc{};
+    wc.hInstance=GetModuleHandleW(nullptr);
+    wc.lpfnWndProc=testWindowProc;
+    wc.lpszClassName=L"125A_AutoSampler_P026_Browser";
+    require(RegisterClassW(&wc) ||
+            GetLastError()==ERROR_CLASS_ALREADY_EXISTS,
+            "P026 cannot register Win32 host window");
+    HWND hwnd=CreateWindowExW(0,wc.lpszClassName,L"125A Browser Test",
+        WS_OVERLAPPEDWINDOW,CW_USEDEFAULT,CW_USEDEFAULT,
+        rect.getWidth()+32,rect.getHeight()+64,nullptr,nullptr,
+        GetModuleHandleW(nullptr),nullptr);
+    require(hwnd!=nullptr,"P026 Win32 host parent missing");
+    auto* frame=new TestHostFrame();
+    require(view->setFrame(frame)==kResultTrue &&
+            view->attached(hwnd,kPlatformTypeHWND)==kResultTrue,
+            "P026 cannot attach actual VSTGUI");
+    ShowWindow(hwnd,SW_SHOWNA);
+    UpdateWindow(hwnd);
+    HWND child=GetWindow(hwnd,GW_CHILD);
+    require(child!=nullptr,"P026 VSTGUI HWND missing");
+    const auto pump=[&](){
+        MSG msg{};
+        while(PeekMessageW(&msg,nullptr,0,0,PM_REMOVE)){
+            TranslateMessage(&msg);
+            DispatchMessageW(&msg);
+        }
+    };
+    const auto click=[&](int x,int y){
+        const LPARAM xy=MAKELPARAM(x,y);
+        SendMessageW(child,WM_MOUSEMOVE,0,xy);
+        SendMessageW(child,WM_LBUTTONDOWN,MK_LBUTTON,xy);
+        SendMessageW(child,WM_LBUTTONUP,0,xy);
+        pump();
+    };
+    const auto check=[&](const fs::path& expected,const char* name,
+                         float expectedAmplitude){
+        ResizableMemoryIBStream saved;
+        require(generator.component->getState(&saved)==kResultOk,
+                "P026 VST3 cannot serialize browsed state");
+        saved.rewind();
+        IBStreamer io(&saved,kLittleEndian);
+        int32 version=0,folderSize=0,bankSize=0,instrumentSize=0;
+        require(io.readInt32(version) && version==0x125A2201,
+                "P026 browsed project must use modern state");
+        for(int i=0;i<18;++i){
+            double value=0.;
+            require(io.readDouble(value),"P026 saved parameter truncated");
+        }
+        require(io.readInt32(folderSize) && folderSize==0 &&
+                io.readInt32(bankSize) && bankSize>0 && bankSize<8192,
+                "P026 saved folder/bank path invalid");
+        std::u8string pathBytes(static_cast<std::size_t>(bankSize),u8' ');
+        int32 read=0;
+        require(saved.read(pathBytes.data(),bankSize,&read)==kResultOk &&
+                read==bankSize && fs::path(pathBytes)==expected,
+                "P026 GUI previous/next did not persist selected archive");
+        require(io.readInt32(instrumentSize) && instrumentSize>0 &&
+                instrumentSize<193,"P026 instrument name truncated");
+        std::string actual(static_cast<std::size_t>(instrumentSize),' ');
+        require(saved.read(actual.data(),instrumentSize,&read)==kResultOk &&
+                read==instrumentSize && actual==name,
+                "P026 GUI browser did not select manifest instrument name");
+        Steinberg::int64 fingerprint=0;
+        require(io.readInt64(fingerprint) &&
+                static_cast<std::uint64_t>(fingerprint)==
+                    a125::archive125AFingerprint(expected).value_or(0) &&
+                fingerprint!=0,
+                "P026 GUI archive fingerprint not persisted");
+        std::vector<Sample32> l(kBlock,0.f),r(kBlock,0.f);
+        std::array<Sample32*,2> channels{l.data(),r.data()};
+        AudioBusBuffers bus{};
+        bus.numChannels=2;bus.channelBuffers32=channels.data();
+        EventList notes(2);
+        Event event{};
+        event.busIndex=0;event.sampleOffset=0;
+        event.type=Event::kNoteOnEvent;
+        event.noteOn.channel=0;event.noteOn.pitch=60;
+        event.noteOn.velocity=100.f/127.f;
+        event.noteOn.noteId=5500+static_cast<int32>(
+            std::lround(expectedAmplitude*100.));
+        require(notes.addEvent(event)==kResultOk,"P026 cannot issue MIDI note");
+        ProcessData process{};
+        process.processMode=kRealtime;
+        process.symbolicSampleSize=kSample32;
+        process.numSamples=kBlock;
+        process.numOutputs=1;process.outputs=&bus;
+        process.inputEvents=&notes;
+        require(generator.processor->process(process)==kResultOk,
+                "P026 real VST3 sample playback failed");
+        require(std::abs(l[0]-expectedAmplitude)<.015f &&
+                std::abs(r[0]+expectedAmplitude*.5f)<.015f,
+                "P026 GUI bank changed metadata but PCM is wrong");
+    };
+    pump();
+    check(lead,"LEAD BANK",.4f);
+    click(638,389); // NEXT: skips invalid 03 and selects 04
+    check(pad,"PAD BANK",.7f);
+    click(638,389); // NEXT: wrap to 01
+    check(bass,"BASS BANK",.2f);
+    click(384,389); // PREV: wrap to 04
+    check(pad,"PAD BANK",.7f);
+    click(384,389); // PREV: skips invalid 03, selects 02
+    check(lead,"LEAD BANK",.4f);
+    require(view->removed()==kResultTrue,"P026 browser editor remove failed");
+    require(view->setFrame(nullptr)==kResultTrue,"P026 host frame detach failed");
+    frame->release();view->release();controller->release();
+    DestroyWindow(hwnd);
+    require(generator.component->setActive(false)==kResultOk,
+            "P026 cannot deactivate browsed instrument");
+    generator.active=false;
+    fs::remove_all(base);
+    std::cout<<"[PASS] P026 ACTUAL WINDOWS VST3: PREV/NEXT GUI clicks, "
+                "skip corrupt bank, wrap, preserve name/path/fingerprint/PCM\n";
+    return 0;
+}
+
 int runAbort(const char* vst3path){
     // Actual VST3 processors stay active during the entire abort test.
     const auto base=std::filesystem::absolute("p009-abort-vst3-output");
@@ -2265,6 +2449,7 @@ int main(int argc,char** argv){
                 (kBlock==64 || kBlock==256 || kBlock==512 || kBlock==1024),
                 "invalid sample rate or block size");
         const std::string mode=argc>=5?argv[4]:"";
+        if(mode=="browse") return runInstrumentBrowse(argv[1]);
         if(mode=="abort") return runAbort(argv[1]);
         if(mode=="report-close-oom" || mode=="report-close-oom-mutant")
             return run(argv[1],false,false,mode);
