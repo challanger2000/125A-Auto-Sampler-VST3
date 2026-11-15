@@ -2130,6 +2130,8 @@ int runAutomation(const char* vst3path){
 // P026 actual Windows VST3 GUI: navigate archived instruments with mouse,
 // skip a corrupt candidate, wrap, and compare saved DAW identity + real PCM.
 int runInstrumentBrowse(const char* vst3path){
+    const HRESULT com=CoInitializeEx(nullptr,COINIT_APARTMENTTHREADED);
+    require(SUCCEEDED(com),"P026 Win32 COM initialization failed");
     namespace fs=std::filesystem;
     const auto base=fs::absolute("p026-real-browser-output");
     fs::remove_all(base);
@@ -2318,6 +2320,7 @@ int runInstrumentBrowse(const char* vst3path){
             "P026 cannot deactivate browsed instrument");
     generator.active=false;
     fs::remove_all(base);
+    CoUninitialize();
     std::cout<<"[PASS] P026 ACTUAL WINDOWS VST3: PREV/NEXT GUI clicks, "
                 "skip corrupt bank, wrap, preserve name/path/fingerprint/PCM\n";
     return 0;
