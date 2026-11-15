@@ -182,6 +182,24 @@ jobs:
           }
           Write-Host '[PASS] F01 postpublication allocation mutation killed'
           exit 0
+      - name: N01 post-close bad_alloc cleanup on real Windows Recorder and killed mutant
+        shell: pwsh
+        run: |
+          $bundle = @(Get-ChildItem build-vst3/VST3/Release -Directory -Filter 'AutosamplerAuditVST3.vst3')
+          if ($bundle.Count -ne 1) { throw 'N01 audit VST3 bundle not found' }
+          $runner = 'build-vst3/Release/AutosamplerIntegration.exe'
+          & $runner $bundle[0].FullName 44100 256 report-close-oom
+          if ($LASTEXITCODE -ne 0) { throw 'N01 real Recorder did not roll back after close fault' }
+          $PSNativeCommandUseErrorActionPreference = $false
+          $mutant = & $runner $bundle[0].FullName 44100 256 report-close-oom-mutant 2>&1
+          $code = $LASTEXITCODE
+          if ($code -eq 0 -or
+              (($mutant | Out-String) -notmatch 'N01 retained published archive or partial report after failed close')) {
+            $mutant | Out-Host
+            throw 'N01 missing archive + report cleanup mutation survived'
+          }
+          Write-Host '[PASS] N01 actual Windows Recorder post-close allocation mutant killed'
+          exit 0
       - name: Independent .125A ZIP/PCM24 compatibility
         shell: pwsh
         run: ./.github/scripts/verify125a.ps1
