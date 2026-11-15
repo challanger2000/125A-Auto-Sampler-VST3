@@ -10,6 +10,7 @@
 #include "core/RunStatus.h"
 #include "core/BuiltInSampler.h"
 #include "core/InstrumentArchive.h"
+#include "core/InstrumentBrowser.h"
 #include "core/CompletedBank.h"
 #include "base/source/fstreamer.h"
 #include "pluginterfaces/base/ibstream.h"
@@ -556,6 +557,7 @@ public:
             if(label->getText()=="STATUS: READY")statusLabel_=label;
             if(label->getText()=="OUTPUT: DEFAULT")folderLabel_=label;
             if(label->getText()=="SAMPLER: EMPTY")samplerLabel_=label;
+            if(label->getText()=="BANK: -- / --")bankBrowserLabel_=label;
             if(label->getText()=="NOTES 36 - 84")rangeLabel_=label;
         }
         if(auto* button=dynamic_cast<VSTGUI::CTextButton*>(view)){
@@ -577,6 +579,12 @@ public:
             }else if(button->getTitle()=="LOAD SAMPLES"){
                 loadButton_=button;
                 loadButton_->registerControlListener(this);
+            }else if(button->getTitle()=="PREV BANK"){
+                prevBankButton_=button;
+                prevBankButton_->registerControlListener(this);
+            }else if(button->getTitle()=="NEXT BANK"){
+                nextBankButton_=button;
+                nextBankButton_->registerControlListener(this);
             }
         }
         return view;
@@ -588,6 +596,8 @@ public:
            control->getValue()<=control->getMin())return;
         if(control==octaveDownButton_){scrollKeyboard(-12);return;}
         if(control==octaveUpButton_){scrollKeyboard(12);return;}
+        if(control==prevBankButton_){browseInstrument(-1);return;}
+        if(control==nextBankButton_){browseInstrument(1);return;}
         if(control==instrumentNameEdit_){
             if(!session().setCaptureName(instrumentNameEdit_->getText().getString())){
                 instrumentNameEdit_->setText(session().captureName().c_str());
@@ -622,6 +632,61 @@ public:
         if(chosen && chosen->is_absolute()){
             session().exportTarget.choose(*chosen);
             updateFolderLabel();
+        }
+    }
+    // GUI-only archive navigation: no new preset format and no external
+    // sampler. Each candidate is imported through the ordinary verified
+    // 125A loading transaction; corrupt archives are skipped.
+    bool browseInstrument(int direction) {
+        try {
+            std::filesystem::path active;
+            {
+                std::lock_guard<std::mutex> guard(bankMutex_);
+                active=bankFolder_;
+            }
+            const auto siblings=a125::listInstrumentNeighbors(active);
+            for(const auto& candidate:
+                    a125::instrumentBrowseOrder(siblings,direction)){
+                if(!loadSamples(candidate,true))continue;
+                updateSamplerLabel();
+                if(instrumentNameEdit_)
+                    instrumentNameEdit_->setText(session().captureName().c_str());
+                updateWaveform();
+                updateKeyboard();
+                return true;
+            }
+            // A failed neighboring file must not falsely declare the still-
+            // playing previous bank unusable. User can choose an archive
+            // explicitly via LOAD INSTRUMENT at any time.
+            {
+                std::lock_guard<std::mutex> guard(bankMutex_);
+                if(player_.loadedZones()!=0)loadFailed_=false;
+            }
+            updateSamplerLabel();
+        }catch(const std::exception&){
+            // A temporarily inaccessible folder cannot crash the VSTGUI.
+        }
+        return false;
+    }
+    void updateBrowserLabel(){
+        if(!bankBrowserLabel_)return;
+        try{
+            std::filesystem::path current;
+            {
+                std::lock_guard<std::mutex> guard(bankMutex_);
+                current=bankFolder_;
+            }
+            if(current==lastShownBrowserPath_)return;
+            lastShownBrowserPath_=current;
+            const auto siblings=a125::listInstrumentNeighbors(current);
+            char caption[64]{};
+            if(siblings.found){
+                std::snprintf(caption,sizeof(caption),"BANK: %zu / %zu",
+                    siblings.current+1,siblings.paths.size());
+            }else std::snprintf(caption,sizeof(caption),"BANK: -- / --");
+            bankBrowserLabel_->setText(caption);
+        }catch(const std::exception&){
+            bankBrowserLabel_->setText("BANK: -- / --");
         }
     }
     void updateFolderLabel(){
@@ -828,14 +893,20 @@ public:
         }
     }
     void updateSamplerLabel(){
-        if(!samplerLabel_)return;
-        char line[104]{};
-        std::lock_guard<std::mutex> guard(bankMutex_);
-        const auto count=player_.loadedZones();
-        if(loadFailed_)std::snprintf(line,sizeof(line),"SAMPLER: BANK LOAD FAILED");
-        else if(!count)std::snprintf(line,sizeof(line),"SAMPLER: EMPTY");
-        else std::snprintf(line,sizeof(line),"SAMPLER: %zu WAVS READY TO PLAY",count);
-        samplerLabel_->setText(line);
+        if(samplerLabel_){
+            char line[104]{};
+            {
+                std::lock_guard<std::mutex> guard(bankMutex_);
+                const auto count=player_.loadedZones();
+                if(loadFailed_)std::snprintf(line,sizeof(line),"SAMPLER: BANK LOAD FAILED");
+                else if(!count)std::snprintf(line,sizeof(line),"SAMPLER: EMPTY");
+                else std::snprintf(line,sizeof(line),"SAMPLER: %zu WAVS READY TO PLAY",count);
+            }
+            samplerLabel_->setText(line);
+        }
+        // Enumerate the archive folder only when the selected path changes,
+        // never continuously on the editor's 180ms timer.
+        updateBrowserLabel();
     }
     void didOpen(VSTGUI::VST3Editor*) override {
         if(instrumentNameEdit_)
@@ -860,11 +931,17 @@ public:
         if(octaveDownButton_)octaveDownButton_->unregisterControlListener(this);
         if(octaveUpButton_)octaveUpButton_->unregisterControlListener(this);
         if(importButton_)importButton_->unregisterControlListener(this);
+        if(prevBankButton_)prevBankButton_->unregisterControlListener(this);
+        if(nextBankButton_)nextBankButton_->unregisterControlListener(this);
         if(instrumentNameEdit_)instrumentNameEdit_->unregisterControlListener(this);
         folderButton_=nullptr;
         defaultButton_=nullptr;
         loadButton_=nullptr;
         importButton_=nullptr;
+        prevBankButton_=nullptr;
+        nextBankButton_=nullptr;
+        bankBrowserLabel_=nullptr;
+        lastShownBrowserPath_.clear();
         instrumentNameEdit_=nullptr;
         if(keyboard_)keyboard_->setDelegate(nullptr);
         keyboard_=nullptr;
@@ -1711,6 +1788,10 @@ private:
     VSTGUI::CTextLabel* statusLabel_{nullptr};  // owned by active editor
     VSTGUI::CTextLabel* folderLabel_{nullptr};
     VSTGUI::CTextLabel* samplerLabel_{nullptr};
+    VSTGUI::CTextLabel* bankBrowserLabel_{nullptr};
+    std::filesystem::path lastShownBrowserPath_;
+    VSTGUI::CTextButton* prevBankButton_{nullptr};
+    VSTGUI::CTextButton* nextBankButton_{nullptr};
     VSTGUI::CTextButton* loadButton_{nullptr};
     VSTGUI::CTextButton* importButton_{nullptr};
     VSTGUI::CTextEdit* instrumentNameEdit_{nullptr};
