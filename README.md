@@ -67,6 +67,19 @@ Bei der DAW-Wiedergabe muss die **Quell-VST-Spur** nach der Aufnahme stummgescha
 - **LOAD INSTRUMENT** bleibt für die Auswahl einer Datei aus einem anderen Ordner. Beim nächsten Aufruf von PREV/NEXT gilt dann dieser neue Ordner. Keine Presetdatenbank, kein zusätzlicher Sampler und keine Änderung des `.125A`-Formats.
 - Der zugehörige native Windows-VST3-Test klickt die beiden tatsächlichen GUI-Tasten, überspringt ein korruptes Archiv, prüft das Wraparound und vergleicht gespeicherten Pfad, Name, 64-Bit-Fingerprint sowie die tatsächlich ausgegebene PCM-Amplitude. Der Test ist in der Windows-VST3-CI verpflichtend.
 
+## P027 – echte 125A-Hardware-VSTGUI (Designreview)
+
+Die produktive **1024 × 692 Pixel große VSTGUI** wurde im bestehenden Entwicklungszweig optisch überarbeitet. Sie bleibt Steinberg VSTGUI (kein Mock-up und kein zusätzlicher GUI-Framework-/DSP-Layer):
+
+- Dunkler Anthrazit-/Metallrahmen, einheitliche Buttonfamilien, klare Dreispaltengliederung mit geschützten Original-Hitboxen und bewusst großer MIDI-Tastatur.
+- 125A-Schriftgestaltung mit Segoe UI: größerer Markenname, lesbare Überschriften und kontrastreiche Parameterwerte. Elf echte Skalenmarken pro silbernem ADSR-Regler verdeutlichen den vollständigen Wertbereich.
+- **Echte PCM-Wellenform** des ausgewählten Sample-Roots auf blau-schwarzem Raster. Das Display zeichnet keine vordefinierten Beispiel-Wellenformen im Shipping-Plugin.
+- Recorder-Status und Aufnahmezähler sind **zwei getrennte Zeilen**; lange Zahlenstrings werden nicht mehr am Rand abgeschnitten.
+- Sämtliche 19 VST3-Parameter sind weiterhin erreichbar; PREV/NEXT, Import/Exportordner, Sampling und die 49-Tasten-Steinberg-Klaviatur behalten ihre echte Funktion. Keine funktionslosen Wheels, Preset- oder Settings-Schaltflächen.
+- Die native Windows-VST3-CI kontrolliert 19 gebundene Controller, Geometriegrenzen, fünf einheitliche Buttongruppen, die echten Windows-GUI-Klicks und den PCM-Bankwechsel. Wenn Win32-HWND-Capture möglich ist, exportiert sie ein **tatsächliches GUI-Bild** als `125A-P027-Actual-Windows-VSTGUI` (PNG); dessen WAV-Kurve stammt aus einer expliziten Testbank.
+
+**Grenze:** Die UI-Artefakte und Tests belegen eine technische Designrevision, **keine** visuelle Freigabe durch den Benutzer, keine finale Fender-Studio-Pro-/ASIO-Prüfung und keinen unabhängigen P025-GO. PR #2 bleibt deshalb Draft.
+
 ## P020/P021 – technische VSTGUI-Oberfläche und Projektwiederherstellung
 
 Der technische Prototyp verwendet eine **1024 × 692 große VSTGUI-Oberfläche**: Sampling links, echtes PCM-Wellenformdisplay mittig und silberne ADSR-Drehregler rechts. Aufnahme- und Archivschaltflächen, Statusanzeigen und die vieroktavige Klaviatur bleiben ohne Menüs erreichbar. Alle Knöpfe behalten die native VSTGUI-Bedienlogik; die silberne Front wird als Vektorgrafik gezeichnet, ohne zusätzliche GUI-Frameworks oder bitmap-basierte Ersatzknöpfe. Die Recorder-GUI bleibt ein kleines Marken-/Statusfenster.
