@@ -2280,7 +2280,7 @@ int runInstrumentBrowse(const char* vst3path){
         "P026 actual VST3 IEditController missing");
     // P028: query the real shipping VST3 parameter API, not a
     // separately mocked MIDI-to-note-name formatter.
-    Steinberg::String128 noteDisplay{};
+    Steinberg::Vst::String128 noteDisplay{};
     require(controller->getParamStringByValue(1001,60./127.,noteDisplay)
                 ==kResultTrue,
             "P028 actual VST3 MIDI note label formatting failed");
@@ -2288,7 +2288,7 @@ int runInstrumentBrowse(const char* vst3path){
     Steinberg::UString(noteDisplay,128).toAscii(noteAscii,128);
     require(std::string_view(noteAscii)=="C3",
             "P028 actual VST3 shows MIDI 60 instead of C3");
-    Steinberg::String128 enteredNote{};
+    Steinberg::Vst::String128 enteredNote{};
     Steinberg::UString(enteredNote,128).fromAscii("F#3");
     Steinberg::Vst::ParamValue parsed=0.;
     require(controller->getParamValueByString(1001,enteredNote,parsed)
